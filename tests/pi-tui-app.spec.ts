@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { TuiAltScreen } from '@earendil-works/pi-tui'
+import { TuiAltScreen, setCapabilities } from '@earendil-works/pi-tui'
 import type { Terminal } from '@earendil-works/pi-tui'
 import { PiTuiApp, piTuiInternals } from '../src/app/pi-tui-app.ts'
 import type { PiTuiAppOptions } from '../src/app/pi-tui-app.ts'
@@ -38,7 +38,11 @@ afterEach(async () => {
 
 function mount(meta: SurfaceMeta = { model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, options?: PiTuiAppOptions): Mounted {
   // The workspace is pinned: snapshots embed the footer's cwd and must not
-  // vary between local (macOS) and CI (Linux) paths.
+  // vary between local (macOS) and CI (Linux) paths. Terminal capabilities
+  // are pinned too: image-protocol detection reads host env vars (kitty
+  // sends a delete-query prefix that lands in the snapshot), so the fake
+  // terminal declares a fixed kitty capability for deterministic frames.
+  setCapabilities({ images: 'kitty', trueColor: true, hyperlinks: true })
   const terminal = new FakeTerminal()
   piTuiInternals.createTerminal = () => terminal
   piTuiInternals.createTui = (t: Terminal) => new TuiAltScreen(t)
