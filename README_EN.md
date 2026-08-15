@@ -52,12 +52,12 @@ src/
 │   └── pi/         #   themes / palettes / highlighting
 ├── view/           # components: messages / tool cards / panels / menus / dialogs / brand + strings
 ├── index.ts        # runner: boot/resume, event folding, command dispatch, quit/flush
-└── startup.ts      # profile entry (dsh-tui-app/startup row)
+└── startup.ts      # profile entry (`@mcswift/dsh-tui/startup` row)
 ```
 
 **Data flow**: `session/event` → `fold()` → `ViewDocument` → `app.render()` → differential repaint. Folding is pure (no cordis, no pi); `tests/projection.spec.ts` regresses every event.
 
-**dsh integration**: this repository is an out-of-tree profile (`cordis.patch.yml` declares the startup/runner rows plus persona/hmr/tools overrides), mounted with `dsh plugin --profile tui add link:<this repo>`; at runtime it structurally reads the host composition's services (`commands`/`skills`/`sessionQuery`/`sessionTitle`/`jobs`/`userQuestions`) through `ctx.get(...)`.
+**dsh integration**: this repository is an out-of-tree profile (`cordis.patch.yml` declares the startup/runner rows plus persona/hmr/tools overrides), mounted with `dsh plugin --profile tui add @mcswift/dsh-tui` (or `add link:<this repo>` for local development); at runtime it structurally reads the host composition's services (`commands`/`skills`/`sessionQuery`/`sessionTitle`/`jobs`/`userQuestions`) through `ctx.get(...)`.
 
 ## What it borrows
 
@@ -70,15 +70,17 @@ src/
 
 ## Installation
 
-**Prerequisites**: a working dsh environment (Node ≥ 20, pnpm) and a clone of this repository.
+**Prerequisites**: a working dsh environment (Node ≥ 20, pnpm).
 
 ```bash
-# 1. Mount this package as dsh's tui profile plugin
-DSH_HOME=~/.dsh dsh plugin --profile tui add link:/path/to/DeepSeek-TUI
+# Install from npm (recommended)
+dsh plugin --profile tui add @mcswift/dsh-tui
 
-# 2. Build for development (lib/ is the profile's load entry)
-pnpm install
-pnpm build
+# Or develop locally: mount the source (lib/ is the profile's load entry;
+# pnpm build after each change)
+git clone https://github.com/TheMcSwift/DeepSeek-TUI.git
+dsh plugin --profile tui add link:/path/to/DeepSeek-TUI
+cd DeepSeek-TUI && pnpm install && pnpm build
 ```
 
 > The out-of-tree profile's `cordis.patch.yml` is **required** (its absence is a hard error); `insert` rows may only reference plugins already shipped with the dsh install. More constraints in DESIGN.md §10.

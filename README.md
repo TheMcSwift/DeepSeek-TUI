@@ -52,12 +52,12 @@ src/
 │   └── pi/         #   主题/调色板/高亮
 ├── view/           # 组件：消息/工具卡/面板/菜单/弹窗/品牌区 + strings 双语词典
 ├── index.ts        # runner：boot/resume、事件折叠、命令分发、quit/flush
-└── startup.ts      # profile 启动入口（dsh-tui-app/startup 行）
+└── startup.ts      # profile 启动入口（`@mcswift/dsh-tui/startup` 行）
 ```
 
 **数据流**：`session/event` → `fold()` → `ViewDocument` → `app.render()` → 差分重渲染。折叠是纯函数（无 cordis/无 pi 依赖），`tests/projection.spec.ts` 逐事件回归。
 
-**与 dsh 的集成**：本仓库是 out-of-tree profile（`cordis.patch.yml` 声明 startup/runner 行 + persona/hmr/tools 覆盖），通过 `dsh plugin --profile tui add link:<本仓库>` 挂载；运行时经 `ctx.get(...)` 结构访问 host 组合的服务（`commands`/`skills`/`sessionQuery`/`sessionTitle`/`jobs`/`userQuestions`）。
+**与 dsh 的集成**：本仓库是 out-of-tree profile（`cordis.patch.yml` 声明 startup/runner 行 + persona/hmr/tools 覆盖），通过 `dsh plugin --profile tui add @mcswift/dsh-tui`（或本地开发 `add link:<本仓库>`） 挂载；运行时经 `ctx.get(...)` 结构访问 host 组合的服务（`commands`/`skills`/`sessionQuery`/`sessionTitle`/`jobs`/`userQuestions`）。
 
 ## 借鉴了什么
 
@@ -70,15 +70,16 @@ src/
 
 ## 安装
 
-**前置要求**：可用的 dsh 环境（Node ≥ 20、pnpm）、本仓库 clone 到本地。
+**前置要求**：可用的 dsh 环境（Node ≥ 20、pnpm）。
 
 ```bash
-# 1. 将本包挂载为 dsh 的 tui profile 插件
-DSH_HOME=~/.dsh dsh plugin --profile tui add link:/path/to/DeepSeek-TUI
+# 从 npm 安装（推荐）
+dsh plugin --profile tui add @mcswift/dsh-tui
 
-# 2. 开发时构建（lib/ 为 profile 的加载入口）
-pnpm install
-pnpm build
+# 或本地开发：挂载源码（lib/ 为 profile 的加载入口，改完 pnpm build 即生效）
+git clone https://github.com/TheMcSwift/DeepSeek-TUI.git
+dsh plugin --profile tui add link:/path/to/DeepSeek-TUI
+cd DeepSeek-TUI && pnpm install && pnpm build
 ```
 
 > out-of-tree profile 的 `cordis.patch.yml` 是**必填声明**（缺失直接报错）；insert 行只能引用 dsh 安装已携带的插件。更多约束见 DESIGN.md §10。
