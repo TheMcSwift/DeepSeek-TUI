@@ -117,7 +117,3 @@ python3 scripts/e2e-pty.py --only-questions   # one scenario
 ```
 
 Docs: [ARCHITECTURE.md](ARCHITECTURE.md) structure · [DESIGN.md](DESIGN.md) contracts & revisions · [FEATURE-CHECKLIST.md](FEATURE-CHECKLIST.md) web-alignment baseline · [GAP-ANALYSIS.md](GAP-ANALYSIS.md) / [PI-GAP-ANALYSIS.md](PI-GAP-ANALYSIS.md) baseline audits · [INTERACTION-PLAN.md](INTERACTION-PLAN.md) interaction plan · [CONTRIBUTING.md](CONTRIBUTING.md) contributing · [LICENSE](LICENSE) MIT.
-
----
-
-This project is developed **with the assistance of dsh (DeepSeek Harness)**: session-driven feature alignment, review and regression loops all run inside `dsh --profile tui` itself; commits carry the standard git trailer `Assisted-by: dsh <noreply@deepseek-ai.dev>` (assistance, not co-authorship — no contributor-stat pollution, no copyright implication).

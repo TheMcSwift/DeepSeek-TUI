@@ -117,7 +117,3 @@ python3 scripts/e2e-pty.py --only-questions   # 单场景
 ```
 
 文档索引：[ARCHITECTURE.md](ARCHITECTURE.md) 总体结构 · [DESIGN.md](DESIGN.md) 设计契约与实施修订 · [FEATURE-CHECKLIST.md](FEATURE-CHECKLIST.md) web 功能对齐基线 · [GAP-ANALYSIS.md](GAP-ANALYSIS.md) / [PI-GAP-ANALYSIS.md](PI-GAP-ANALYSIS.md) 基线审计 · [INTERACTION-PLAN.md](INTERACTION-PLAN.md) 交互规划 · [CONTRIBUTING.md](CONTRIBUTING.md) 贡献指南 · [LICENSE](LICENSE) MIT。
-
----
-
-本项目的开发由 **dsh（DeepSeek Harness）协助完成**：会话驱动的功能对齐、审查与回归循环均由 `dsh --profile tui` 自身执行；提交记录携带标准 git trailer：`Assisted-by: dsh <noreply@deepseek-ai.dev>`（「协助」语义，非合著——避免贡献者统计与版权归属暗示）。
