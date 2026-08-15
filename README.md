@@ -120,4 +120,4 @@ python3 scripts/e2e-pty.py --only-questions   # 单场景
 
 ---
 
-本项目的开发由 **dsh（DeepSeek Harness）协助完成**：会话驱动的功能对齐、审查与回归循环均由 `dsh --profile tui` 自身执行；提交记录以 `🤖 Generated with dsh (DeepSeek Harness)` 标记。
+本项目的开发由 **dsh（DeepSeek Harness）协助完成**：会话驱动的功能对齐、审查与回归循环均由 `dsh --profile tui` 自身执行；提交记录携带标准 git trailer：`Assisted-by: dsh <noreply@deepseek-ai.dev>`（「协助」语义，非合著——避免贡献者统计与版权归属暗示）。
