@@ -27,10 +27,12 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 11.7.0
+      # 注意：不要给 setup-node 传 registry-url——authutil 会往 npmrc 注入
+      # NODE_AUTH_TOKEN 占位符（XXXXX-...），npm 误以为已有 token 而跳过
+      # GHA OIDC 交换，导致 PUT 404 "not in this registry"。
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
           cache: pnpm
           cache-dependency-path: tui/pnpm-lock.yaml
       - name: Install harness deps
@@ -62,6 +64,6 @@ jobs:
           fi
       - name: Publish
         working-directory: tui
-        # Trusted publishing (OIDC): no NPM_TOKEN needed once the trusted
-        # publisher is configured on npmjs.com for this repo + workflow.
-        run: npm publish --provenance --access public
+        # Trusted publishing (OIDC): 无 token 时 npm ≥ 11.5 会在 GHA 环境自动
+        # 用 id-token 交换发布令牌；Node 22 自带 npm 10 无此能力，故用最新 npm。
+        run: npx -y npm@latest publish --provenance --access public
