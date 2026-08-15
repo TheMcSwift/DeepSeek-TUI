@@ -1,6 +1,6 @@
 {
   "name": "@mcswift/dsh-tui",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A pi-tui terminal surface for DeepSeek Harness: `dsh --profile tui` interactive agent chat.",
   "license": "MIT",
   "type": "module",
@@ -19,10 +19,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/startup.js",
-    "lib/app/*.js",
-    "lib/**/*.d.ts",
+    "lib",
     "cordis.patch.yml"
   ],
   "scripts": {
