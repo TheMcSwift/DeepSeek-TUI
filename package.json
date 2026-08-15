@@ -83,5 +83,6 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
-  }
+  },
+  "packageManager": "pnpm@11.21.0"
 }
