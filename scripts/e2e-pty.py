@@ -260,7 +260,7 @@ def ensure_core_home() -> None:
         return
     env = {**os.environ, "DSH_HOME": CORE_HOME}
     subprocess.run(
-        ["pnpm", "--dir", HARNESS, "dsh", "plugin", "--profile", "tui", "add", f"link:{WORKSPACE}"],
+        ["/opt/homebrew/bin/pnpm", "--dir", HARNESS, "dsh", "plugin", "--profile", "tui", "add", f"link:{WORKSPACE}"],
         check=True, capture_output=True, env=env,
     )
 
@@ -274,11 +274,11 @@ def ensure_e2e_home() -> None:
         return
     env = {**os.environ, "DSH_HOME": E2E_HOME}
     subprocess.run(
-        ["pnpm", "--dir", HARNESS, "dsh", "plugin", "--profile", "tui", "add", f"link:{WORKSPACE}"],
+        ["/opt/homebrew/bin/pnpm", "--dir", HARNESS, "dsh", "plugin", "--profile", "tui", "add", f"link:{WORKSPACE}"],
         check=True, capture_output=True, env=env,
     )
     subprocess.run(
-        ["pnpm", "--dir", HARNESS, "dsh", "plugin", "--profile", "tui",
+        ["/opt/homebrew/bin/pnpm", "--dir", HARNESS, "dsh", "plugin", "--profile", "tui",
          "add", f"link:{HARNESS}/packages/hooks/hooks-claude-code"],
         check=True, capture_output=True, env=env,
     )
@@ -325,9 +325,12 @@ def scenario_questions() -> None:
     mock = start_mock(8772, "tool_call_success,success", "ask_user_question",
                       '{"questions":[{"id":"q1","question":"Which color?","options":[{"label":"red"},{"label":"blue"}]},{"id":"q2","question":"What is your name?"},{"id":"q3","question":"Pick flavors","multi_select":true,"options":[{"label":"vanilla"},{"label":"chocolate"},{"label":"strawberry"}]},{"id":"q4","question":"Skip me?","options":[{"label":"yes"},{"label":"no"}]}]}')
     tui = TuiProcess(["--patch", PATCH_OVERLAY], base_url="http://127.0.0.1:8772/v1",
-                     env_extra={"DSH_TUI_DEBUG": "1"})
+                     env_extra={"DSH_TUI_DEBUG": "1", "DSH_HOME": E2E_HOME})
     try:
-        assert tui.wait_for("dsh tui", 30), "questions: banner did not render"
+        if not tui.wait_for("dsh tui", 30):
+            print("[e2e-questions] BANNER TIMEOUT, last output:")
+            print(plain(tui.out.decode("utf-8", "replace"))[-2500:])
+            raise AssertionError("questions: banner did not render")
         tui.type(f"ask me {marker}\r")
         # q1: single-select with progress (1 / 4).
         assert tui.wait_for("Which color?", 60), "option question dialog did not open"

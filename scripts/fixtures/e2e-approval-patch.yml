@@ -18,6 +18,8 @@
     defaultPreset: workspace-write
 
 - insert:
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
     - id: e2e-hooks
       name: '@deepseek-ai/dsh-hooks-claude-code'
       config:

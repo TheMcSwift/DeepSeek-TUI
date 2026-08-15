@@ -84,7 +84,6 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "packageManager": "pnpm@11.21.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TheMcSwift/DeepSeek-TUI.git"
