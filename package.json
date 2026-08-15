@@ -1,5 +1,5 @@
 {
-  "name": "dsh-tui-app",
+  "name": "@mcswift/dsh-tui",
   "version": "0.1.0",
   "description": "A pi-tui terminal surface for DeepSeek Harness: `dsh --profile tui` interactive agent chat.",
   "license": "MIT",
@@ -92,5 +92,8 @@
   "homepage": "https://github.com/TheMcSwift/DeepSeek-TUI#readme",
   "bugs": {
     "url": "https://github.com/TheMcSwift/DeepSeek-TUI/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

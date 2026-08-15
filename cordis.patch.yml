@@ -19,10 +19,10 @@
       name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 
     - id: tui-startup
-      name: 'dsh-tui-app/startup'
+      name: '@mcswift/dsh-tui/startup'
 
     - id: tui-runner
-      name: 'dsh-tui-app'
+      name: '@mcswift/dsh-tui'
       inject: [tuiStartup]
       config:
         resume: !!js ctx.tuiStartup.resume

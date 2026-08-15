@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  # OIDC: lets npm exchange a GitHub Actions identity for publish rights
+  # (trusted publisher configured on npmjs.com) and signs provenance.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      # Same sibling layout as CI: devDependencies link into ../deepseek-harness.
+      - uses: actions/checkout@v4
+        with:
+          path: tui
+      - uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          path: deepseek-harness
+          ref: master
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+          cache-dependency-path: tui/pnpm-lock.yaml
+      - name: Install harness deps
+        working-directory: deepseek-harness
+        run: pnpm install
+      - name: Build harness host (types + runtime bundles)
+        working-directory: deepseek-harness
+        run: pnpm run build:lib:host
+      - name: Install
+        working-directory: tui
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: tui
+        run: pnpm typecheck
+      - name: Unit tests
+        working-directory: tui
+        run: pnpm test
+      - name: Build
+        working-directory: tui
+        run: pnpm build
+      - name: Verify tag matches version
+        working-directory: tui
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" != "$TAG" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package version ${VERSION}"
+            exit 1
+          fi
+      - name: Publish
+        working-directory: tui
+        # Trusted publishing (OIDC): no NPM_TOKEN needed once the trusted
+        # publisher is configured on npmjs.com for this repo + workflow.
+        run: npm publish --provenance --access public
