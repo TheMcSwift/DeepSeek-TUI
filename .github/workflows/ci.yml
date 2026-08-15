@@ -29,9 +29,12 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: tui/pnpm-lock.yaml
+      - name: Swap link deps for published dsh
+        working-directory: tui
+        run: node scripts/ci-deps.mjs
       - name: Install
         working-directory: tui
-        run: pnpm install --frozen-lockfile
+        run: pnpm install
       - name: Typecheck
         working-directory: tui
         run: pnpm typecheck
