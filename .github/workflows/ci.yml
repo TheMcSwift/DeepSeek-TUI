@@ -11,7 +11,9 @@ jobs:
     steps:
       # The devDependencies are `link:` dependencies into a sibling
       # deepseek-harness checkout, so both repos are checked out side by
-      # side here (tui/../deepseek-harness mirrors the local layout).
+      # side here (tui/../deepseek-harness mirrors the local layout). The
+      # harness repo does not commit build artifacts, so CI builds the host
+      # type graph first (tsc -b covers every linked package's closure).
       - uses: actions/checkout@v4
         with:
           path: tui
@@ -29,12 +31,15 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: tui/pnpm-lock.yaml
-      - name: Swap link deps for published dsh
-        working-directory: tui
-        run: node scripts/ci-deps.mjs
+      - name: Install harness deps
+        working-directory: deepseek-harness
+        run: pnpm install
+      - name: Build harness host types
+        working-directory: deepseek-harness
+        run: npx tsc -b tsconfig.host.json
       - name: Install
         working-directory: tui
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: Typecheck
         working-directory: tui
         run: pnpm typecheck
