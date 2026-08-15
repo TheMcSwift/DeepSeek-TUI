@@ -116,7 +116,7 @@ python3 scripts/e2e-pty.py           # 6-scenario PTY end-to-end (core/resume/ap
 python3 scripts/e2e-pty.py --only-questions   # one scenario
 ```
 
-Docs: [ARCHITECTURE.md](ARCHITECTURE.md) structure · [DESIGN.md](DESIGN.md) contracts & revisions · [FEATURE-CHECKLIST.md](FEATURE-CHECKLIST.md) web-alignment baseline · [GAP-ANALYSIS.md](GAP-ANALYSIS.md) / [PI-GAP-ANALYSIS.md](PI-GAP-ANALYSIS.md) baseline audits · [INTERACTION-PLAN.md](INTERACTION-PLAN.md) interaction plan.
+Docs: [ARCHITECTURE.md](ARCHITECTURE.md) structure · [DESIGN.md](DESIGN.md) contracts & revisions · [FEATURE-CHECKLIST.md](FEATURE-CHECKLIST.md) web-alignment baseline · [GAP-ANALYSIS.md](GAP-ANALYSIS.md) / [PI-GAP-ANALYSIS.md](PI-GAP-ANALYSIS.md) baseline audits · [INTERACTION-PLAN.md](INTERACTION-PLAN.md) interaction plan · [CONTRIBUTING.md](CONTRIBUTING.md) contributing · [LICENSE](LICENSE) MIT.
 
 ---
 

@@ -116,7 +116,7 @@ python3 scripts/e2e-pty.py           # 6 场景 PTY 端到端（core/resume/appr
 python3 scripts/e2e-pty.py --only-questions   # 单场景
 ```
 
-文档索引：[ARCHITECTURE.md](ARCHITECTURE.md) 总体结构 · [DESIGN.md](DESIGN.md) 设计契约与实施修订 · [FEATURE-CHECKLIST.md](FEATURE-CHECKLIST.md) web 功能对齐基线 · [GAP-ANALYSIS.md](GAP-ANALYSIS.md) / [PI-GAP-ANALYSIS.md](PI-GAP-ANALYSIS.md) 基线审计 · [INTERACTION-PLAN.md](INTERACTION-PLAN.md) 交互规划。
+文档索引：[ARCHITECTURE.md](ARCHITECTURE.md) 总体结构 · [DESIGN.md](DESIGN.md) 设计契约与实施修订 · [FEATURE-CHECKLIST.md](FEATURE-CHECKLIST.md) web 功能对齐基线 · [GAP-ANALYSIS.md](GAP-ANALYSIS.md) / [PI-GAP-ANALYSIS.md](PI-GAP-ANALYSIS.md) 基线审计 · [INTERACTION-PLAN.md](INTERACTION-PLAN.md) 交互规划 · [CONTRIBUTING.md](CONTRIBUTING.md) 贡献指南 · [LICENSE](LICENSE) MIT。
 
 ---
 

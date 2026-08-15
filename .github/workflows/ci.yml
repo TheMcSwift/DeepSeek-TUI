@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # The devDependencies are `link:` dependencies into a sibling
+      # deepseek-harness checkout, so both repos are checked out side by
+      # side here (tui/../deepseek-harness mirrors the local layout).
+      - uses: actions/checkout@v4
+        with:
+          path: tui
+      - uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          path: deepseek-harness
+          ref: main
+          depth: 1
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: tui/pnpm-lock.yaml
+      - name: Install
+        working-directory: tui
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: tui
+        run: pnpm typecheck
+      - name: Unit tests
+        working-directory: tui
+        run: pnpm test
+      - name: Build
+        working-directory: tui
+        run: pnpm build
