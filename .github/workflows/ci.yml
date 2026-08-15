@@ -22,7 +22,7 @@ jobs:
           repository: deepseek-ai/deepseek-harness
           path: deepseek-harness
           ref: master
-          depth: 1
+          fetch-depth: 1
       - uses: pnpm/action-setup@v4
         with:
           version: 11

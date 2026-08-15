@@ -36,7 +36,9 @@ afterEach(async () => {
   Object.assign(piTuiInternals, originalInternals)
 })
 
-function mount(meta: SurfaceMeta = { model: 'pi-ai/deepseek-v4', session: 'session-abc' }, options?: PiTuiAppOptions): Mounted {
+function mount(meta: SurfaceMeta = { model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, options?: PiTuiAppOptions): Mounted {
+  // The workspace is pinned: snapshots embed the footer's cwd and must not
+  // vary between local (macOS) and CI (Linux) paths.
   const terminal = new FakeTerminal()
   piTuiInternals.createTerminal = () => terminal
   piTuiInternals.createTui = (t: Terminal) => new TuiAltScreen(t)
