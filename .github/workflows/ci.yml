@@ -34,9 +34,9 @@ jobs:
       - name: Install harness deps
         working-directory: deepseek-harness
         run: pnpm install
-      - name: Build harness host types
+      - name: Build harness host (types + runtime bundles)
         working-directory: deepseek-harness
-        run: npx tsc -b tsconfig.host.json
+        run: pnpm run build:lib:host
       - name: Install
         working-directory: tui
         run: pnpm install --frozen-lockfile
