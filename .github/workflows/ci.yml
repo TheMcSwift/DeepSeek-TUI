@@ -19,7 +19,7 @@ jobs:
         with:
           repository: deepseek-ai/deepseek-harness
           path: deepseek-harness
-          ref: main
+          ref: master
           depth: 1
       - uses: pnpm/action-setup@v4
         with:
