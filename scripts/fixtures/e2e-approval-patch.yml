@@ -1,0 +1,24 @@
+# E2E overlay: mount the approval trigger (a CC-style PreToolUse hook that
+# asks on every bash call) and pin the default permission preset to
+# workspace-write so this run's sessions ask for approval regardless of the
+# user's settings default. (The shell service and the ask_user_question tool
+# are already mounted by the base profile.)
+- id: permission
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+    defaultPreset: workspace-write
+
+- insert:
+    - id: e2e-hooks
+      name: '@deepseek-ai/dsh-hooks-claude-code'
+      config:
+        configPath: /tmp/dsh-tui-e2e-hooks.json

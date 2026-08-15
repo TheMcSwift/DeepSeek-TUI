@@ -1,0 +1,87 @@
+{
+  "name": "dsh-tui-app",
+  "version": "0.1.0",
+  "description": "A pi-tui terminal surface for DeepSeek Harness: `dsh --profile tui` interactive agent chat.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./startup": {
+      "types": "./lib/startup.d.ts",
+      "default": "./lib/startup.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/startup.js",
+    "lib/app/*.js",
+    "lib/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "python3 scripts/e2e-pty.py"
+  },
+  "dependencies": {
+    "@earendil-works/pi-tui": "0.84.1",
+    "chalk": "5.6.2",
+    "commander": "^15.0.0",
+    "cross-spawn": "7.0.6",
+    "diff": "8.0.4",
+    "grok-mermaid": "0.2.3",
+    "highlight.js": "11.11.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/cordis-plugin-loader": "*",
+    "@deepseek-ai/dsh-agent": "*",
+    "@deepseek-ai/dsh-agent-default-model": "*",
+    "@deepseek-ai/dsh-cmdline": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-session-query": "*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "link:../deepseek-harness/vendor/cordis",
+    "@deepseek-ai/cordis-plugin-include": "link:../deepseek-harness/vendor/include",
+    "@deepseek-ai/cordis-plugin-loader": "link:../deepseek-harness/vendor/loader",
+    "@deepseek-ai/dsh-agent": "link:../deepseek-harness/packages/core/agent",
+    "@deepseek-ai/dsh-agent-default-model": "link:../deepseek-harness/packages/core/agent-default-model",
+    "@deepseek-ai/dsh-cmdline": "link:../deepseek-harness/packages/boot/cmdline",
+    "@deepseek-ai/dsh-command-feedback": "link:../deepseek-harness/packages/feedback/command-feedback",
+    "@deepseek-ai/dsh-commands": "link:../deepseek-harness/packages/interaction/commands",
+    "@deepseek-ai/dsh-compaction": "link:../deepseek-harness/packages/compaction/compaction",
+    "@deepseek-ai/dsh-goal": "link:../deepseek-harness/packages/goal/goal",
+    "@deepseek-ai/dsh-jobs": "link:../deepseek-harness/packages/jobs/jobs",
+    "@deepseek-ai/dsh-llm": "link:../deepseek-harness/packages/llm/llm",
+    "@deepseek-ai/dsh-llm-retry": "link:../deepseek-harness/packages/llm/llm-retry",
+    "@deepseek-ai/dsh-permission-presets": "link:../deepseek-harness/packages/interaction/permission-presets",
+    "@deepseek-ai/dsh-plan-mode": "link:../deepseek-harness/packages/plan/plan-mode",
+    "@deepseek-ai/dsh-session": "link:../deepseek-harness/packages/core/session",
+    "@deepseek-ai/dsh-session-persistence": "link:../deepseek-harness/packages/session/session-persistence",
+    "@deepseek-ai/dsh-session-query": "link:../deepseek-harness/packages/session-query/session-query",
+    "@deepseek-ai/dsh-subagent": "link:../deepseek-harness/packages/subagent/subagent",
+    "@deepseek-ai/dsh-user-approval": "link:../deepseek-harness/packages/interaction/user-approval",
+    "@deepseek-ai/dsh-user-questions": "link:../deepseek-harness/packages/interaction/user-questions",
+    "@earendil-works/pi-ai": "0.84.1",
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^22.20.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

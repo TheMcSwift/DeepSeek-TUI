@@ -1,0 +1,65 @@
+/**
+ * chalk-backed color functions over the vendored pi palette: `fg(name)` /
+ * `bg(name)` resolve a semantic role to its hex color (or literal hex) and
+ * return cached SGR formatters. Mirrors pi's theme.ts color plumbing
+ * (earendil-works/pi, MIT), minus the settings/typebox machinery.
+ * @module dsh-tui-app/app/pi/color
+ */
+
+import chalk from 'chalk'
+import { PALETTE_COLORS, PALETTE_VARS, applyPaletteVariant } from './palette.ts'
+
+// The surface only runs on a real terminal; force truecolor so tests and
+// pipes render the same palette (chalk's TTY detection would strip colors).
+chalk.level = 3
+
+let fgCache = new Map<string, (text: string) => string>()
+let bgCache = new Map<string, (text: string) => string>()
+
+/** Drop baked formatters after a palette swap (light/dark). */
+function resetColorCaches(): void {
+  fgCache = new Map()
+  bgCache = new Map()
+}
+
+/** Swap the palette and drop baked color formatters; call before building views. */
+export function applyPalette(variant: 'dark' | 'light'): void {
+  applyPaletteVariant(variant)
+  resetColorCaches()
+}
+
+/** Resolve a semantic color name to a hex string. */
+export function resolveHex(name: string): string | undefined {
+  const value = PALETTE_COLORS[name]
+  if (value === undefined) return undefined
+  if (value.startsWith('#')) return value
+  return PALETTE_VARS[value] ?? PALETTE_COLORS[value]
+}
+
+/** Foreground formatter for a semantic color name. */
+export function fg(name: string): (text: string) => string {
+  let formatter = fgCache.get(name)
+  if (formatter === undefined) {
+    const style = chalk.hex(resolveHex(name) ?? '#d4d4d4')
+    formatter = (text: string): string => style(text)
+    fgCache.set(name, formatter)
+  }
+  return formatter
+}
+
+/** Background formatter for a semantic color name. */
+export function bg(name: string): (text: string) => string {
+  let formatter = bgCache.get(name)
+  if (formatter === undefined) {
+    const style = chalk.bgHex(resolveHex(name) ?? '#000000')
+    formatter = (text: string): string => style(text)
+    bgCache.set(name, formatter)
+  }
+  return formatter
+}
+
+export const bold = (text: string): string => chalk.bold(text)
+export const underline = (text: string): string => chalk.underline(text)
+export const inverse = (text: string): string => chalk.inverse(text)
+export const italic = (text: string): string => chalk.italic(text)
+export const strikethrough = (text: string): string => chalk.strikethrough(text)

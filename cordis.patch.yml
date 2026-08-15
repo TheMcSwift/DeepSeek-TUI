@@ -1,0 +1,30 @@
+# The dsh-tui-app bundle patch: the interactive terminal surface over dsh-base.
+# Mirrors the headless bundle: persona override, HMR off, tools mode, and the
+# startup + runner rows over the worker-thread code runtime.
+
+- id: system-prompt
+  config:
+    persona: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+- id: hmr
+  disabled: true
+
+- id: tools
+  config:
+    mode: !!js process.env.DSH_TOOLS_MODE
+
+- insert:
+    - id: code-runtime
+      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+
+    - id: tui-startup
+      name: 'dsh-tui-app/startup'
+
+    - id: tui-runner
+      name: 'dsh-tui-app'
+      inject: [tuiStartup]
+      config:
+        resume: !!js ctx.tuiStartup.resume
+        model: !!js ctx.tuiStartup.model
+        workspace: !!js ctx.tuiStartup.workspace
