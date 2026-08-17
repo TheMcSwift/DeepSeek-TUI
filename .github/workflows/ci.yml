@@ -40,6 +40,9 @@ jobs:
       - name: Install
         working-directory: tui
         run: pnpm install --frozen-lockfile
+      - name: Audit
+        working-directory: tui
+        run: pnpm audit --audit-level=high
       - name: Typecheck
         working-directory: tui
         run: pnpm typecheck
