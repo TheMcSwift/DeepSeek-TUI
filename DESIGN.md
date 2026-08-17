@@ -293,6 +293,8 @@ diff 数据流：`tool/result.meta`（`FsDiffMeta{diffs:[{path,oldText,newText}]
 
 ## 10. 实施后的修订记录
 
+- **综合优化批（本轮，0.2.0）**：① **发布卫生**——engines `node>=22.19.0`、`packageManager` pnpm@11.21.0、commander 精确锁定、npm 产物排除 `*.js.map`（208.9→156.8 kB）、依赖升级（chalk 6/diff 9/highlight.js 11.12/pi-ai 0.84.2）、`.npmrc` minimumReleaseAge=1440、CI audit 卡点；② **highlight.js core 子集**（46 语法 + 别名，包体积与 auto 探测耗时双减，未注册围栏语言回退探测不抛错）；③ **OSC 8 协议白名单**（http/https/mailto，C0 控制字符剥离，堵终端注入面）；④ **UX 借鉴 Claude Code**（CC-01 权限徽标分色 / CC-02 审批命令高亮+影响文件 / CC-03 斜杠模糊匹配 / CC-06 思考脉冲 / CC-07+**G42 上下文三段彩条**（token-meter contextBreakdown 投影 → system/tools/messages 分色）/ CC-09 会话切换 toast / CC-10 job 呼吸条 / CC-11 diff hunk 头；CC-04/05/08/12/13/14 评估后克制不做，理由见 CLAUDE-UX-IDEAS.md）；⑤ **F2 ↓ End 回底提示**——applyStatusLines 抽取，`handleViewportInput` 实例级 hook（pi 构造期先注册并 consume 视口键，监听器收不到 PgUp）+ 输入监听 + 500ms ticker（不受 DSH_TUI_ANIM=0 冻结）；⑥ **轨迹视图 B11/H31**——Ctrl+L/`/trajectory` 打开原始事件日志窗口（session.events → 类型分色/时间戳/摘要/过滤/翻页；Ctrl+I 与 Tab 同字节故用 L）；⑦ **拆分**——`src/session/feedback.ts`、`src/control/summaries.ts`、`src/app/pi/command-match.ts` 出仓（index.ts 1494→1358、pi-tui-app.ts 1645→1624）；⑧ **E2E 6→8 场景**（surface/trajectory 新增，路径推导去本机写死）+ **npm 供应链审计**（131 项 IOC 0 命中，报告 docs/security/supply-chain-audit-2026-08-17.md）；单测 245→268，FEATURE-CHECKLIST 汇总 97✅/38🟡/3❌/10⛔。
+
 - **footer 数据源**：改为**从 ViewDocument 计算**（assistant 条目 usage 求和 + 消息数）而非 session-stats 服务——文档即真相源，零服务耦合；
 - **转录区搜索暂缓**：发布版 pi-tui 0.84.1 的 alt screen 无搜索实现（main 分支才有），上游发布后补接线；当前 PgUp/PgDn/滚轮已覆盖导航；
 - **ApprovalPresenter 超时**：弹窗超时与 abort 均 fail-closed（`unavailable`/`cancelled`），与 DSH 语义一致；
