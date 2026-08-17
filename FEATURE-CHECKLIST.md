@@ -94,7 +94,7 @@
 | # | 功能点 | Web 实现 | TUI 现状 | 状态 |
 |---|---|---|---|---|
 | F1 | 滚动锚定 | 底部跟随、上翻保持锚点、Tab 回来恢复 | follow: end + 底部锚定（BottomPad） | ✅ |
-| F2 | 自动滚动开关 + 回底按钮 | 离开底部显示 ↓ 按钮 | End 原生回底；自动滚动开关不可行（pi ScrollView `followEnd` 构造时固定，无 setter）；无回底按钮 | 🟡 |
+| F2 | 自动滚动开关 + 回底按钮 | 离开底部显示 ↓ 按钮 | End 原生回底；离开底部时状态行挂 `↓ 回到底部 (End)` 提示（500ms 轮询 + 视口键 hook，动画冻结下仍工作）；自动滚动开关不可行（pi `followEnd` 构造期固定，上翻即停推已覆盖主场景） | 🟡 |
 | F3 | 逐消息 hover 操作 | hover/focus 露出按钮 | 键盘等价：Tab 焦点环 + Ctrl+Y/X | 🟡 |
 | F4 | 键盘快捷键 | Enter/Shift+Enter/Cmd-Enter/↑↓/Escape/撤销重做 | Esc 中断 · / 斜杠菜单（含命令别名 exit/clear/?/m/perm/language）· Ctrl+R/G/P/F/B/Y/X/W/T/K/O/E/D · Tab 焦点环 + Enter 展开/收起（thinking/工具卡/长消息）· Alt+Enter/Up · Ctrl+Z/Shift+Z 撤销重做；Cmd-Enter 无 | 🟡 |
 | F5 | 错误/重试/压缩状态行 | turn-error 红点、max-tokens 黄点、重试倒计时、compaction running | 结局徽标（✗/⏹）+ 重试倒计时（真实 delay）+ 压缩状态；重试行 Tab 聚焦 + Enter 展开失败原因（code: message） | ✅ |
@@ -204,7 +204,7 @@
 | C 审批与提问 | 3 | 1 | 0 | 0 | — |
 | D Composer | 8 | 4 | 0 | 1 | 附件终端不可行 |
 | E 会话级 UI | 14 | 3 | 0 | 0 | — |
-| F 交互细节 | 3 | 3 | 0 | 0 | Cmd-Enter、自动滚动开关未做 |
+| F 交互细节 | 3 | 3 | 0 | 0 | Cmd-Enter 未做；自动滚动开关不可行（↓ End 提示已补） |
 | G dsh CLI/Runtime | 38 | 9 | 0 | 3 | runtime 能力基本全可达 |
 | H Web 壳/设置 | 15 | 7 | 5 | 6 | 设置页/插件页/轨迹为主要缺口 |
 | **合计** | **93** | **39** | **6** | **10** | 覆盖率 ✅+🟡 ≈ 89%（不含 ⛔ 的 138 项中 ≈ 96%） |

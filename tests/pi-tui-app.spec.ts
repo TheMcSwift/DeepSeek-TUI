@@ -1056,6 +1056,10 @@ describe('pi-tui surface', () => {
     test.terminal.feed('\x1b[5~')
     await settle(60)
     expect(test.app.scrollTop).toBeLessThan(atEnd)
+    // F2: 离开底部后状态行挂出回底提示（End 键原生回底）；提示由 500ms
+    // 轮询刷新（非动画路径，animFrameMs=0 下仍运行），故放宽等待。
+    await waitFor(() => test.terminal.plain().includes('回到底部'))
+    expect(test.terminal.plain()).toContain('(End)')
   })
 
   it('renders the goal, todo, and approval records from the document', async () => {

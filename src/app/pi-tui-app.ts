@@ -627,7 +627,23 @@ export class PiTuiApp implements TerminalApp {
 
   /** Register the global key listener (re-attached after an editor resume). */
   private attachInputListener(tui: TUI): void {
-    this.removeInputListener = tui.addInputListener((data: string) => this.handleGlobalKey(data))
+    this.removeInputListener = tui.addInputListener((data: string) => {
+      const result = this.handleGlobalKey(data)
+      // F2: 任何输入（PgUp/End/滚轮）都可能翻转滚动跟随态：先同步提示，
+      // 再重估 ticker（离开底部要启动轮询、回到底部要停掉）。
+      this.syncBackToBottomHint()
+      this.syncIdleTicker()
+      return result
+    })
+  }
+
+  /** 跟随态翻转时重算状态行（F2 回底提示；输入路径与 500ms ticker 共用）。 */
+  private syncBackToBottomHint(): void {
+    const following = this.scrollView?.isFollowingEnd ?? true
+    if (following === this.lastFollowingEnd) return
+    this.lastFollowingEnd = following
+    this.applyStatusLines(this.current)
+    this.tui?.requestRender()
   }
 
   render(doc: ViewDocument): void {
@@ -858,6 +874,7 @@ export class PiTuiApp implements TerminalApp {
     // structural view (the method names/arity are pi's public surface).
     const alt = altScreen as unknown as {
       routeWheel(event: { direction: number; x: number; y: number }): void
+      handleViewportInput(data: string): { consume: boolean } | undefined
     }
     const routeWheel = alt.routeWheel.bind(altScreen)
     alt.routeWheel = (event: { direction: number; x: number; y: number }) => {
@@ -868,6 +885,17 @@ export class PiTuiApp implements TerminalApp {
         return
       }
       routeWheel(event)
+      this.syncBackToBottomHint()
+    }
+    // pi 在构造期第一个注册了 handleViewportInput 并 consume 掉 PgUp/End 等
+    // 视口键——我们自己的输入监听器收不到这些键。包装它：滚动处理照旧，
+    // 处理完同步 ↓ End 提示与 ticker 状态（F2）。
+    const handleViewportInput = alt.handleViewportInput.bind(altScreen)
+    alt.handleViewportInput = (data: string) => {
+      const result = handleViewportInput(data)
+      this.syncBackToBottomHint()
+      this.syncIdleTicker()
+      return result
     }
   }
 
@@ -1229,28 +1257,52 @@ export class PiTuiApp implements TerminalApp {
     const todo = doc.entries.find((entry): entry is Extract<ViewEntry, { kind: 'todo' }> => entry.kind === 'todo')
     this.capabilityPanel.set(goal, todo, this.jobs, doc.workflow)
 
-    if (this.statusSlot !== undefined) {
+    if (this.statusSlot !== undefined) this.applyStatusLines(doc)
+    // P2: a toast raised while a turn ran is flushed the moment it ends.
+    if (this.wasBusy && !doc.busy && this.pendingToast !== undefined) {
+      const toast = this.pendingToast
+      this.pendingToast = undefined
+      this.showToast(toast)
+    }
+    // Enter submits while busy too: the runner queues the message (web
+    // Enter-as-Queue semantics), so the composer never needs buffering.
+    editor.disableSubmit = false
+    this.wasBusy = doc.busy
+    this.updateBottomPadding()
+    this.syncIdleTicker()
+  }
+
+  /**
+   * 状态槽两态文案（F2 回底提示的载体）：busy 时跑计时/队列数，idle 时渲染
+   * 投影 chips/权限预设；当滚动视口离开底部时追加 `↓ 回到底部 (End)`——
+   * pi 的 followEnd 在构造期固定，自动滚动开关不可行，用可见提示补上
+   * 「已离开底部」的可感知性（End 键原生回底）。
+   * 与 applyState 分离，供 500ms ticker 在跟随态翻转时局部刷新。
+   */
+  private applyStatusLines(doc: ViewDocument): void {
+    const slot = this.statusSlot
+    if (slot === undefined) return
+    const offBottom = !(this.scrollView?.isFollowingEnd ?? true)
+    const endHint = offBottom ? ` · ${fg('dim')(`↓ ${strings().backToBottom} (End)`)}` : ''
+    if (doc.busy) {
       // The fixed slot ABOVE the input line carries running state only
       // (web: the composer area itself never shows the stats strip — it
       // lives in the composer.dock under the input line, our footer).
       // Shortcut hints deliberately do not render here (see /hotkeys).
-      if (doc.busy) {
-        if (!this.wasBusy) this.busyStartedAt = Date.now()
-        const seconds = Math.floor((Date.now() - this.busyStartedAt) / 1000)
-        // Web parity: "Deep diving..." plus a clock only after 15 seconds
-        // (formatRunDuration with the web's duration templates).
-        const clock = seconds >= 15
-          ? seconds >= 60
-            ? strings().durationMinutes(Math.floor(seconds / 60), String(seconds % 60).padStart(2, '0'))
-            : strings().durationSeconds(seconds)
-          : ''
-        const diving = clock === '' ? strings().diving : `${strings().diving} ${clock}`
-        this.statusSlot.setMessage(this.queueCount > 0
-          ? `${diving} · ${strings().queued(this.queueCount)}`
-          : diving)
-      } else {
-        this.statusSlot.setMessage(strings().diving)
-      }
+      if (!this.wasBusy) this.busyStartedAt = Date.now()
+      const seconds = Math.floor((Date.now() - this.busyStartedAt) / 1000)
+      // Web parity: "Deep diving..." plus a clock only after 15 seconds
+      // (formatRunDuration with the web's duration templates).
+      const clock = seconds >= 15
+        ? seconds >= 60
+          ? strings().durationMinutes(Math.floor(seconds / 60), String(seconds % 60).padStart(2, '0'))
+          : strings().durationSeconds(seconds)
+        : ''
+      const diving = clock === '' ? strings().diving : `${strings().diving} ${clock}`
+      const queued = this.queueCount > 0 ? ` · ${strings().queued(this.queueCount)}` : ''
+      slot.setMessage(`${diving}${queued}${endHint}`)
+    } else {
+      slot.setMessage(strings().diving)
     }
     // The fixed slot above the input line: running state while busy, the
     // plugin projections while idle (web composer-chip parity). The generic
@@ -1265,24 +1317,15 @@ export class PiTuiApp implements TerminalApp {
         return `ℹ ${fg('info')(label)}：${styled}`
       })
       .join(' · ')
-    this.statusSlot?.setIdleLine(this.projections.length > 0
+    const idleBase = this.projections.length > 0
       ? projectionLine
       : doc.permissionPreset === undefined
         ? ''
-        : `ℹ ${fg('info')('权限预设')}：${permissionTone(doc.permissionPreset)(doc.permissionPreset)}`)
-    this.statusSlot?.setBusy(doc.busy)
-    // P2: a toast raised while a turn ran is flushed the moment it ends.
-    if (this.wasBusy && !doc.busy && this.pendingToast !== undefined) {
-      const toast = this.pendingToast
-      this.pendingToast = undefined
-      this.showToast(toast)
-    }
-    // Enter submits while busy too: the runner queues the message (web
-    // Enter-as-Queue semantics), so the composer never needs buffering.
-    editor.disableSubmit = false
-    this.wasBusy = doc.busy
-    this.updateBottomPadding()
-    this.syncIdleTicker()
+        : `ℹ ${fg('info')('权限预设')}：${permissionTone(doc.permissionPreset)(doc.permissionPreset)}`
+    slot.setIdleLine(offBottom && idleBase === ''
+      ? `${fg('dim')(`↓ ${strings().backToBottom} (End)`)}`
+      : `${idleBase}${endHint}`)
+    slot.setBusy(doc.busy)
   }
 
   /** Bottom-anchor the transcript when it is shorter than the viewport (T7). */
@@ -1325,22 +1368,25 @@ export class PiTuiApp implements TerminalApp {
 
   /**
    * Start/stop the light idle ticker: it repaints while a job runs (live
-   * durations) or the transcript sits off-bottom (↓ End hint). Disabled with
-   * animFrameMs=0 (tests stay deterministic).
+   * durations) or the transcript sits off-bottom (↓ End hint). Job clocks are
+   * animation-driven (skipped with animFrameMs=0 so tests stay deterministic);
+   * the off-bottom poll is state refresh, not animation, so it keeps running
+   * even with animations frozen — otherwise DSH_TUI_ANIM=0 would silently
+   * lose the back-to-bottom hint.
    */
   private syncIdleTicker(): void {
     const jobsRunning = this.jobs.some(job => job.status === 'running' || job.status === 'stopping')
     const offBottom = !(this.scrollView?.isFollowingEnd ?? true)
-    const needed = piTuiInternals.animFrameMs > 0 && (jobsRunning || offBottom)
+    const needed = (piTuiInternals.animFrameMs > 0 && jobsRunning) || offBottom
     if (needed && this.idleTick === undefined) {
       this.idleTick = setInterval(() => {
-        const following = this.scrollView?.isFollowingEnd ?? true
+        this.syncBackToBottomHint()
         const running = this.jobs.some(job => job.status === 'running' || job.status === 'stopping')
-        if (following !== this.lastFollowingEnd || running) {
-          this.lastFollowingEnd = following
+        if (running) {
           this.refreshFooter()
           this.tui?.requestRender()
         }
+        const following = this.scrollView?.isFollowingEnd ?? true
         if (!running && following && this.idleTick !== undefined) {
           clearInterval(this.idleTick)
           this.idleTick = undefined
