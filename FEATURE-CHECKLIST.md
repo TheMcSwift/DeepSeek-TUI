@@ -73,7 +73,7 @@
 |---|---|---|---|---|
 | E1 | 队列 dock | 计数头可折叠、每行编辑/删除/插话、单条直接显示 | Enter 入队（上限 10）+ 状态槽计数 + Alt+Up 取回 + Alt+Enter steer + `/queue` dock（逐项取回/删除） | ✅ |
 | E2 | 统计条 | turns/steps · LLM/工具时长 · TTFT 平均 · tok/s · 缓存命中 · 输入/输出，hover tooltip | 会话统计条（stats.ts 逐字对齐，空闲状态槽） | ✅ |
-| E3 | 上下文压力环 | SVG 环 + 面板（百分比/token/分段彩条） | footer `ctx N%` + 10 段彩条（cache 段 info 色 + surface 段压力色，CC-07）；无全量 breakdown 面板 | 🟡 |
+| E3 | 上下文压力环 | SVG 环 + 面板（百分比/token/分段彩条） | footer `ctx N%` + 10 段三段彩条（system/tools/messages，G42 同数据；无 SVG 环——终端以分段彩条为等价物） | ✅ |
 | E4 | 会话头 | 父→子面包屑 + 视图 Tab 切换 | header：会话 id + `↳ 父会话` 面包屑 + 标题 + plan 徽标；无视图 Tab | ✅ |
 | E5 | Plan 模式徽标 | `Plan ×` chip 点击执行 /plan off | `◐ plan` 徽标 + Ctrl+E 退出 | ✅ |
 | E6 | Goal 面板 | 阶段标签 + 暂停/恢复/编辑/清除 + 内联编辑 + blocked tooltip | goal 行（阶段/目标/轮次/blocked 原因）；操作经 /goal 命令 | 🟡 |
@@ -114,7 +114,7 @@
 | G8 | telemetry 环境开关（DSH_TELEMETRY_*） | base cordis | 运行时行为，TUI 不感知 | ✅ N/A |
 | G9 | session 事件日志 / fork / repair | `packages/core/session` | 全量消费（fold 投影 + resume/fork） | ✅ |
 | G10 | JSONL 持久化（zstd） | `packages/session/session-persistence-jsonl` | flushSettled 双 flush + resume 回放（zstd 由 dsh 侧处理） | ✅ |
-| G11 | SQLite 检索索引 | `packages/session/session-persistence-sqlite` | 不依赖（openAt 默认关）；picker 走 sessionQuery | 🟡 |
+| G11 | SQLite 检索索引 | `packages/session/session-persistence-sqlite` | 不直接依赖（openAt 默认关）；dsh-base 组合已挂 `session-query-sqlite`，picker 的 `searchSessions` 即其读面（索引可用时自动生效） | ✅ |
 | G12 | session query/listing/trace | `packages/session-query/session-query` | listSessions/readTitle → 会话 picker | ✅ |
 | G13 | session 检索工具（session_search 等） | `tool-session-query` | agent 侧工具，工具卡通用渲染 | ✅ |
 | G14 | 标题生成（LLM + fallback） | `packages/session/session-title*` | session/title → header + 收敛通知行 | ✅ |
@@ -145,14 +145,14 @@
 | G39 | provider/model listing + 默认模型持久化 | `packages/llm/llm`、`core/agent-default-model` | Ctrl+G picker + `/model [provider/model]`（枚举选择/参数直切）+ agentDefaultModel.saveSelection | ✅ |
 | G40 | reasoning effort 层级（不支持显式拒绝） | `packages/llm/llm` | /effort 独立选择；无 efforts 时 notice | ✅ |
 | G41 | token 计量（input/output/cacheRead/cacheWrite） | `packages/llm/token-meter` | 会话统计条 + 每消息 usage + 缓存命中率 | ✅ |
-| G42 | 上下文压力计（request/surface/breakdown） | `packages/llm/token-meter` | footer ctx N% + ▓░ 压力条；无分段 breakdown | 🟡 |
+| G42 | 上下文压力计（request/surface/breakdown） | `packages/llm/token-meter` | footer `ctx N%` + 10 段三段彩条（system/tools/messages，经 token-meter 的 contextBreakdown 投影快照；缺省回退 cache/surface 两段近似） | ✅ |
 | G43 | session telemetry（OTLP） | `packages/*/session-telemetry-otel` | 运行时行为（env 控制），TUI 不感知 | ✅ N/A |
 | G44 | 消息反馈（rate + note，版本化） | `packages/feedback/message-feedback` | /rate + Ctrl+Y + 负评备注；out-of-tree 无法挂 storage → TUI sidecar（与 web 存储分离，已文档） | 🟡 |
 | G45 | /feedback 会话反馈 | `packages/feedback/command-feedback` | 命令面板可达 → feedback/record 系统行 | ✅ |
 | G46 | bundle patch / include / `!!js` | `packages/bundle/base` | 使用中（persona/hmr/tools 行 + insert 三行） | ✅ |
 | G47 | cordis services / inject / dispose | `@deepseek-ai/cordis` | tui-startup + tui-runner 两个插件 | ✅ |
 | G48 | storage 域 | `packages/storage/*` | ⛔ out-of-tree profile 不可挂载（loader 静默挂起）→ sidecar 替代 | ⛔ |
-| G49 | agent presets | `packages/preset/agent-presets` | 无 preset 管理 UI；Ctrl+G 即模型默认 | 🟡 |
+| G49 | agent presets | `packages/preset/agent-presets` | 无 preset 管理 UI（ctx 服务白名单不含 agentPresets；Ctrl+G 即模型默认并持久化） | 🟡 |
 | G50 | MCP client（mcp__srv__tool 桥接） | `packages/mcp/mcp-client` | mcp__* 工具通用卡渲染 | ✅ |
 
 ## H. Web 壳 / 设置 / 会话管理（packages/client: ui-sidebar · ui-workspace · ui-settings-* · ui-layout · ui-theme · web）
@@ -203,11 +203,11 @@
 | B 工具执行 | 5 | 7 | 0 | 0 | Inspect 跳转锚点未做（轨迹视图已补） |
 | C 审批与提问 | 3 | 1 | 0 | 0 | — |
 | D Composer | 8 | 4 | 0 | 1 | 附件终端不可行 |
-| E 会话级 UI | 14 | 3 | 0 | 0 | — |
+| E 会话级 UI | 15 | 2 | 0 | 0 | — |
 | F 交互细节 | 3 | 3 | 0 | 0 | Cmd-Enter 未做；自动滚动开关不可行（↓ End 提示已补） |
-| G dsh CLI/Runtime | 38 | 9 | 0 | 3 | runtime 能力基本全可达 |
+| G dsh CLI/Runtime | 40 | 7 | 0 | 3 | runtime 能力基本全可达 |
 | H Web 壳/设置 | 16 | 8 | 3 | 6 | 设置页/插件页为主要缺口 |
-| **合计** | **94** | **41** | **3** | **10** | 覆盖率 ✅+🟡 ≈ 91%（不含 ⛔ 的 138 项中 ≈ 98%） |
+| **合计** | **97** | **38** | **3** | **10** | 覆盖率 ✅+🟡 ≈ 91%（不含 ⛔ 的 138 项中 ≈ 98%） |
 
 > 修订：本清单基于 dsh checkout 与 web 客户端逐包审计（CLI/runtime 8 区、会话面 6 区、壳/设置 5 区），
 > 每条含可核对的源文件路径。TUI 侧状态与本仓库实现同步；后续功能落地时以本清单为对比基线。

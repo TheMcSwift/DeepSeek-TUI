@@ -58,6 +58,7 @@ import { SlashMenu } from '../view/components/slash-menu.ts'
 import type { SlashMenuItem } from '../view/components/slash-menu.ts'
 import { HotkeysPanel } from '../view/components/hotkeys-panel.ts'
 import { TrajectoryPanel } from '../view/components/trajectory-panel.ts'
+import { matchCommands, permissionTone } from './pi/command-match.ts'
 import type { OverlayHandle } from '@earendil-works/pi-tui'
 import { ApprovalEntryView, presentApprovalDialog } from '../view/components/approval-view.ts'
 import type { ApprovalAnswer, ApprovalQuestion } from '../view/components/approval-view.ts'
@@ -195,37 +196,9 @@ const BIG_PASTE_LINES = 30
 const FOLD_KEEP = 30
 
 /**
- * 子序列匹配打分（CC-03，Claude Code 式模糊补全）：query 逐字符按顺序命中
- * target 即得分，连续命中加权；不能按序命中返回 -1。调用方保证两者均已
- * lowercase。容忍拼写省略/笔误（`/quie` 仍能命中 `/quit`），前缀命中由
- * matchingCommands 额外加权，保证精确前缀永远排在模糊命中之前。
+ * 子序列匹配打分与权限分色已拆到 src/app/pi/command-match.ts（CC-01/03），
+ * 此处保留模块级引用。
  */
-function subsequenceScore(query: string, target: string): number {
-  let qi = 0
-  let score = 0
-  let streak = 0
-  for (let ti = 0; ti < target.length && qi < query.length; ti++) {
-    if (target[ti] === query[qi]) {
-      qi++
-      streak++
-      score += 1 + streak * 2
-    } else {
-      streak = 0
-    }
-  }
-  return qi === query.length ? score : -1
-}
-
-/**
- * 权限预设值按危险等级着色（CC-01，Claude Code 权限徽标语义）：full-access
- * 红、workspace-write 蓝、read-only 暗灰，一眼可辨当前权限面。
- */
-function permissionTone(value: string): (text: string) => string {
-  if (value.includes('full-access')) return (text: string) => fg('error')(text)
-  if (value.includes('workspace-write')) return (text: string) => fg('info')(text)
-  if (value.includes('read-only')) return (text: string) => fg('dim')(text)
-  return (text: string) => fg('text')(text)
-}
 
 /** Searchable text for one entry (T2②). */
 function entrySearchText(entry: ViewEntry): string {
@@ -779,22 +752,7 @@ export class PiTuiApp implements TerminalApp {
 
   /** Catalog rows matching the current slash query (name, alias, or label). */
   private matchingCommands(query: string): CommandChoice[] {
-    if (query === '') return [...this.commandCatalog]
-    const scored: Array<{ item: CommandChoice; score: number }> = []
-    for (const item of this.commandCatalog) {
-      const label = item.label.startsWith('/') ? item.label.slice(1).toLowerCase() : item.label.toLowerCase()
-      const candidates = [item.value, ...(item.aliases ?? []), label]
-      let best = -1
-      for (const candidate of candidates) {
-        const prefix = candidate.startsWith(query) ? 4 : 0 // 前缀命中优先
-        const fuzzy = subsequenceScore(query, candidate)
-        if (fuzzy >= 0 && prefix + fuzzy > best) best = prefix + fuzzy
-      }
-      if (best >= 0) scored.push({ item, score: best })
-    }
-    // 稳定排序：同分保持目录原序（value → alias → label 的命中优先级已由
-    // best 的最大化保证，不再需要 kind 维度）。
-    return scored.sort((a, b) => b.score - a.score).map(entry => entry.item)
+    return matchCommands(this.commandCatalog, query)
   }
 
   /** Open/refresh the non-capturing slash menu above the composer. */
@@ -1218,6 +1176,7 @@ export class PiTuiApp implements TerminalApp {
       statsStrip(this.current, strings()) ?? '', {
         contextWindow: this.meta.contextWindow,
         model: this.meta.model,
+        breakdown: this.meta.contextBreakdown,
       })
   }
 

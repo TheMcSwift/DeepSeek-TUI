@@ -83,6 +83,11 @@ export interface SurfaceMeta {
   contextWindow?: number
   /** Parent session id when this session is a subagent/fork (E4 breadcrumb). */
   parentSession?: string
+  /**
+   * token-meter 的 contextBreakdown 投影（system/tools/messages 三段 token
+   * 估算，G42）：footer 压力条按它分段；缺省时退回 usage 求和的两段近似。
+   */
+  contextBreakdown?: { systemTokens: number; toolsTokens: number; messageTokens: number }
 }
 
 /** Callbacks the surface invokes for user actions. */
