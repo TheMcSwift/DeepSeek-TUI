@@ -59,6 +59,18 @@ export interface ProjectionRow {
   options: Array<{ value: string; name: string; description?: string }>
 }
 
+/** One raw-log row in the trajectory (Inspect) view (B11/H31). */
+export interface TrajectoryRow {
+  /** Monotonic event seq within the session. */
+  seq: number
+  /** Session event discriminant (`tool/call`, `assistant/message`, …). */
+  type: string
+  /** Event timestamp in Unix epoch milliseconds. */
+  at: number
+  /** One-line human summary derived from the event data. */
+  summary: string
+}
+
 /** Static identity shown in the surface header. */
 export interface SurfaceMeta {
   /** `provider/model` of the active agent. */
@@ -117,6 +129,8 @@ export interface TerminalAppHandlers {
   onForkPickerRequest?(): void
   /** A fork point (user-message seq) was chosen, or `null` on cancel. */
   onForkPicked(seq: number | null): void
+  /** Ctrl+I / /trajectory: the runner should fetch the raw log and open the view. */
+  onTrajectoryRequest?(): void
 }
 
 /** The terminal surface contract the runner drives. */
@@ -160,6 +174,8 @@ export interface TerminalApp {
   setWorkspace(path: string): void
   /** Open the fork-point picker overlay (T2①). */
   showForkPicker(items: readonly SessionChoice[]): void
+  /** Open the trajectory (Inspect) overlay over the raw event log (B11/H31). */
+  showTrajectory(rows: readonly TrajectoryRow[]): void
   /** Open a generic single-column picker (queue dock E1, projections K3). */
   showQueuePicker(rows: readonly import('../view/components/filterable-picker.ts').PickerRow[], onPicked: (value: string | null) => void, title?: string): void
   /** Transient action feedback in the status slot (P2; deferred until idle). */

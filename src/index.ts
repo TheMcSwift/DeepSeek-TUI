@@ -170,6 +170,51 @@ function approvalContext(entry: ToolEntry | undefined): { commandText?: string; 
   return { commandText: clip(entry.arguments) }
 }
 
+/**
+ * 原始事件 → 轨迹行单行摘要（B11/H31）：核心事件类型给人类可读摘要
+ * （消息正文/工具名与参数/usage），扩展事件类型（goal/approval/notice 等）
+ * 走 JSON 摘要兜底。
+ */
+function trajectorySummary(event: SessionEvent): string {
+  const clip = (text: string): string => (text.length > 60 ? `${text.slice(0, 59)}…` : text)
+  const data = event.data as unknown as Record<string, unknown>
+  switch (event.type) {
+    case 'turn/start':
+      return `turn ${String(data.turn)} 开始`
+    case 'turn/end':
+      return `turn ${String(data.turn)} 结束（${String(data.reason)}）`
+    case 'step/start':
+      return `turn ${String(data.turn)} · step ${String(data.step)} 开始`
+    case 'step/end':
+      return `turn ${String(data.turn)} · step ${String(data.step)} 结束`
+    case 'user/message': {
+      const content = (data.content as Array<{ type: string; text?: string }> | undefined) ?? []
+      const text = content.map(block => block.type === 'text' ? (block.text ?? '') : `[${block.type}]`).join(' ')
+      return clip(text.trim())
+    }
+    case 'assistant/message': {
+      const message = data.message as { content?: Array<{ type: string; text?: string }> }
+      const content = message.content ?? []
+      const text = content.map(block => block.type === 'text' ? (block.text ?? '') : `[${block.type}]`).join(' ')
+      const usage = data.usage as { inputTokens?: number; outputTokens?: number } | undefined
+      return clip(`${text.trim()}${usage === undefined ? '' : ` · in ${usage.inputTokens ?? 0} out ${usage.outputTokens ?? 0}`}`)
+    }
+    case 'tool/call':
+      return clip(`${String(data.name)} ${String(data.arguments)}`)
+    case 'tool/result': {
+      const message = data.message as { content?: Array<{ type: string; text?: string }> } | undefined
+      const first = message?.content?.[0]
+      const text = first === undefined ? '' : first.type === 'text' ? (first.text ?? '') : `[${first.type}]`
+      const error = data.error as { code: string } | undefined
+      return clip(`${error === undefined ? 'ok' : `✗ ${error.code}`} ${text}`)
+    }
+    case 'todo/write':
+      return `${(data.todos as unknown[]).length} 项 todo`
+    default:
+      return clip(JSON.stringify(data))
+  }
+}
+
 /** Flush the session and reveal its durable jsonl artifact path (T1⑦). */
 async function exportSessionLog(ctx: Context, sessions: SessionStore, session: Session, doc: ViewDocument): Promise<ViewDocument> {
   await sessions.flush(session)
@@ -182,7 +227,7 @@ async function exportSessionLog(ctx: Context, sessions: SessionStore, session: S
     entries: [...doc.entries, { kind: 'notice' as const, id: `notice:export:${session.id}`, text, tone: 'info' as const }],
   }
 }
-import type { SurfaceMeta, TerminalApp, TerminalAppHandlers, ModelChoice, ProjectionRow } from './app/terminal-app.ts'
+import type { SurfaceMeta, TerminalApp, TerminalAppHandlers, ModelChoice, ProjectionRow, TrajectoryRow } from './app/terminal-app.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui-runner'
@@ -522,6 +567,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     push('__lang', '/lang · 语言', '切换界面语言 zh/en', ['language'])
     push('__rename', '/rename · 重命名会话', '固定会话标题（替代自动生成）')
     push('__queue', '/queue · 查看队列', '列出排队消息：取回或删除（E1）')
+    push('__trajectory', '/trajectory · 轨迹', '原始事件日志视图（Inspect，B11/H31）')
     return items
   }
 
@@ -1156,6 +1202,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         })()
         return
       }
+      if (name === '__trajectory') {
+        handlers.onTrajectoryRequest?.()
+        return
+      }
       if (name === '__queue') {
         // E1: the queued messages dock — list the pending queue, then pick
         // one item to retrieve (Alt+Up parity) or delete.
@@ -1304,6 +1354,17 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     onForkPicked: (seq: number | null): void => {
       if (seq === null || handle === undefined) return
       void forkSession(handle.agent.session, seq, false, `已从 seq ${seq} 分支新会话`).catch((error: unknown) => { fail(exit, error) })
+    },
+    // B11/H31: 把当前会话的原始事件日志窗口化成轨迹视图（Inspect）。
+    onTrajectoryRequest: (): void => {
+      if (handle === undefined) return
+      const rows: TrajectoryRow[] = handle.agent.session.events.map(event => ({
+        seq: event.seq,
+        type: event.type,
+        at: event.time,
+        summary: trajectorySummary(event),
+      }))
+      app.showTrajectory(rows)
     },
     onWorkspaceSwitchRequest: (): void => {
       if (quitting) return

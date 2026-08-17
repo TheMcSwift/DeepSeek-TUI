@@ -121,6 +121,11 @@ export class FakeApp implements TerminalApp {
     this.forkPoints = [...items]
   }
 
+  trajectoryRows: import('../../src/app/terminal-app.ts').TrajectoryRow[][] = []
+  showTrajectory(rows: readonly import('../../src/app/terminal-app.ts').TrajectoryRow[]): void {
+    this.trajectoryRows.push([...rows])
+  }
+
   toasts: Array<{ text: string; tone: string }> = []
   toast(text: string, tone: 'info' | 'error' | 'success' = 'info'): void {
     this.toasts.push({ text, tone })

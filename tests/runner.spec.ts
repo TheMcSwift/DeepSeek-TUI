@@ -373,6 +373,24 @@ describe('tui runner', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('opens the trajectory view over the raw event log (B11/H31)', async () => {
+    const test = await bench({
+      afterPrompt: (session, message) => { appendTurn(session, 1, message, 'hi there') },
+    }, {})
+    await test.started
+    test.app.input('hello')
+    await settle(100)
+    test.app.handlers?.onTrajectoryRequest?.()
+    expect(test.app.trajectoryRows).toHaveLength(1)
+    const rows = test.app.trajectoryRows[0]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.some(row => row.type === 'turn/start')).toBe(true)
+    expect(rows.some(row => row.type === 'user/message' && row.summary.includes('hello'))).toBe(true)
+    expect(rows.some(row => row.type === 'assistant/message' && row.summary.includes('hi there'))).toBe(true)
+    expect(rows.every(row => row.seq >= 0 && row.at > 0 && row.summary !== '')).toBe(true)
+    await test.ctx.fiber.dispose()
+  })
+
   it('opens the preset picker with the current preset marked and applies the pick', async () => {
     const picked: string[] = []
     const test = await bench({}, {}, (ctx) => {
@@ -415,7 +433,7 @@ describe('tui runner', () => {
     await test.started
     test.app.handlers?.onCommandPickerRequest?.()
     await settle()
-    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue'])
+    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory'])
     expect(test.app.commands?.find(item => item.value === 'goal')?.label).toBe('/goal <objective>')
     expect(test.app.commands?.find(item => item.value === '__model')?.label).toBe('/model <provider/model>')
     expect(test.app.commands?.find(item => item.value === '__permission')?.label).toBe('/permission <preset>')

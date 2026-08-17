@@ -112,6 +112,10 @@ export interface Strings {
   permissionImpact: (path: string) => string
   // 会话切换反馈（CC-09）
   resumedSession: (session: string) => string
+  // 轨迹视图（B11/H31）
+  trajectoryTitle: string
+  trajectoryEvents: (n: number) => string
+  trajectoryFilterHint: string
   language: string
   chooseLanguage: string
   brandTagline: string
@@ -185,6 +189,7 @@ const zh: Strings = {
         { keys: 'Ctrl+K', action: '折叠旧消息' },
         { keys: 'Ctrl+T', action: 'thinking 开关' },
         { keys: 'Ctrl+O', action: 'jobs 折叠/展开' },
+        { keys: 'Ctrl+L', action: '轨迹（事件日志）' },
         { keys: 'PgUp/PgDn', action: '滚动' },
         { keys: 'Tab · Esc', action: '焦点循环 / 取消' },
         { keys: 'Enter', action: '展开/收起（thinking/工具卡/长消息）' },
@@ -270,6 +275,10 @@ const zh: Strings = {
   permissionImpact: (path: string): string => `将修改：${path}`,
   // 会话切换反馈（CC-09）
   resumedSession: (session: string): string => `已恢复会话 ${session}`,
+  // 轨迹视图（B11/H31）
+  trajectoryTitle: '轨迹',
+  trajectoryEvents: (n: number): string => `${n} 条事件`,
+  trajectoryFilterHint: '输入过滤 · ↑/↓ 滚动 · PgUp/PgDn 翻页 · Esc 关闭',
 
   // TUI-native (no web equivalent; bilingual for consistency)
   language: '语言',
@@ -345,6 +354,7 @@ const en: Strings = {
         { keys: 'Ctrl+K', action: 'Fold old messages' },
         { keys: 'Ctrl+T', action: 'Toggle thinking' },
         { keys: 'Ctrl+O', action: 'Fold/expand jobs' },
+        { keys: 'Ctrl+L', action: 'Trajectory (event log)' },
         { keys: 'PgUp/PgDn', action: 'Scroll' },
         { keys: 'Tab · Esc', action: 'Focus cycle / cancel' },
         { keys: 'Enter', action: 'Expand/collapse (thinking / tool cards / long messages)' },
@@ -430,6 +440,10 @@ const en: Strings = {
   permissionImpact: (path: string): string => `Files affected: ${path}`,
   // Session-switch feedback (CC-09)
   resumedSession: (session: string): string => `Resumed session ${session}`,
+  // Trajectory view (B11/H31)
+  trajectoryTitle: 'Trajectory',
+  trajectoryEvents: (n: number): string => `${n} events`,
+  trajectoryFilterHint: 'Type to filter · ↑/↓ scroll · PgUp/PgDn page · Esc close',
 
   // TUI-native
   language: 'Language',

@@ -31,7 +31,7 @@ import { emptyDocument } from '../document/document.ts'
 import type { AssistantEntry, TurnOutcome, ViewDocument, ViewEntry } from '../document/document.ts'
 import { statsStrip } from '../projection/stats.ts'
 import { BrandView, shouldShowBrand, BRAND, ICE, gradientText } from '../view/brand.ts'
-import type { CommandChoice, ModelChoice, PermissionChoice, ProjectionRow, SessionChoice, SurfaceMeta, TerminalApp, TerminalAppHandlers } from './terminal-app.ts'
+import type { CommandChoice, ModelChoice, PermissionChoice, ProjectionRow, SessionChoice, SurfaceMeta, TerminalApp, TerminalAppHandlers, TrajectoryRow } from './terminal-app.ts'
 import { FilterablePickerPanel } from '../view/components/filterable-picker.ts'
 import type { PickerRow } from '../view/components/filterable-picker.ts'
 import { synthesizeAssistantMessage, synthesizeToolResult } from '../projection/synthesis/pi-messages.ts'
@@ -57,6 +57,7 @@ import { FocusableFrame } from '../view/components/focus-frame.ts'
 import { SlashMenu } from '../view/components/slash-menu.ts'
 import type { SlashMenuItem } from '../view/components/slash-menu.ts'
 import { HotkeysPanel } from '../view/components/hotkeys-panel.ts'
+import { TrajectoryPanel } from '../view/components/trajectory-panel.ts'
 import type { OverlayHandle } from '@earendil-works/pi-tui'
 import { ApprovalEntryView, presentApprovalDialog } from '../view/components/approval-view.ts'
 import type { ApprovalAnswer, ApprovalQuestion } from '../view/components/approval-view.ts'
@@ -401,7 +402,7 @@ export class PiTuiApp implements TerminalApp {
   private sessionSearchTimer?: ReturnType<typeof setTimeout>
   /** Background jobs reported by the runner (T1⑥). */
   private jobs: readonly JobRow[] = []
-  /** Jobs collapsed to one row while more than one runs (P3, Ctrl+J). */
+  /** Jobs collapsed to one row while more than one runs (P3, Ctrl+O). */
   private jobsExpanded = false
   /** Transient status-slot toast timer + pending styled text (P2). */
   private toastTimer?: ReturnType<typeof setTimeout>
@@ -596,6 +597,11 @@ export class PiTuiApp implements TerminalApp {
     // character the editor needs for multi-line paste, so it can't be a key).
     if ((data === '\x0f' || matchesKey(data, 'ctrl+o')) && !this.overlayOpen) {
       this.toggleJobsExpanded()
+      return { consume: true }
+    }
+    // Ctrl+L: 轨迹视图（B11/H31）。Ctrl+I 与 Tab 同字节不可分，故用 L(og)。
+    if (data === '\x0c' || matchesKey(data, 'ctrl+l')) {
+      this.handlers?.onTrajectoryRequest?.()
       return { consume: true }
     }
     if (matchesKey(data, 'ctrl+k')) {
@@ -964,6 +970,21 @@ export class PiTuiApp implements TerminalApp {
     // picker panels use.
     const handle = tui.showOverlay(panel, {
       anchor: 'bottom-left', offsetY: -6, maxHeight: '50%', width: this.overlayWidth - 8,
+    })
+    tui.setFocus(panel)
+  }
+
+  /** Open the trajectory (Inspect) view over the raw event log (B11/H31). */
+  showTrajectory(rows: readonly TrajectoryRow[]): void {
+    const tui = this.tui
+    if (tui === undefined) return
+    const panel = new TrajectoryPanel(rows, () => {
+      this.overlayOpen = false
+      handle.hide()
+    })
+    this.overlayOpen = true
+    const handle = tui.showOverlay(panel, {
+      anchor: 'bottom-left', offsetY: -6, maxHeight: '60%', width: this.overlayWidth - 8,
     })
     tui.setFocus(panel)
   }

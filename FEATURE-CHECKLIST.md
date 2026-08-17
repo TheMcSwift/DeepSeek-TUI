@@ -37,7 +37,7 @@
 | B8 | Web 卡片 | web_search 答案 + 引用 / web_fetch URL + 状态 | web_search 答案 + 引用卡（结构化 meta）✅；web_fetch URL 头 + 正文（无 HTTP 状态） | 🟡 |
 | B9 | 文件路径链接 | 点击用宿主默认应用打开 | OSC 8 超链接（read/write/edit/diff/grep/web 卡片路径与 URL，支持终端 Cmd 点击打开） | ✅ |
 | B10 | 详情面板 | 选中调用 Input(JSON) + Output 双栏 | 聚焦卡 `i` 键展开 raw input JSON（12 行封顶）+ Enter 展开输出；无分栏 | 🟡 |
-| B11 | Inspect 跳转 trajectory | 展开体 Inspect → 轨迹视图 | 无轨迹视图 | ❌ |
+| B11 | Inspect 跳转 trajectory | 展开体 Inspect → 轨迹视图 | Ctrl+L/`/trajectory` 轨迹视图（原始事件日志窗口：seq/时间戳/类型分色/单行摘要/过滤/翻页）；无「从消息跳转到对应事件」锚点 | 🟡 |
 | B12 | 专用工具行 | todo/ask_user_question/skill 专属渲染 | todo 面板 ✅ · 提问对话框 ✅ · skill 注入行 🟡 | 🟡 |
 
 ## C. 审批与提问（web: ui-conversation / ui-user-questions / ui-permission-presets）
@@ -165,7 +165,7 @@
 | H4 | 分组/平铺视图 + 排序选项 | tree.ts deriveGrouped/deriveFlat + ViewOptionsMenu | picker 平铺 + 过滤；无分组/排序 | 🟡 |
 | H5 | 会话搜索（标题/内容全文） | 250ms 防抖 + 后端检索 | picker 输入 250ms 防抖 → `searchSessions` 后端全文命中合并（snippet 预览 + 相对时间），空查询保留全列表 | ✅ |
 | H6 | 会话行状态点 + hover 卡 | sessionStatuses 7 态 | 相对时间 ✅；无状态点/hover 卡 | 🟡 |
-| H7 | 会话重命名 | 浏览器持有对话框 | 无（标题由 dsh 自动生成） | ❌ |
+| H7 | 会话重命名 | 浏览器持有对话框 | `/rename`：固定会话标题（`sessionTitle.rename`，自动生成停止）；内联参数直切或对话框补问 | ✅ |
 | H8 | 会话归档 | archiveSession | ⛔ `workspaceRegistry` 服务未挂载于 tui profile（bundle 无 workspace 插件，挂载会因缺 storageDomain 静默挂起） | ⛔ |
 | H9 | 拖拽重排（会话/工作区） | HTML5 DnD | ⛔ | ⛔ |
 | H10 | 相对时间显示 | relativeTime 双语 | 刚刚/N 分钟前/N 小时前/N 天前/日期 | ✅ |
@@ -189,7 +189,7 @@
 | H28 | 目录选择器（native + Miller 双栏） | ui-directory-picker-* | Ctrl+W 文本路径；无浏览器 UI | 🟡 |
 | H29 | 附件轨道/拖放覆盖/灯箱/图片画廊 | ui-attachment | ⛔ | ⛔ |
 | H30 | 产物文件（打开/在文件夹显示） | ui-deliverables | ✎ chips OSC 8 打开 + `📂` 目录链接（Finder 定位产物，H30 在文件夹显示） | ✅ |
-| H31 | 轨迹视图（时间线/搜索/分页/虚拟行） | ui-trajectory | 无 | ❌ |
+| H31 | 轨迹视图（时间线/搜索/分页/虚拟行） | ui-trajectory | Ctrl+L/`/trajectory`：seq 升序事件日志窗口（类型分色 + 时间戳 + 摘要 + 本地过滤 + 翻页，B11 同实现）；无后端搜索/虚拟行 | 🟡 |
 | H32 | 工作流运行视图（分阶段成员） | ui-workflow-run | 面板 run→member 层级披露（E15 同实现；成员 ≤8 行，超限折叠） | ✅ |
 | H33 | skill 目录触发菜单（/ 候选） | ui-skill | `/` 菜单含 user-invocable skills（`ctx.skills` 结构化读取，无 dsh-skill 依赖） | ✅ |
 
@@ -200,14 +200,14 @@
 | 区 | ✅ | 🟡 | ❌ | ⛔ | 备注 |
 |---|---|---|---|---|---|
 | A 消息流与渲染 | 7 | 6 | 0 | 0 | 协议白名单/块级复制未做 |
-| B 工具执行 | 5 | 6 | 1 | 0 | Inspect 轨迹跳转未做 |
+| B 工具执行 | 5 | 7 | 0 | 0 | Inspect 跳转锚点未做（轨迹视图已补） |
 | C 审批与提问 | 3 | 1 | 0 | 0 | — |
 | D Composer | 8 | 4 | 0 | 1 | 附件终端不可行 |
 | E 会话级 UI | 14 | 3 | 0 | 0 | — |
 | F 交互细节 | 3 | 3 | 0 | 0 | Cmd-Enter 未做；自动滚动开关不可行（↓ End 提示已补） |
 | G dsh CLI/Runtime | 38 | 9 | 0 | 3 | runtime 能力基本全可达 |
-| H Web 壳/设置 | 15 | 7 | 5 | 6 | 设置页/插件页/轨迹为主要缺口 |
-| **合计** | **93** | **39** | **6** | **10** | 覆盖率 ✅+🟡 ≈ 89%（不含 ⛔ 的 138 项中 ≈ 96%） |
+| H Web 壳/设置 | 16 | 8 | 3 | 6 | 设置页/插件页为主要缺口 |
+| **合计** | **94** | **41** | **3** | **10** | 覆盖率 ✅+🟡 ≈ 91%（不含 ⛔ 的 138 项中 ≈ 98%） |
 
 > 修订：本清单基于 dsh checkout 与 web 客户端逐包审计（CLI/runtime 8 区、会话面 6 区、壳/设置 5 区），
 > 每条含可核对的源文件路径。TUI 侧状态与本仓库实现同步；后续功能落地时以本清单为对比基线。

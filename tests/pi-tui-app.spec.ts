@@ -1417,6 +1417,21 @@ describe('pi-tui surface', () => {
     expect(test.terminal.plain()).toContain('hi')
   })
 
+  it('opens the trajectory overlay from Ctrl+L (B11/H31)', async () => {
+    const test = mount()
+    await settle()
+    test.app.showTrajectory([
+      { seq: 1, type: 'turn/start', at: Date.now(), summary: 'turn 1 开始' },
+      { seq: 2, type: 'tool/call', at: Date.now(), summary: 'bash {"command":"ls"}' },
+    ])
+    await settle()
+    const plain = test.terminal.plain()
+    expect(plain).toContain('轨迹')
+    expect(plain).toContain('2 条事件')
+    expect(plain).toContain('#02')
+    expect(plain).toContain('tool/call')
+  })
+
   it('renders error notices from failed turns', async () => {
     const test = mount()
     await settle()
