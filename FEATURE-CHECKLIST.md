@@ -20,7 +20,7 @@
 | A9 | 分支到新会话 | 仅已完成轮次末条可 fork | Ctrl+B fork 点选择器 + /clone（同约束） | ✅ |
 | A10 | 消息时间戳 | 同日 HH:mm、跨日带日期、跨年 ymd | 同日 HH:MM；跨日 MM-DD、跨年 YYYY-MM-DD | ✅ |
 | A11 | 每消息统计页脚 | Ran for 15s · TTFT 1.2s · 34 tok/s | ⏱ · ⚡ TTFT · tok/s + 轮次结局徽标（P0） | ✅ |
-| A12 | 消息状态行 | 停止标记、轮次失败行、token 上限提示、重试行（倒计时 + 失败原因可展开） | 结局徽标 + RetryStatusIndicator 倒计时；失败原因不可展开 | 🟡 |
+| A12 | 消息状态行 | 停止标记、轮次失败行、token 上限提示、重试行（倒计时 + 失败原因可展开） | 结局徽标 + RetryStatusIndicator 倒计时 + 重试行 Tab 聚焦 + Enter 展开失败原因（K1） | ✅ |
 | A13 | 用户气泡 + /@ chip 装饰 | 用户右对齐；`/name`、`@name` 渲染 ref-chip | 用户气泡 ✅；chip 装饰无 | 🟡 |
 
 ## B. 工具执行（web: ui-tool / ui-primitives）
@@ -100,8 +100,6 @@
 | F5 | 错误/重试/压缩状态行 | turn-error 红点、max-tokens 黄点、重试倒计时、compaction running | 结局徽标（✗/⏹）+ 重试倒计时（真实 delay）+ 压缩状态；重试行 Tab 聚焦 + Enter 展开失败原因（code: message） | ✅ |
 | F6 | 语言 zh/en 切换 | 每包独立 locale 字典 | strings.ts 双词典 + /lang + DSH_TUI_LANG；web 表外硬编码文案不国际化 | ✅ |
 
-<!-- CLI/runtime 与 shell/settings 两节待审计返回后补全 -->
-
 ## G. dsh CLI / Runtime（apps/cli · packages/core · packages/*）
 
 | # | 功能点 | dsh 实现 | TUI 现状 | 状态 |
@@ -132,7 +130,7 @@
 | G24 | background jobs（job_list/output/kill） | `packages/jobs/*` | ◆ job 行 + Ctrl+O 收敛展开 | ✅ |
 | G25 | LLM retries | `packages/llm/llm-retry` | RetryStatusIndicator 倒计时（esc to cancel） | ✅ |
 | G26 | compaction（手动/自动/overflow） | `packages/compaction/*` | /compact + 状态行 + 摘要卡 | ✅ |
-| G27 | workflows & ralph | `packages/workflow/*` | 工具卡通用渲染；无 WorkflowRunPanel | 🟡 |
+| G27 | workflows & ralph | `packages/workflow/*` | WorkflowRunPanel 面板 run→member 层级披露（与 E15 同实现） | ✅ |
 | G28 | ask_user_question | `packages/interaction/user-questions` | 提问对话框（选项数字直选 + 自由文本） | ✅ |
 | G29 | /goal /compact /feedback /permission /plan /export 命令目录 | `packages/interaction/commands` 及各 command-* | 命令面板 + 内联斜杠菜单全量可达 | ✅ |
 | G30 | tools registry / defineTool | `packages/core/tools` | resolveToolDefinition + 工具卡渲染 | ✅ |
@@ -201,15 +199,15 @@
 
 | 区 | ✅ | 🟡 | ❌ | ⛔ | 备注 |
 |---|---|---|---|---|---|
-| A 消息流与渲染 | 6 | 6 | 0 | 0 | 协议白名单/块级复制未做 |
-| B 工具执行 | 5 | 6 | 0 | 0 | — |
+| A 消息流与渲染 | 7 | 6 | 0 | 0 | 协议白名单/块级复制未做 |
+| B 工具执行 | 5 | 6 | 1 | 0 | Inspect 轨迹跳转未做 |
 | C 审批与提问 | 3 | 1 | 0 | 0 | — |
 | D Composer | 8 | 4 | 0 | 1 | 附件终端不可行 |
-| E 会话级 UI | 13 | 4 | 0 | 0 | — |
+| E 会话级 UI | 14 | 3 | 0 | 0 | — |
 | F 交互细节 | 3 | 3 | 0 | 0 | Cmd-Enter、自动滚动开关未做 |
-| G dsh CLI/Runtime | 37 | 10 | 0 | 3 | runtime 能力基本全可达 |
-| H Web 壳/设置 | 15 | 6 | 5 | 6 | 设置页/插件页/轨迹为主要缺口 |
-| **合计** | **91** | **38** | **7** | **10** | 覆盖率 ✅+🟡 ≈ 92% |
+| G dsh CLI/Runtime | 38 | 9 | 0 | 3 | runtime 能力基本全可达 |
+| H Web 壳/设置 | 15 | 7 | 5 | 6 | 设置页/插件页/轨迹为主要缺口 |
+| **合计** | **93** | **39** | **6** | **10** | 覆盖率 ✅+🟡 ≈ 89%（不含 ⛔ 的 138 项中 ≈ 96%） |
 
 > 修订：本清单基于 dsh checkout 与 web 客户端逐包审计（CLI/runtime 8 区、会话面 6 区、壳/设置 5 区），
 > 每条含可核对的源文件路径。TUI 侧状态与本仓库实现同步；后续功能落地时以本清单为对比基线。
