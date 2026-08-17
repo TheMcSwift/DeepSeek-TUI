@@ -96,6 +96,10 @@ function diffResult(
   const lines: string[] = []
   for (const diff of diffs) {
     lines.push(theme.fg('toolTitle', fileLink(diff.path)))
+    // CC-11: hunk 头（行号范围），Claude Code 式 diff 的定位锚点。
+    const oldLines = (diff.oldText ?? '').split('\n').length
+    const newLines = diff.newText.split('\n').length
+    lines.push(theme.fg('dim', `@@ -1,${oldLines} +1,${newLines} @@`))
     // pi's renderDiff consumes a numbered unified diff; rebuild one per hunk.
     const numbered: string[] = []
     for (const [i, line] of (diff.oldText ?? '').split('\n').entries()) numbered.push(`-${i + 1} ${line}`)

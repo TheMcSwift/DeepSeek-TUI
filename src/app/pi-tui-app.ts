@@ -28,7 +28,7 @@ import {
   type Terminal,
 } from '@earendil-works/pi-tui'
 import { emptyDocument } from '../document/document.ts'
-import type { TurnOutcome, ViewDocument, ViewEntry } from '../document/document.ts'
+import type { AssistantEntry, TurnOutcome, ViewDocument, ViewEntry } from '../document/document.ts'
 import { statsStrip } from '../projection/stats.ts'
 import { BrandView, shouldShowBrand, BRAND, ICE, gradientText } from '../view/brand.ts'
 import type { CommandChoice, ModelChoice, PermissionChoice, ProjectionRow, SessionChoice, SurfaceMeta, TerminalApp, TerminalAppHandlers } from './terminal-app.ts'
@@ -315,6 +315,21 @@ function statsFooter(
 function toolDurationFooter(entry: { durationMs?: number }): string | undefined {
   if (entry.durationMs === undefined) return undefined
   return italic(fg('dim')(`⏱ ${entry.durationMs < 1000 ? `${entry.durationMs}ms` : `${(entry.durationMs / 1000).toFixed(1)}s`}`))
+}
+
+/**
+ * 助手消息页脚：统计 + 时钟，流式且尚无正文但有 thinking 时挂思考脉冲
+ * （CC-06，Claude Code 的 ⏺ ● ○ ○ 提示流式思考仍在进行的终端等价；静态
+ * 标记即可，不新增定时器——busy 状态槽的 Loader 已在驱动重绘）。
+ */
+function assistantFooter(entry: AssistantEntry, doc: ViewDocument): string | undefined {
+  const stats = statsFooter(entry, doc)
+  const clock = clockFooter(entry.at)
+  const base = stats === undefined ? clock : `${stats} · ${clock ?? ''}`.trimEnd()
+  const pulse = entry.state === 'streaming' && entry.text.trim() === '' && entry.thinking.length > 0
+    ? fg('thinkingText')('⏺ ● ○ ○')
+    : ''
+  return [base ?? '', pulse].filter(part => part !== '').join(' · ')
 }
 
 /** Frame-wrap a message view unless it is already keyboard-focusable (T3④). */
@@ -1008,9 +1023,7 @@ export class PiTuiApp implements TerminalApp {
           1,
           [codeLabelTransformer, mermaidTransformer],
         )
-        const stats = statsFooter(entry, this.current)
-        const clock = clockFooter(entry.at)
-        inner.setFooter(stats === undefined ? clock : `${stats} · ${clock ?? ''}`.trimEnd())
+        inner.setFooter(assistantFooter(entry, this.current))
         return frameOrSelf(maybeCollapse(inner, entry.text, entry.state !== 'streaming'), '助手回复')
       }
       case 'approval':
@@ -1070,9 +1083,7 @@ export class PiTuiApp implements TerminalApp {
       const { provider, model } = this.modelIdentity()
       raw.setHideThinkingBlock(this.hideThinking)
       raw.updateContent(synthesizeAssistantMessage(entry, provider, model), entry.state === 'streaming')
-      const statsLine = statsFooter(entry, doc)
-      const clock = clockFooter(entry.at)
-      raw.setFooter(statsLine === undefined ? clock : `${statsLine} · ${clock ?? ''}`.trimEnd())
+      raw.setFooter(assistantFooter(entry, doc))
       // Streaming finished with a long message: swap in the fold wrapper.
       const wrapped = maybeCollapse(raw, entry.text, entry.state !== 'streaming')
       if (wrapped !== raw) {
@@ -1085,9 +1096,7 @@ export class PiTuiApp implements TerminalApp {
       const { provider, model } = this.modelIdentity()
       view.setHideThinkingBlock(this.hideThinking)
       view.updateContent(synthesizeAssistantMessage(entry, provider, model), entry.state === 'streaming')
-      const statsLine = statsFooter(entry, doc)
-      const clock = clockFooter(entry.at)
-      view.setFooter(statsLine === undefined ? clock : `${statsLine} · ${clock ?? ''}`.trimEnd())
+      view.setFooter(assistantFooter(entry, doc))
       // Streaming finished with a long message: swap in the fold wrapper.
       const wrapped = maybeCollapse(view, entry.text, entry.state !== 'streaming')
       if (wrapped !== view) {
@@ -1106,9 +1115,7 @@ export class PiTuiApp implements TerminalApp {
         1,
         [codeLabelTransformer],
       )
-      const statsLine = statsFooter(entry, doc)
-      const clock = clockFooter(entry.at)
-      inner.setFooter(statsLine === undefined ? clock : `${statsLine} · ${clock ?? ''}`.trimEnd())
+      inner.setFooter(assistantFooter(entry, doc))
       view.replaceInner(inner, entry.text)
     } else if (entry.kind === 'tool' && view instanceof FocusableToolCard) {
       if (entry.state !== 'running' && entry.output !== undefined) {

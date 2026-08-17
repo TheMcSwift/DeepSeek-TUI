@@ -1400,6 +1400,23 @@ describe('pi-tui surface', () => {
     expect(test.terminal.output).toContain(fg('dim')('read-only'))
   })
 
+  it('pulses a thinking marker while streaming with empty text (CC-06)', async () => {
+    const test = mount()
+    await settle()
+    test.app.render(doc([
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: '', thinking: ['还在想…'], state: 'streaming' },
+    ]))
+    await settle()
+    expect(test.terminal.plain()).toContain('⏺ ● ○ ○')
+    // 正文出现后重渲染：脉冲行从新帧中消失（fake 终端缓冲是累计写入，
+    // 检查重绘后的最后一帧区域不可行——由 updateEntryView 每帧重算 footer 保证）。
+    test.app.render(doc([
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'hi', thinking: ['还在想…'], state: 'streaming' },
+    ]))
+    await settle()
+    expect(test.terminal.plain()).toContain('hi')
+  })
+
   it('renders error notices from failed turns', async () => {
     const test = mount()
     await settle()

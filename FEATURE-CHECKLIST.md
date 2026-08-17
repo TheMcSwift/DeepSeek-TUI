@@ -73,12 +73,12 @@
 |---|---|---|---|---|
 | E1 | 队列 dock | 计数头可折叠、每行编辑/删除/插话、单条直接显示 | Enter 入队（上限 10）+ 状态槽计数 + Alt+Up 取回 + Alt+Enter steer + `/queue` dock（逐项取回/删除） | ✅ |
 | E2 | 统计条 | turns/steps · LLM/工具时长 · TTFT 平均 · tok/s · 缓存命中 · 输入/输出，hover tooltip | 会话统计条（stats.ts 逐字对齐，空闲状态槽） | ✅ |
-| E3 | 上下文压力环 | SVG 环 + 面板（百分比/token/分段彩条） | footer `ctx N%` + ▓░ 压力条；无分段面板 | 🟡 |
+| E3 | 上下文压力环 | SVG 环 + 面板（百分比/token/分段彩条） | footer `ctx N%` + 10 段彩条（cache 段 info 色 + surface 段压力色，CC-07）；无全量 breakdown 面板 | 🟡 |
 | E4 | 会话头 | 父→子面包屑 + 视图 Tab 切换 | header：会话 id + `↳ 父会话` 面包屑 + 标题 + plan 徽标；无视图 Tab | ✅ |
 | E5 | Plan 模式徽标 | `Plan ×` chip 点击执行 /plan off | `◐ plan` 徽标 + Ctrl+E 退出 | ✅ |
 | E6 | Goal 面板 | 阶段标签 + 暂停/恢复/编辑/清除 + 内联编辑 + blocked tooltip | goal 行（阶段/目标/轮次/blocked 原因）；操作经 /goal 命令 | 🟡 |
 | E7 | Todo 面板 | 完成/进行中/待处理计数、折叠展开、状态字形 | 计数头 `◆ todo ✓N ▶N ○N` + 状态字形 + >6 项折叠 | ✅ |
-| E8 | Jobs 面板 | 状态点 + 类型 + 标签 + 实时耗时 | ◆ job 行（状态点 + 标签 + 实时/结算耗时，500ms ticker）；>1 收敛 Ctrl+O 展开 | ✅ |
+| E8 | Jobs 面板 | 状态点 + 类型 + 标签 + 实时耗时 | ◆ job 行（状态点 + 运行期 ▐▓░ 呼吸条 + 标签 + 实时/结算耗时，500ms ticker）；>1 收敛 Ctrl+O 展开 | ✅ |
 | E9 | 子代理徽标/树 | 头操作展开树（计数、运行点、惰性子孙、token/时长） | ◆ subagent 徽标行；无树/指标 | 🟡 |
 | E10 | 只读子代理 composer | one-shot / 父离线只读说明 | one-shot 子代理会话（`subagent/descriptor` mode）只读：🔒 提示行 + 提交拦截（/quit 等命令仍可用） | ✅ |
 | E11 | 反馈行 | 每条已结束消息 👍/👎 + 备注编辑器 | /rate + Ctrl+Y（聚焦帧优先）+ 负评备注；持久化 sidecar | ✅ |

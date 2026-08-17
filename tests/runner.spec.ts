@@ -348,6 +348,8 @@ describe('tui runner', () => {
     expect(test.resumed[0].resumeSessionId).toBe('session-old')
     expect(test.app.resets).toBe(2) // the swap reset
     expect(test.app.meta?.session).toBe('session-old')
+    // CC-09: 切换成功后 toast 即时反馈。
+    expect(test.app.toasts.some(toast => toast.text.includes('已恢复会话'))).toBe(true)
     await test.ctx.fiber.dispose()
   })
 

@@ -39,6 +39,7 @@ export class FooterLine implements Component {
   set(doc: ViewDocument, workspace: string, statsLine: string, context: FooterContext = {}): boolean {
     let input = 0
     let output = 0
+    let cacheRead = 0
     let messages = 0
     for (const entry of doc.entries) {
       if (entry.kind === 'user') messages++
@@ -46,6 +47,7 @@ export class FooterLine implements Component {
         messages++
         input += entry.usage?.inputTokens ?? 0
         output += entry.usage?.outputTokens ?? 0
+        cacheRead += entry.usage?.cacheReadTokens ?? 0
       }
     }
     const modelPart = context.model === undefined || context.model === ''
@@ -55,11 +57,22 @@ export class FooterLine implements Component {
     // visible when the cwd path truncates the tail on narrow terminals).
     let facts = modelPart
     if (context.contextWindow !== undefined && context.contextWindow > 0) {
-      const pct = Math.min(99, Math.round(((input + output) / context.contextWindow) * 100))
+      const used = input + output
+      const pct = Math.min(99, Math.round((used / context.contextWindow) * 100))
       const tone = pct >= 80 ? 'error' : pct >= 60 ? 'warning' : 'text'
       const filled = Math.round((pct / 100) * 10)
-      const bar = `${'▓'.repeat(filled)}${'░'.repeat(10 - filled)}`
-      facts += `${fg(tone)(`ctx ${pct}%`)} ${fg(tone)(bar)} · `
+      // CC-07: 10 段压力条按来源分段——cache 命中段 info 色（复用已有上下文，
+      // 便宜），新 surface 段用压力色（贵）；一眼看出压力的构成。
+      const cacheFilled = used > 0 ? Math.min(filled, Math.round((cacheRead / used) * 10)) : 0
+      let bar = ''
+      for (let i = 0; i < 10; i++) {
+        bar += i < cacheFilled
+          ? fg('info')('▓')
+          : i < filled
+            ? fg(tone)('▓')
+            : fg('dim')('░')
+      }
+      facts += `${fg(tone)(`ctx ${pct}%`)} ${bar} · `
     }
     facts += `${fg('muted')(workspace)} · ${fg('text')(`${messages} msgs`)} · ${fg('text')(`in ${compact(input)}`)} ${fg('text')(`out ${compact(output)}`)}`
     const next = statsLine === '' ? facts : `${fg('dim')(statsLine)}\n${facts}`

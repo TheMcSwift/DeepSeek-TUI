@@ -930,7 +930,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     },
     onSessionPicked: (value: string | null): void => {
       if (value === null || value === currentSessionId) return
-      void swap(value).catch((error: unknown) => { fail(exit, error) })
+      void swap(value).then(() => {
+        // CC-09: 切换成功的即时反馈（picker 只标记当前行，切换后无 banner）。
+        app.toast(strings().resumedSession(meta.session), 'info')
+      }).catch((error: unknown) => { fail(exit, error) })
     },
     onModelPicked: (value: string | null): void => {
       if (value === null) return

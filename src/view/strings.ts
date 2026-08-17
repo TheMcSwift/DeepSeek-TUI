@@ -110,6 +110,8 @@ export interface Strings {
   // 审批卡命令块（CC-02，Claude Code 权限弹窗语义）
   permissionCommand: string
   permissionImpact: (path: string) => string
+  // 会话切换反馈（CC-09）
+  resumedSession: (session: string) => string
   language: string
   chooseLanguage: string
   brandTagline: string
@@ -266,6 +268,8 @@ const zh: Strings = {
   // 审批卡命令块（CC-02，Claude Code 权限弹窗语义）
   permissionCommand: '命令',
   permissionImpact: (path: string): string => `将修改：${path}`,
+  // 会话切换反馈（CC-09）
+  resumedSession: (session: string): string => `已恢复会话 ${session}`,
 
   // TUI-native (no web equivalent; bilingual for consistency)
   language: '语言',
@@ -424,6 +428,8 @@ const en: Strings = {
   // Approval-card command block (CC-02, Claude Code permission-dialog parity)
   permissionCommand: 'Command',
   permissionImpact: (path: string): string => `Files affected: ${path}`,
+  // Session-switch feedback (CC-09)
+  resumedSession: (session: string): string => `Resumed session ${session}`,
 
   // TUI-native
   language: 'Language',

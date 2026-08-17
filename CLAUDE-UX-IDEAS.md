@@ -33,6 +33,26 @@
 | CC-13 | git 分支显示 | 无（INTERACTION-PLAN 明示 DSH 无此服务） | runner 读 git（IO 下放 runner） | P2/克制 | S |
 | CC-14 | Esc 二次退出 / 部分取消 | Esc 中断已对齐 CC；部分取消需 runtime | — | ⛔ 需研究 | — |
 
+## 实施状态（2026-08 落地记录）
+
+| # | 结论 | 说明 |
+|---|---|---|
+| CC-01 | ✅ 已落地 | `permissionTone()`：full-access 红 / workspace-write 蓝 / read-only 暗灰，投影与 fold 回退两条路径都分色（`pi-tui-app.ts`） |
+| CC-02 | ✅ 已落地 | 审批弹窗命令块：runner 按 callId 回查文档工具调用（`approvalContext`），bash/pwsh 展示 command 原文、write/edit 附带「将修改：路径」，300 字符封顶（`decision-card.ts`/`control/approvals.ts`/`index.ts`） |
+| CC-03 | ✅ 已落地 | `subsequenceScore` 子序列打分 + 前缀 +4 优先（`pi-tui-app.ts#matchingCommands`） |
+| CC-04 | ⛔ 克制不做 | pi 支持 `shift+tab` 键名，但 Tab/Shift+Tab 已是焦点环的正/反向循环（F4 契约），绑定会破坏反向聚焦；模式切换由 Ctrl+P/`/permission` 覆盖 |
+| CC-05 | ⛔ 克制不做 | harness 审批策略是配置层 policy（`ask|never`），answerer 层没有逐工具「always/never」写缝隙；Ctrl+P 预设切换即终端等价 |
+| CC-06 | ✅ 已落地（静态版） | `assistantFooter()`：流式 + 空正文 + 有 thinking 时挂 `⏺ ● ○ ○` 静态脉冲（正文出现即摘除），复用 busy Loader 的重绘节奏，零新增定时器 |
+| CC-07 | ✅ 已落地（fold 路径） | footer 10 段彩条分段：cache 命中段 info 色、新 surface 段压力色（`footer.ts`，数据来自 `AssistantEntry.usage` 求和）；token-meter 全量 breakdown 仍待上游 |
+| CC-08 | ⛔ 克制不做 | turn 分隔线稀释「无重框」原则且与消息时钟冗余 |
+| CC-09 | ✅ 已落地 | 会话切换成功后 `toast(已恢复会话 …)`（`index.ts#onSessionPicked`） |
+| CC-10 | ✅ 已落地 | 运行中 job 行 4 帧 `▐▓░` 呼吸条（`panels.ts`，随 500ms ticker 重绘推进） |
+| CC-11 | ✅ 已落地（hunk 头） | diff 卡每个文件块前加 `@@ -1,N +1,M @@` 行号头（`dsh-tools.ts`）；✻ 语义错位（单栏无侧栏，`✎` chips 已等价）不做 |
+| CC-12 | ⛔ 克制不做 | dsh 无定价表，硬编码价格会漂移误导 |
+| CC-13 | ⛔ 克制不做 | git 读取需 runner 动工 + 实时性存疑，价值中等，延后 |
+| CC-14 | ⛔ 克制不做 | 部分取消是 dsh agent 循环内部语义，TUI 无分离取消缝隙；二次 Esc 与 Ctrl+C/`/quit` 重叠易误触 |
+| F2（追加） | ✅ 已落地 | 离开底部时状态行挂 `↓ 回到底部 (End)` 提示：applyStatusLines 抽取 + handleViewportInput hook（pi 先注册并 consume 视口键）+ 输入监听 + 500ms ticker（不受 DSH_TUI_ANIM=0 冻结） |
+
 > 已覆盖、无需再做的 CC 细节（见 §2 逐条「已覆盖」标注）：Esc 中断、Enter 排队 + Alt+Enter steer +
 > Alt+Up 取回、消息队列计数、thinking 分级着色 + 全局开关 + 逐块展开、工具卡状态点 + 展开/折叠 + raw input、
 > todo ✓/▶/○ 面板、plan ◐ 徽标 + Ctrl+E、jobs ⟳/✓/✗ 实时耗时、diff 词级增删着色、产物文件 ✎ chips（OSC 8 可点）、

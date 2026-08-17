@@ -64,4 +64,21 @@ describe('capability panel', () => {
     expect(lines.some(line => line.includes('◆ todo'))).toBe(true)
     expect(lines.some(line => line.includes('◆ workflow'))).toBe(true)
   })
+
+  it('pulses a sprite on running job rows (CC-10)', () => {
+    const panel = new CapabilityPanel()
+    panel.set(undefined, undefined, [
+      { id: 'j1', label: 'subagent sweep', status: 'running', startedAt: Date.now() - 5000 },
+      { id: 'j2', label: 'done job', status: 'completed', startedAt: 1, finishedAt: 2 },
+    ])
+    panel.setJobsExpanded(true) // >1 job 默认收敛成一行，展开才渲染逐行
+    const lines = panel.render(100).map(stripAnsi)
+    const runningRow = lines.find(line => line.includes('subagent sweep'))
+    expect(runningRow).toBeDefined()
+    // 呼吸条由 ▐▓░ 四帧组成，任何一帧都含 ▐/▓/░ 字符。
+    expect(runningRow).toMatch(/[▐▓░]{4}/)
+    const doneRow = lines.find(line => line.includes('done job'))
+    expect(doneRow).toContain('✓')
+    expect(doneRow).not.toMatch(/[▐▓░]{4}/)
+  })
 })

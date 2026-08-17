@@ -28,6 +28,16 @@ function jobDuration(job: JobRow): string {
   return ms < 1000 ? `${ms}ms` : formatDuration(ms)
 }
 
+/**
+ * 运行中 job 的呼吸条（CC-10，Claude Code 精灵的终端等价）：无总量概念的
+ * 长期任务没有真进度，四帧脉冲只表达「还活着」。帧随 500ms ticker 的重绘
+ * 前进，零新增定时器。
+ */
+const JOB_SPRITE_FRAMES = ['▐▓░░', '░▐▓░', '░░▐▓', '▓░░▐'] as const
+function jobSprite(): string {
+  return JOB_SPRITE_FRAMES[Math.floor(Date.now() / 500) % JOB_SPRITE_FRAMES.length] ?? ''
+}
+
 export class CapabilityPanel implements Component {
   private goal: GoalEntry | undefined
   private todo: TodoEntry | undefined
@@ -96,9 +106,11 @@ export class CapabilityPanel implements Component {
       const runningPart = running > 0 ? ` · ${fg('accent')(`${running} ⟳`)}` : ''
       lines.push(truncateToWidth(`${fg('accent')(`◆ jobs ×${this.jobs.length}`)}${runningPart} · ${fg('dim')('Ctrl+O 展开')}`, width))
     } else if (this.jobs.length > 0) {
+      const sprite = jobSprite()
       for (const job of this.jobs) {
-        const mark = job.status === 'running' || job.status === 'stopping'
-          ? fg('accent')('⟳')
+        const running = job.status === 'running' || job.status === 'stopping'
+        const mark = running
+          ? `${fg('accent')(sprite)} ⟳`
           : job.status === 'failed' ? fg('error')('✗') : fg('muted')('✓')
         const duration = jobDuration(job)
         lines.push(truncateToWidth(
