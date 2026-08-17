@@ -14,7 +14,7 @@ Terminal client for DeepSeek Harness (`dsh`): an out-of-tree profile bundle.
 pnpm typecheck   # 严格类型检查（含 tests）
 pnpm test        # vitest 单测（245 项）
 pnpm build       # tsc 构建到 lib/（profile 的加载入口）
-python3 scripts/e2e-pty.py              # 6 场景 PTY E2E（依赖本地 harness checkout + mock server）
+python3 scripts/e2e-pty.py              # 8 场景 PTY E2E（依赖本地 harness checkout + mock server）
 python3 scripts/e2e-pty.py --only-questions
 ```
 

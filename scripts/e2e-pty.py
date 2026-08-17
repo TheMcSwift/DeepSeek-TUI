@@ -11,7 +11,7 @@ char-by-char like a real keyboard, and asserts:
   4. the session is persisted (jsonl exists and contains the exchange),
   5. `--resume <id>` replays the history into the first render.
 
-Usage: python3 scripts/e2e-pty.py [--no-resume]
+Usage: python3 scripts/e2e-pty.py [--no-resume] [--only-core|--only-approval|--only-questions|--only-surface|--only-trajectory]
 """
 
 import json
@@ -19,6 +19,7 @@ import os
 import pty
 import re
 import select
+import shutil
 import signal
 import subprocess
 import sys
@@ -26,8 +27,15 @@ import threading
 import time
 from pathlib import Path
 
+# 路径推导：脚本位于 <repo>/scripts/e2e-pty.py，工作区即仓库根，harness 默认
+# 取仓库同级的 deepseek-harness checkout（本地与 CI 双 checkout 布局一致），
+# 可用 DSH_HARNESS env 覆盖；pnpm 从 PATH 解析（macOS brew 前缀不必写死）。
+WORKSPACE = str(Path(__file__).resolve().parent.parent)
+HARNESS = os.environ.get("DSH_HARNESS", str(Path(WORKSPACE).parent / "deepseek-harness"))
+# harness 有 devEngines.packageManager 版本锁：优先用本机已知可用的固定前缀
+# （macOS brew），再回退 PATH——任意版本 pnpm 会被 devEngines 拒绝。
+PNPM = shutil.which("/opt/homebrew/bin/pnpm") or shutil.which("pnpm") or "/opt/homebrew/bin/pnpm"
 DSH_HOME = Path(os.environ.get("DSH_HOME", str(Path.home() / ".dsh")))
-WORKSPACE = "/Users/mcswift/private/DeepSeek-TUI"
 MOCK_BASE = "http://127.0.0.1:8765/v1"
 MOCK_KEY = "mock-key"
 
@@ -51,8 +59,8 @@ class TuiProcess:
         if self.pid == 0:
             os.chdir(WORKSPACE)
             os.execvpe(
-                "/opt/homebrew/bin/pnpm",
-                ["pnpm", "--dir", "/Users/mcswift/private/deepseek-harness", "dsh", "--profile", "tui", *args],
+                PNPM,
+                ["pnpm", "--dir", HARNESS, "dsh", "--profile", "tui", *args],
                 env,
             )
         self.out = b""
@@ -211,7 +219,6 @@ def session_texts(events: list[dict]) -> tuple[str, str]:
     return user, assistant
 
 
-HARNESS = "/Users/mcswift/private/deepseek-harness"
 FIXTURES = Path(__file__).parent / "fixtures"
 HOOKS_CONFIG = "/tmp/dsh-tui-e2e-hooks.json"
 PATCH_OVERLAY = str(FIXTURES / "e2e-approval-patch.yml")
@@ -260,7 +267,7 @@ def ensure_core_home() -> None:
         return
     env = {**os.environ, "DSH_HOME": CORE_HOME}
     subprocess.run(
-        ["/opt/homebrew/bin/pnpm", "--dir", HARNESS, "dsh", "plugin", "--profile", "tui", "add", f"link:{WORKSPACE}"],
+        [PNPM, "--dir", HARNESS, "dsh", "plugin", "--profile", "tui", "add", f"link:{WORKSPACE}"],
         check=True, capture_output=True, env=env,
     )
 
@@ -274,11 +281,11 @@ def ensure_e2e_home() -> None:
         return
     env = {**os.environ, "DSH_HOME": E2E_HOME}
     subprocess.run(
-        ["/opt/homebrew/bin/pnpm", "--dir", HARNESS, "dsh", "plugin", "--profile", "tui", "add", f"link:{WORKSPACE}"],
+        [PNPM, "--dir", HARNESS, "dsh", "plugin", "--profile", "tui", "add", f"link:{WORKSPACE}"],
         check=True, capture_output=True, env=env,
     )
     subprocess.run(
-        ["/opt/homebrew/bin/pnpm", "--dir", HARNESS, "dsh", "plugin", "--profile", "tui",
+        [PNPM, "--dir", HARNESS, "dsh", "plugin", "--profile", "tui",
          "add", f"link:{HARNESS}/packages/hooks/hooks-claude-code"],
         check=True, capture_output=True, env=env,
     )
@@ -432,6 +439,82 @@ def scenario_interactions() -> None:
         tui.kill()
         mock.terminate()
 
+def scenario_surface() -> None:
+    """K1/K2/K3 surface controls: /hotkeys panel, Ctrl+P permission picker, /config."""
+    def dump_failure(step: str) -> None:
+        print(f"[e2e-surface] FAILED at {step}, last output:")
+        print(plain(tui.out.decode("utf-8", "replace"))[-4000:])
+    ensure_e2e_home()
+    mock = start_mock(8765, "success")
+    tui = TuiProcess([], env_extra={"DSH_HOME": E2E_HOME})
+    try:
+        if not tui.wait_for("dsh tui", 30):
+            print("[e2e-surface] BANNER TIMEOUT, last output:")
+            print(plain(tui.out.decode("utf-8", "replace"))[-3000:])
+            raise AssertionError("surface: banner did not render")
+        # /hotkeys：分组快捷键面板（别名路径解析为 __help）。
+        tui.type("/hotkeys\r")
+        if not tui.wait_for("快捷键", 30):
+            dump_failure("hotkeys")
+            raise AssertionError("hotkeys panel did not open")
+        tui.type("\x1b")
+        time.sleep(0.5)
+        # Ctrl+P：权限预设 picker（单投影时直接枚举，多投影先选投影）。
+        tui.type("\x10")
+        if not tui.wait_for("权限", 30):
+            dump_failure("permission picker")
+            raise AssertionError("permission picker did not open")
+        tui.type("\x1b")
+        time.sleep(0.5)
+        # /config：配置面板（供应商列表入口）。
+        tui.type("/config\r")
+        if not tui.wait_for("供应商列表", 30):
+            dump_failure("config")
+            raise AssertionError("config panel did not open")
+        tui.type("\x1b")
+        time.sleep(0.5)
+        tui.type("/quit\r")
+        assert tui.wait_exit(30) == 0, "surface quit failed"
+        print("[e2e] surface: /hotkeys, Ctrl+P permission picker, /config all opened")
+    finally:
+        tui.kill()
+        mock.terminate()
+
+def scenario_trajectory() -> None:
+    """B11/H31: Ctrl+L and /trajectory open the raw event log window."""
+    def dump_failure(step: str) -> None:
+        print(f"[e2e-trajectory] FAILED at {step}, last output:")
+        print(plain(tui.out.decode("utf-8", "replace"))[-4000:])
+    ensure_e2e_home()
+    mock = start_mock(8765, "success")
+    tui = TuiProcess([], env_extra={"DSH_HOME": E2E_HOME})
+    try:
+        assert tui.wait_for("dsh tui", 30), "trajectory: banner did not render"
+        tui.type("trace me\r")
+        assert tui.wait_for("mock response recovered", 60), "trajectory: reply missing"
+        time.sleep(1)
+        tui.type("\x0c")  # Ctrl+L
+        if not tui.wait_for("轨迹", 30):
+            dump_failure("ctrl+l")
+            raise AssertionError("trajectory panel did not open")
+        screen = plain(tui.out.decode("utf-8", "replace"))
+        assert "条事件" in screen, "trajectory event count missing"
+        assert "user/message" in screen, "trajectory user event row missing"
+        tui.type("\x1b")
+        time.sleep(0.5)
+        tui.type("/trajectory\r")
+        if not tui.wait_for("轨迹", 30):
+            dump_failure("/trajectory")
+            raise AssertionError("/trajectory did not open the view")
+        tui.type("\x1b")
+        time.sleep(0.5)
+        tui.type("/quit\r")
+        assert tui.wait_exit(30) == 0, "trajectory quit failed"
+        print("[e2e] trajectory: Ctrl+L and /trajectory opened the raw event log")
+    finally:
+        tui.kill()
+        mock.terminate()
+
 def main() -> int:
     check_resume = "--no-resume" not in sys.argv
     marker = f"e2e-ping-{int(time.time())}"
@@ -474,6 +557,14 @@ def main() -> int:
 
     if "--only-questions" in sys.argv:
         scenario_questions()
+        return 0
+
+    if "--only-surface" in sys.argv:
+        scenario_surface()
+        return 0
+
+    if "--only-trajectory" in sys.argv:
+        scenario_trajectory()
         return 0
 
     # 1. fresh session, one turn, quit (isolated home: the user's live
@@ -549,6 +640,12 @@ def main() -> int:
 
     # 6. interactive features (search/fork/rate/palette)
     scenario_interactions()
+
+    # 7. surface controls (/hotkeys, Ctrl+P, /config)
+    scenario_surface()
+
+    # 8. trajectory view (Ctrl+L + /trajectory)
+    scenario_trajectory()
 
     print("[e2e] ALL PASSED")
     return 0
