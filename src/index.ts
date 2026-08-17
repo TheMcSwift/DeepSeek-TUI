@@ -35,7 +35,7 @@ import { installApprovals } from './control/approvals.ts'
 import { emptyDocument, transcriptText } from './document/document.ts'
 import { resolveLanguage, setStrings, strings } from './view/strings.ts'
 import { fold, replay } from './projection/fold.ts'
-import type { ViewDocument } from './document/document.ts'
+import type { ViewDocument, ViewEntry, ToolEntry } from './document/document.ts'
 
 /** One persisted reply rating (TUI-owned sidecar; the web keeps its own store). */
 interface FeedbackRecord {
@@ -129,6 +129,45 @@ function relTime(at: number): string {
   if (delta < 7 * day) return `${Math.floor(delta / day)} 天前`
   const date = new Date(at)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/** 在文档流（含工具卡的递归子调用树）里按 callId 定位工具调用。 */
+function findToolCall(entries: readonly ViewEntry[], callId: string): ToolEntry | undefined {
+  for (const entry of entries) {
+    if (entry.kind === 'tool') {
+      if (entry.callId === callId) return entry
+      const child = entry.children !== undefined ? findToolCall(entry.children, callId) : undefined
+      if (child !== undefined) return child
+    }
+  }
+  return undefined
+}
+
+/** 文档工具调用 → 审批弹窗富化数据（CC-02）。 */
+function approvalContext(entry: ToolEntry | undefined): { commandText?: string; impactLines?: string[] } {
+  if (entry === undefined) return {}
+  let args: Record<string, unknown> = {}
+  try {
+    const parsed: unknown = JSON.parse(entry.arguments)
+    if (parsed !== null && typeof parsed === 'object') args = parsed as Record<string, unknown>
+  } catch {
+    // 非 JSON 参数按原文展示。
+  }
+  const clip = (text: string): string => (text.length > 300 ? `${text.slice(0, 300)}…` : text)
+  // Shell 工具：正文就是命令本身，直接展示（Claude Code 权限弹窗的核心）。
+  if (entry.name === 'bash' || entry.name === 'pwsh' || entry.name === 'shell') {
+    const command = typeof args.command === 'string' ? args.command : typeof args.cmd === 'string' ? args.cmd : ''
+    return command === '' ? { commandText: clip(entry.arguments) } : { commandText: clip(command) }
+  }
+  // 写类工具：影响文件行给出目标路径；其余按参数原文展示。
+  if (entry.name === 'write' || entry.name === 'edit' || entry.name === 'str_replace_editor') {
+    const path = typeof args.file_path === 'string' ? args.file_path : undefined
+    return {
+      commandText: clip(entry.arguments),
+      ...path === undefined ? {} : { impactLines: [strings().permissionImpact(path)] },
+    }
+  }
+  return { commandText: clip(entry.arguments) }
 }
 
 /** Flush the session and reveal its durable jsonl artifact path (T1⑦). */
@@ -1348,7 +1387,14 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   })
   if (config.browse === true) handlers.onSessionPickerRequest?.()
   // Interactive answerer seams for tool permissions and agent questions.
-  installApprovals(ctx, { present: question => app.askDialog(question) }, () => currentSessionId)
+  // CC-02: 富化器把正在审批的工具调用（命令原文/影响文件）带进弹窗。
+  installApprovals(
+    ctx,
+    { present: question => app.askDialog(question) },
+    () => currentSessionId,
+    120_000,
+    { lookupToolCall: callId => approvalContext(findToolCall(doc.entries, callId)) },
+  )
 
   // Background jobs (subagent one-shots) surface as live rows (T1⑥).
   const jobs = ctx.get('jobs')

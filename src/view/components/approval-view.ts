@@ -96,6 +96,13 @@ export interface ApprovalQuestion {
   skipLabel?: string
   /** Footer entry label that returns to the previous question. */
   backLabel?: string
+  /**
+   * 权限审批的命令块（CC-02）：要执行的命令/工具参数原文，高亮渲染在
+   * reason 与选项之间——Claude Code 权限弹窗的核心信息面。
+   */
+  commandText?: string
+  /** 影响文件行（write/edit 的目标路径等）。 */
+  impactLines?: string[]
 }
 
 export interface ApprovalAnswer {
@@ -171,6 +178,8 @@ export function presentApprovalDialog(
         progressLabel,
         question.header,
         footerEntries,
+        question.commandText,
+        question.impactLines,
       )
       // cc-style: the card hugs the left margin above the composer.
       handle = tui.showOverlay(card, {

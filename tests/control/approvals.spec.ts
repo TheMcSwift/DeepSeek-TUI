@@ -81,6 +81,25 @@ describe('approval seams', () => {
     await ctx.fiber.dispose()
   })
 
+  it('enriches the permission dialog with the command and impact lines (CC-02)', async () => {
+    const ctx = new Context()
+    const presenter = makePresenter()
+    installApprovals(ctx, presenter, () => 'agent-1', 120_000, {
+      lookupToolCall: (callId) => callId === 'call-1'
+        ? { commandText: 'rm -rf /tmp/x', impactLines: ['将修改：/tmp/x'] }
+        : undefined,
+    })
+    const outcomePromise = (ctx.waterfall as (...args: unknown[]) => Promise<string>)(
+      Object.create(null), 'approval/request', { ...request('agent-1'), callId: 'call-1' }, async () => 'unavailable' as const,
+    )
+    await Promise.resolve()
+    expect(presenter.asked[0].commandText).toBe('rm -rf /tmp/x')
+    expect(presenter.asked[0].impactLines).toEqual(['将修改：/tmp/x'])
+    presenter.answer(0)
+    expect(await outcomePromise).toBe('allowed-once')
+    await ctx.fiber.dispose()
+  })
+
   it('registers the userQuestions provider when the service is mounted', async () => {
     const ctx = new Context()
     const presenter = makePresenter()

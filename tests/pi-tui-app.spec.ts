@@ -10,6 +10,7 @@ import { TuiAltScreen, setCapabilities } from '@earendil-works/pi-tui'
 import type { Terminal } from '@earendil-works/pi-tui'
 import { PiTuiApp, piTuiInternals } from '../src/app/pi-tui-app.ts'
 import type { PiTuiAppOptions } from '../src/app/pi-tui-app.ts'
+import { fg } from '../src/app/pi/color.ts'
 import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -1228,6 +1229,15 @@ describe('pi-tui surface', () => {
     expect(test.terminal.plain()).toContain('❯')
   })
 
+  it('matches slash queries by subsequence, tolerating skipped letters (CC-03)', async () => {
+    const test = mount()
+    await settle()
+    // "mdl" 不是任何连续子串（旧前缀/子串匹配会空结果），子序列命中 /model。
+    test.terminal.feed('/mdl')
+    await settle()
+    expect(test.terminal.plain()).toContain('/model')
+  })
+
   it('does not open the palette for a slash typed mid-text', async () => {
     const test = mount()
     await settle()
@@ -1351,6 +1361,39 @@ describe('pi-tui surface', () => {
     expect(plain).toContain('workspace-write')
     expect(plain).toContain('goal')
     expect(plain).toContain('Goal A')
+  })
+
+  it('colors the permission chip by risk level (CC-01)', async () => {
+    const test = mount()
+    await settle()
+    test.app.setProjections([
+      {
+        key: 'permissions', currentValue: 'danger-full-access',
+        options: [
+          { value: 'workspace-write', name: 'workspace-write' },
+          { value: 'danger-full-access', name: 'danger-full-access' },
+          { value: 'read-only', name: 'read-only' },
+        ],
+      },
+    ])
+    test.app.render(doc([]))
+    await settle()
+    const raw = test.terminal.output
+    // full-access 红、workspace-write 蓝、read-only 暗灰：值与色码相邻成串。
+    expect(raw).toContain(fg('error')('danger-full-access'))
+    test.app.setProjections([{ key: 'permissions', currentValue: 'workspace-write', options: [] }])
+    test.app.render(doc([]))
+    await settle()
+    expect(test.terminal.output).toContain(fg('info')('workspace-write'))
+    test.app.setProjections([{ key: 'permissions', currentValue: 'read-only', options: [] }])
+    test.app.render(doc([]))
+    await settle()
+    expect(test.terminal.output).toContain(fg('dim')('read-only'))
+    // 无投影注册时回退 fold 的 permissionPreset，同样分色。
+    test.app.setProjections([])
+    test.app.render({ entries: [], busy: false, permissionPreset: 'read-only' })
+    await settle()
+    expect(test.terminal.output).toContain(fg('dim')('read-only'))
   })
 
   it('renders error notices from failed turns', async () => {

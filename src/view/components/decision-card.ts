@@ -39,6 +39,8 @@ export class DecisionCard implements Component {
     private readonly progressLabel: string | undefined,
     private readonly header: string | undefined,
     private readonly footerEntries: string[],
+    private readonly commandText: string | undefined = undefined,
+    private readonly impactLines: string[] | undefined = undefined,
   ) {}
 
   /** Number of selectable rows (options + footer entries). */
@@ -63,6 +65,23 @@ export class DecisionCard implements Component {
     }
     if (this.detailLines.length > 10) {
       lines.push(`${frame('│')} ${fg('dim')(`… 其余 ${this.detailLines.length - 10} 行已省略`)}${frame('│')}`)
+    }
+    // CC-02: the exact command being approved, highlighted between the reason
+    // and the options (Claude Code shows the shell body in the permission
+    // prompt); impact lines warn which files the call will touch.
+    if (this.commandText !== undefined && this.commandText !== '') {
+      lines.push(`${frame('│')}${' '.repeat(inner)}${frame('│')}`)
+      lines.push(`${frame('│')} ${fg('muted')(padLine(strings().permissionCommand, inner - 1))}${frame('│')}`)
+      const commandLines = this.commandText.split('\n').slice(0, 6)
+      for (const commandLine of commandLines) {
+        lines.push(`${frame('│')} ${fg('toolTitle')(padLine(commandLine, inner - 1))}${frame('│')}`)
+      }
+      if (this.commandText.split('\n').length > 6) {
+        lines.push(`${frame('│')} ${fg('dim')(padLine(`… 其余 ${this.commandText.split('\n').length - 6} 行已省略`, inner - 1))}${frame('│')}`)
+      }
+    }
+    for (const impact of this.impactLines ?? []) {
+      lines.push(`${frame('│')} ${fg('warning')(padLine(impact, inner - 1))}${frame('│')}`)
     }
     lines.push(`${frame('│')}${' '.repeat(inner)}${frame('│')}`)
 

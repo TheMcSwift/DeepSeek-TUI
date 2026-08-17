@@ -44,6 +44,14 @@ interface ApprovalRequestLike {
 }
 
 /**
+ * 审批问题富化（CC-02）：按 callId 回查文档里的工具调用，取回要执行的
+ * 命令原文与影响文件行。由 runner 提供（文档只存在于 runner 的 fold 状态里）。
+ */
+export interface ApprovalEnricher {
+  lookupToolCall(callId: string): { commandText?: string; impactLines?: string[] } | undefined
+}
+
+/**
  * Install both interactive answerer seams for the runner's agent.
  * @returns a disposer removing both registrations.
  */
@@ -52,6 +60,7 @@ export function installApprovals(
   presenter: ApprovalPresenter,
   currentAgentId: () => string,
   timeoutMs = 120_000,
+  enricher?: ApprovalEnricher,
 ): () => void {
   // Tool-permission waterfall: let earlier answerers (hooks, policies) decide;
   // only when nobody claimed the request (fail-closed 'unavailable') do we ask
@@ -64,11 +73,15 @@ export function installApprovals(
     if (req.agent.id !== currentAgentId()) return next()
     const earlier = await next()
     if (earlier !== 'unavailable') return earlier
+    // CC-02: 把正在审批的命令原文/影响文件带进弹窗，用户按实际内容决策。
+    const toolCall = req.callId !== undefined ? enricher?.lookupToolCall(req.callId) : undefined
     const answer = await presenter.present({
       title: `Approve tool call: ${req.toolName}?`,
       detail: req.reason,
       options: ['Allow once', 'Reject'],
       icon: '⚠',
+      commandText: toolCall?.commandText,
+      impactLines: toolCall?.impactLines,
     })
     if (req.signal?.aborted) return 'cancelled'
     if (answer.reason === 'picked' && answer.picked === 'Allow once') return 'allowed-once'

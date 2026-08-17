@@ -107,6 +107,9 @@ export interface Strings {
   editorUnset: string
   // 插件 session 投影（K3）
   projectionUnwritable: (key: string) => string
+  // 审批卡命令块（CC-02，Claude Code 权限弹窗语义）
+  permissionCommand: string
+  permissionImpact: (path: string) => string
   language: string
   chooseLanguage: string
   brandTagline: string
@@ -260,6 +263,9 @@ const zh: Strings = {
   providerSaveFailed: (message: string): string => `供应商保存失败：${message}`,
   editorUnset: '$EDITOR 未设置，无法打开编辑器',
   projectionUnwritable: (key: string): string => `投影 ${key} 没有对应的写命令（插件需注册同名命令）`,
+  // 审批卡命令块（CC-02，Claude Code 权限弹窗语义）
+  permissionCommand: '命令',
+  permissionImpact: (path: string): string => `将修改：${path}`,
 
   // TUI-native (no web equivalent; bilingual for consistency)
   language: '语言',
@@ -415,6 +421,9 @@ const en: Strings = {
   providerSaveFailed: (message: string): string => `Provider save failed: ${message}`,
   editorUnset: '$EDITOR is not set, cannot open an editor',
   projectionUnwritable: (key: string): string => `Projection ${key} has no writable command (plugins register a command with the same name)`,
+  // Approval-card command block (CC-02, Claude Code permission-dialog parity)
+  permissionCommand: 'Command',
+  permissionImpact: (path: string): string => `Files affected: ${path}`,
 
   // TUI-native
   language: 'Language',
