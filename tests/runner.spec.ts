@@ -397,12 +397,15 @@ describe('tui runner', () => {
     await test.ctx.fiber.dispose()
   })
 
-  it('opens the command palette with registered commands plus the native export', async () => {
+  it('opens the command palette with registered commands plus the native extras', async () => {
     const test = await bench({}, {}, (ctx) => {
       ctx.provide('commands', {
         list: () => [
           { name: 'goal', description: 'Set the session goal', input: { hint: '<objective>' } },
           { name: 'compact', description: 'Compact the transcript' },
+          // The plugin's free-text /permission is replaced by the TUI's
+          // enum-aware native row, so it never reaches the catalog.
+          { name: 'permission', description: 'Switch the permission preset', input: { hint: '<preset>' } },
         ],
         execute: async () => ({ commandId: 'c1', result: { kind: 'success' as const } }),
       } as never)
@@ -410,8 +413,16 @@ describe('tui runner', () => {
     await test.started
     test.app.handlers?.onCommandPickerRequest?.()
     await settle()
-    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__lang', '__rename', '__queue'])
+    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue'])
     expect(test.app.commands?.find(item => item.value === 'goal')?.label).toBe('/goal <objective>')
+    expect(test.app.commands?.find(item => item.value === '__model')?.label).toBe('/model <provider/model>')
+    expect(test.app.commands?.find(item => item.value === '__permission')?.label).toBe('/permission <preset>')
+    // K1: synonymous invocations register as aliases, not duplicate rows.
+    expect(test.app.commands?.find(item => item.value === '__quit')?.aliases).toEqual(['exit'])
+    expect(test.app.commands?.find(item => item.value === '__new')?.aliases).toEqual(['clear'])
+    expect(test.app.commands?.find(item => item.value === '__help')?.aliases).toEqual(['?'])
+    expect(test.app.commands?.find(item => item.value === '__model')?.aliases).toEqual(['m'])
+    expect(test.app.commands?.find(item => item.value === '__permission')?.aliases).toEqual(['perm'])
     await test.ctx.fiber.dispose()
   })
 
@@ -729,15 +740,14 @@ describe('tui runner', () => {
     await test.ctx.fiber.dispose()
   })
 
-  it('shows the /hotkeys help dialog', async () => {
+  it('shows the /hotkeys reference panel', async () => {
     const test = await bench({}, {}, (ctx) => {
       ctx.provide('commands', { list: () => [], execute: async () => ({ commandId: 'c1', result: { kind: 'success' as const } }) } as never)
     })
     await test.started
     test.app.handlers?.onCommandPicked('__help')
     await settle()
-    expect(test.app.questions.map(question => question.title)).toEqual(['快捷键'])
-    expect(test.app.questions[0].detail).toContain('Ctrl+F 搜索')
+    expect(test.app.hotkeysShown).toBe(1)
     await test.ctx.fiber.dispose()
   })
 
@@ -900,6 +910,337 @@ describe('tui runner', () => {
     test.app.handlers?.onSessionPicked('session-old')
     await settle(150)
     expect(test.resumed[0].agentOptions).toEqual({ provider: 'pi-ai', model: 'deepseek-v4' })
+    await test.ctx.fiber.dispose()
+  })
+
+  it('opens the model enum picker from a bare /model slash command', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('llm', {
+        listProviders: () => [{ id: 'pi-ai', name: 'Pi AI' }],
+        listModels: async () => [{ provider: 'pi-ai', id: 'deepseek-v4', name: 'DeepSeek V4' }],
+      })
+    })
+    await test.started
+    test.app.handlers?.onCommandPicked('__model', '')
+    await settle()
+    expect(test.app.models?.map(item => item.value)).toEqual(['pi-ai/deepseek-v4'])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('switches the model directly from /model provider/model', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('llm', {
+        listProviders: () => [{ id: 'pi-ai', name: 'Pi AI' }],
+        listModels: async () => [{ provider: 'pi-ai', id: 'deepseek-v4', name: 'DeepSeek V4' }],
+      })
+    })
+    await test.started
+    test.app.handlers?.onCommandPicked('__model', 'pi-ai/deepseek-v4')
+    await settle()
+    // The footer identity tracks the switch immediately (T10①).
+    expect(test.app.meta?.model).toBe('pi-ai/deepseek-v4')
+    expect(test.app.toasts.some(toast => toast.text.includes('pi-ai/deepseek-v4'))).toBe(true)
+    // The next session boots with the switched model.
+    test.app.handlers?.onSessionPicked('session-old')
+    await settle(150)
+    expect(test.resumed[0].agentOptions).toEqual({ provider: 'pi-ai', model: 'deepseek-v4' })
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects an unknown /model argument with an error notice', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('llm', {
+        listProviders: () => [{ id: 'pi-ai', name: 'Pi AI' }],
+        listModels: async () => [{ provider: 'pi-ai', id: 'deepseek-v4', name: 'DeepSeek V4' }],
+      })
+    })
+    await test.started
+    test.app.handlers?.onCommandPicked('__model', 'no-such/model')
+    await settle()
+    const last = test.app.last
+    expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('未知模型'))).toBe(true)
+    expect(test.app.meta?.model).toBe('test-provider/test-model')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('opens the permission enum picker from a bare /permission slash command', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('permissionPresets', {
+        names: ['workspace-write', 'danger-full-access'],
+        optionOf: (name: string) => ({ value: name, name }),
+        current: () => 'workspace-write',
+        set: () => {},
+      } as never)
+    })
+    await test.started
+    test.app.handlers?.onCommandPicked('__permission', '')
+    await settle()
+    expect(test.app.permissions?.map(item => item.value)).toEqual(['workspace-write', 'danger-full-access'])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('switches the permission preset directly from /permission <preset>', async () => {
+    const set: string[] = []
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('permissionPresets', {
+        names: ['workspace-write', 'danger-full-access'],
+        optionOf: (name: string) => ({ value: name, name }),
+        current: () => 'workspace-write',
+        set: (_session: Session, name: string) => { set.push(name) },
+      } as never)
+    })
+    await test.started
+    test.app.handlers?.onCommandPicked('__permission', 'workspace-write')
+    await settle()
+    expect(set).toEqual(['workspace-write'])
+    expect(test.app.toasts.some(toast => toast.text.includes('workspace-write'))).toBe(true)
+    // Direct switching to Full access keeps the web confirmation.
+    test.app.handlers?.onCommandPicked('__permission', 'danger-full-access')
+    await settle()
+    expect(test.app.questions[0].title).toBe('确认启用 Full access？')
+    expect(set).toEqual(['workspace-write', 'danger-full-access'])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects an unknown /permission argument with an error notice', async () => {
+    const set: string[] = []
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('permissionPresets', {
+        names: ['workspace-write'],
+        optionOf: (name: string) => ({ value: name, name }),
+        current: () => 'workspace-write',
+        set: (_session: Session, name: string) => { set.push(name) },
+      } as never)
+    })
+    await test.started
+    test.app.handlers?.onCommandPicked('__permission', 'nope')
+    await settle()
+    const last = test.app.last
+    expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('未知权限预设'))).toBe(true)
+    expect(set).toEqual([])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('opens the /config menu and lists configurable providers (K2)', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('settings', {
+        documentPath: '/home/u/.dsh/settings.yaml',
+        get: (ns: string) => ({ 'llm-pi-ai': { providers: { 'pi-ai': { displayName: 'Pi AI' } } } }[ns]),
+        update: async () => {},
+      } as never)
+      ctx.provide('llm', {
+        listProviders: () => [],
+        listModels: async () => [],
+        listConfigurableProviders: () => [
+          { provider: 'pi-ai', displayName: 'Pi AI', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'pi-ai'], declared: false },
+          { provider: 'my-gw', displayName: 'My GW', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'my-gw'], declared: true },
+        ],
+      })
+    })
+    await test.started
+    test.app.handlers?.onCommandPicked('__config')
+    await settle()
+    expect(test.app.questions[0].title).toBe('配置')
+    expect(test.app.questions[0].options).toEqual(['供应商列表', '添加供应商', '预览配置文件', '在编辑器中打开', '复制配置文件路径'])
+    // 供应商列表 → 目录行进入通用 picker，resolved profile 在描述里。
+    test.app.dialogQueue.push('供应商列表')
+    test.app.handlers?.onCommandPicked('__config')
+    await settle()
+    expect(test.app.queueRows.at(-1)?.map(row => row.label)).toEqual(['Pi AI', 'My GW'])
+    expect(test.app.queueRows.at(-1)?.[0].description).toContain('{"displayName":"Pi AI"}')
+    expect(test.app.queueRows.at(-1)?.[1].description).toContain('自定义路由')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('adds a provider through the /config wizard via the settings seam (K2)', async () => {
+    const patches: Array<[string, Record<string, unknown>]> = []
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('settings', {
+        documentPath: '/home/u/.dsh/settings.yaml',
+        update: async (ns: string, patch: Record<string, unknown>) => { patches.push([ns, patch]) },
+      } as never)
+      ctx.provide('llm', {
+        listProviders: () => [],
+        listModels: async () => [],
+        listConfigurableProviders: () => [
+          { provider: 'pi-ai', displayName: 'Pi AI', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'pi-ai'], declared: false },
+        ],
+      })
+    })
+    await test.started
+    // 菜单 → 添加供应商 → 自定义路由 → 字段（显示名/baseURL/协议/密钥环境变量）。
+    test.app.dialogQueue.push('添加供应商', '自定义新路由', 'my-gw', 'My Gateway', 'https://gw.example.com/v1', 'anthropic-messages', 'MY_KEY')
+    test.app.handlers?.onCommandPicked('__config')
+    await settle()
+    const routeQuestion = test.app.questions.find(question => question.title === '添加供应商')
+    expect(routeQuestion?.options).toEqual(['pi-ai · Pi AI', '自定义新路由'])
+    expect(patches).toEqual([['llm-pi-ai', {
+      providers: { 'my-gw': {
+        displayName: 'My Gateway', baseURL: 'https://gw.example.com/v1', api: 'anthropic-messages', apiKeyEnv: 'MY_KEY',
+      } },
+    }]])
+    expect(test.app.toasts.some(toast => toast.text.includes('my-gw'))).toBe(true)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('opens the settings file in an editor and copies its path (K2)', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('settings', { documentPath: '/home/u/.dsh/settings.yaml', update: async () => {} } as never)
+    })
+    await test.started
+    test.app.dialogQueue.push('在编辑器中打开')
+    test.app.handlers?.onCommandPicked('__config')
+    await settle()
+    expect(test.app.editors).toEqual(['/home/u/.dsh/settings.yaml'])
+    test.app.dialogQueue.push('复制配置文件路径')
+    test.app.handlers?.onCommandPicked('__config')
+    await settle()
+    expect(test.app.copied).toEqual(['/home/u/.dsh/settings.yaml'])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('degrades /config to a path-only surface without the settings service', async () => {
+    const test = await bench({}, {}, undefined)
+    await test.started
+    test.app.dialogQueue.push('添加供应商')
+    test.app.handlers?.onCommandPicked('__config')
+    await settle()
+    expect(test.app.toasts.some(toast => toast.text.includes('settings 服务不可用'))).toBe(true)
+    test.app.dialogQueue.push('预览配置文件')
+    test.app.handlers?.onCommandPicked('__config')
+    await settle()
+    // 无 settings 服务时路径回退到 DSH_HOME/settings.yaml 并被如实展示。
+    expect(test.app.questions.at(-1)?.title).toContain('settings.yaml')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('renders select-shaped plugin projections and picks them via Ctrl+P (K3)', async () => {
+    const set: string[] = []
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('permissionPresets', {
+        names: ['workspace-write', 'danger-full-access'],
+        optionOf: (name: string) => ({ value: name, name }),
+        current: () => 'workspace-write',
+        set: (_session: Session, name: string) => { set.push(name) },
+      } as never)
+      ctx.provide('sessionProjections', {
+        snapshot: () => ({
+          asOfSeq: 0,
+          values: {
+            permissions: {
+              options: [
+                { value: 'workspace-write', name: 'workspace-write', description: 'write in the workspace' },
+                { value: 'danger-full-access', name: 'danger-full-access' },
+              ],
+              currentValue: 'workspace-write',
+            },
+          },
+        }),
+        onChanged: () => () => {},
+      } as never)
+    })
+    await test.started
+    // boot 后投影行已推给视图。
+    expect(test.app.projectionRows.at(-1)).toEqual([{
+      key: 'permissions', currentValue: 'workspace-write',
+      options: [
+        { value: 'workspace-write', name: 'workspace-write', description: 'write in the workspace' },
+        { value: 'danger-full-access', name: 'danger-full-access' },
+      ],
+    }])
+    // Ctrl+P 走通用枚举 picker：permissions 投影复用权限 picker（含确认）。
+    test.app.handlers?.onPermissionPickerRequest?.()
+    await settle()
+    expect(test.app.permissions?.map(item => item.label)).toEqual(['workspace-write', 'danger-full-access'])
+    expect(test.app.permissions?.[0].current).toBe(true)
+    test.app.handlers?.onPermissionPicked('danger-full-access')
+    await settle()
+    expect(set).toEqual(['danger-full-access'])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('writes generic projection picks through the same-named command (K3)', async () => {
+    const executed: string[] = []
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('sessionProjections', {
+        snapshot: () => ({
+          asOfSeq: 0,
+          values: {
+            goal: { options: [{ value: 'a', name: 'Goal A' }, { value: 'b', name: 'Goal B' }], currentValue: 'a' },
+          },
+        }),
+        onChanged: () => () => {},
+      } as never)
+      ctx.provide('commands', {
+        list: () => [{ name: 'goal', description: 'Set the goal', input: { hint: '<objective>' } }],
+        execute: async (_agent: Agent, line: string) => {
+          executed.push(line)
+          return { commandId: 'c', result: { kind: 'success' as const, text: 'goal set' } }
+        },
+      } as never)
+    })
+    await test.started
+    test.app.handlers?.onPermissionPickerRequest?.()
+    await settle()
+    expect(test.app.queueTitles.at(-1)).toBe('goal')
+    expect(test.app.queueRows.at(-1)?.map(row => row.label)).toEqual(['Goal A', 'Goal B'])
+    test.app.queuePicked?.('b')
+    await settle()
+    expect(executed).toEqual(['/goal b'])
+    expect(test.app.toasts.some(toast => toast.text === 'goal set')).toBe(true)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('chooses between several select projections first, then offers the enum (K3)', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('permissionPresets', {
+        names: ['workspace-write'],
+        optionOf: (name: string) => ({ value: name, name }),
+        current: () => 'workspace-write',
+        set: () => {},
+      } as never)
+      ctx.provide('sessionProjections', {
+        snapshot: () => ({
+          asOfSeq: 0,
+          values: {
+            permissions: { options: [{ value: 'workspace-write', name: 'workspace-write' }], currentValue: 'workspace-write' },
+            goal: { options: [{ value: 'a', name: 'Goal A' }], currentValue: 'a' },
+          },
+        }),
+        onChanged: () => () => {},
+      } as never)
+    })
+    await test.started
+    test.app.handlers?.onPermissionPickerRequest?.()
+    await settle()
+    // 第一级：选择投影。
+    expect(test.app.queueTitles.at(-1)).toBe('权限')
+    expect(test.app.queueRows.at(-1)?.map(row => row.label)).toEqual(['权限', 'goal'])
+    // 选 permissions → 第二级：该投影的枚举 picker。
+    test.app.queuePicked?.('permissions')
+    await settle()
+    expect(test.app.permissions?.map(item => item.value)).toEqual(['workspace-write'])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('reports a projection without a writable command (K3)', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('sessionProjections', {
+        snapshot: () => ({
+          asOfSeq: 0,
+          values: {
+            ghost: { options: [{ value: 'x', name: 'X' }, { value: 'y', name: 'Y' }], currentValue: 'x' },
+          },
+        }),
+        onChanged: () => () => {},
+      } as never)
+    })
+    await test.started
+    test.app.handlers?.onPermissionPickerRequest?.()
+    await settle()
+    test.app.queuePicked?.('y')
+    await settle()
+    expect(test.app.toasts.some(toast => toast.text.includes('没有对应的写命令'))).toBe(true)
     await test.ctx.fiber.dispose()
   })
 })

@@ -35,6 +35,8 @@ export interface CommandChoice {
   /** Display label: `/name <input hint>`. */
   label: string
   description?: string
+  /** Synonym names that resolve to this command (`exit` → `/quit`). */
+  aliases?: string[]
 }
 
 /** One row in the permission-preset picker. */
@@ -45,6 +47,16 @@ export interface PermissionChoice {
   description?: string
   /** Mark the row as the preset currently effective in this session. */
   current?: boolean
+}
+
+/** A plugin session projection in the interactive select shape (K3). */
+export interface ProjectionRow {
+  /** The projection key (e.g. `permissions`). */
+  key: string
+  /** The currently effective value. */
+  currentValue: string
+  /** Every switchable option. */
+  options: Array<{ value: string; name: string; description?: string }>
 }
 
 /** Static identity shown in the surface header. */
@@ -126,10 +138,14 @@ export interface TerminalApp {
   showModelPicker(items: readonly ModelChoice[]): void
   /** Open the permission-preset picker overlay. */
   showPermissionPicker(items: readonly PermissionChoice[]): void
+  /** Push the live plugin session projections (K3: idle chips + Ctrl+P). */
+  setProjections(rows: readonly ProjectionRow[]): void
   /** Open the slash-command palette overlay (T1①). */
   showCommandPicker(items: readonly CommandChoice[]): void
   /** Push the command catalog the inline slash menu filters (cc/pi style). */
   setCommands(items: readonly CommandChoice[]): void
+  /** Open the sectioned /hotkeys reference panel (G38 re-layout). */
+  showHotkeys(): void
   /** Ask the human one question through an overlay dialog. */
   askDialog(question: ApprovalQuestion): Promise<ApprovalAnswer>
   /** Show the pending message queue length while a turn runs (T1⑤). */
@@ -144,8 +160,12 @@ export interface TerminalApp {
   setWorkspace(path: string): void
   /** Open the fork-point picker overlay (T2①). */
   showForkPicker(items: readonly SessionChoice[]): void
-  /** Open a generic single-column picker (queue dock, E1). */
-  showQueuePicker(rows: readonly import('../view/components/filterable-picker.ts').PickerRow[], onPicked: (value: string | null) => void): void
+  /** Open a generic single-column picker (queue dock E1, projections K3). */
+  showQueuePicker(rows: readonly import('../view/components/filterable-picker.ts').PickerRow[], onPicked: (value: string | null) => void, title?: string): void
   /** Transient action feedback in the status slot (P2; deferred until idle). */
   toast(text: string, tone?: 'info' | 'error' | 'success'): void
+  /** Suspend the alt screen and open `path` in $EDITOR, then resume (K2). */
+  openExternalEditor(path: string): Promise<void>
+  /** Copy plain text to the host clipboard via OSC 52 (best effort, K2). */
+  copyText(text: string): void
 }

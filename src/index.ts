@@ -143,7 +143,7 @@ async function exportSessionLog(ctx: Context, sessions: SessionStore, session: S
     entries: [...doc.entries, { kind: 'notice' as const, id: `notice:export:${session.id}`, text, tone: 'info' as const }],
   }
 }
-import type { SurfaceMeta, TerminalApp, TerminalAppHandlers } from './app/terminal-app.ts'
+import type { SurfaceMeta, TerminalApp, TerminalAppHandlers, ModelChoice, ProjectionRow } from './app/terminal-app.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui-runner'
@@ -310,6 +310,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       }, ...doc.entries] }
     }
     app.render(doc)
+    // K3: 投影快照跟随会话切换刷新（boot/fork/swap 之后调用）。
+    refreshProjections()
   }
 
   // Subscribe before the first turn can commit: every event of the active
@@ -393,6 +395,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   // turn end (the web's Enter-as-Queue semantics, T1⑤).
   const queue: string[] = []
   const MAX_QUEUE = 10
+  /** 插件 session 投影的交互行（K3），由 refreshProjections 维护。 */
+  let projections: ProjectionRow[] = []
 
   /**
    * Fork the current session at `seq` (T2①) and swap the surface to the child.
@@ -441,29 +445,42 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       text: `${label}（种子 ${cut} 个事件）`, tone: 'info' as const,
     }] }
     app.render(doc)
+    refreshProjections()
   }
 
   /** The full command catalog: registered commands plus TUI-native specials. */
   const commandCatalog = (agent: Agent): Array<{ value: string; label: string; description?: string }> => {
     const commands = ctx.get('commands')
-    const items = (commands === undefined ? [] : commands.list(agent)).map(descriptor => ({
-      value: descriptor.name,
-      label: `/${descriptor.name}${descriptor.input === undefined ? '' : ` ${descriptor.input.hint}`}`,
-      description: descriptor.description,
-    }))
-    const push = (value: string, label: string, description: string): void => {
-      if (!items.some(item => item.value === value)) items.push({ value, label, description })
+    // The plugin's /permission takes free text only; the TUI replaces it with
+    // an enum-aware native row (`__permission`: picker when bare, direct
+    // switch when an inline preset name rides the slash line), so the raw
+    // descriptor leaves the catalog to avoid a duplicate menu row.
+    const items = (commands === undefined ? [] : commands.list(agent))
+      .filter(descriptor => descriptor.name !== 'permission')
+      .map(descriptor => ({
+        value: descriptor.name,
+        label: `/${descriptor.name}${descriptor.input === undefined ? '' : ` ${descriptor.input.hint}`}`,
+        description: descriptor.description,
+      }))
+    const push = (value: string, label: string, description: string, aliases?: string[]): void => {
+      if (!items.some(item => item.value === value)) {
+        items.push({ value, label, description, ...aliases === undefined ? {} : { aliases } })
+      }
     }
     // The web's /export rides a browser-only download plugin; the TUI ships
-    // native equivalents for the browser-specific commands.
+    // native equivalents for the browser-specific commands. Aliases make
+    // synonymous invocations resolve to the same command (K1).
     push('__export', '/export · 导出会话日志', 'flush 并显示会话 jsonl 路径')
     push('__rate', '/rate · 评价最近回复', '👍/👎 最近一条助手回复（可选备注）')
-    push('__new', '/new · 新会话', '原地开启新会话')
-    push('__quit', '/quit · 退出 TUI', 'flush 会话并退出')
-    push('__help', '/hotkeys · 快捷键', '全部快捷键一览')
+    push('__new', '/new · 新会话', '原地开启新会话', ['clear'])
+    push('__quit', '/quit · 退出 TUI', 'flush 会话并退出', ['exit'])
+    push('__help', '/hotkeys · 快捷键', '全部快捷键一览', ['?'])
     push('__clone', '/clone · 复制当前会话', '以最后完成的轮次为种子开新会话')
     push('__effort', '/effort · 推理强度', '单独选择当前模型的 reasoning effort')
-    push('__lang', '/lang · 语言', '切换界面语言 zh/en')
+    push('__model', '/model <provider/model>', '切换模型：枚举选择，或直接指定 provider/model', ['m'])
+    push('__permission', '/permission <preset>', '切换权限预设：枚举选择，或直接指定预设名', ['perm'])
+    push('__config', '/config · 配置', '配置文件与供应商管理（查看/编辑/添加）')
+    push('__lang', '/lang · 语言', '切换界面语言 zh/en', ['language'])
     push('__rename', '/rename · 重命名会话', '固定会话标题（替代自动生成）')
     push('__queue', '/queue · 查看队列', '列出排队消息：取回或删除（E1）')
     return items
@@ -484,6 +501,365 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     const rows = await Promise.resolve(skills.list()).catch(() => [])
     if (Array.isArray(rows)) items.push(...skillCommands(rows as never))
     return items
+  }
+
+  /** Apply a `provider/model` pick: live ref + footer identity + persistence. */
+  const applyModelPick = (value: string): boolean => {
+    let next: ModelSelection
+    try {
+      next = resolveSelection(value, selection)
+    } catch {
+      return false
+    }
+    // Model and reasoning effort are chosen independently: a model switch
+    // keeps the current effort; `/effort` switches it separately (T7).
+    const current = modelRef.current ?? selection
+    if (current.reasoningEffort !== undefined) next = { ...next, reasoningEffort: current.reasoningEffort }
+    modelRef.current = next
+    meta.model = `${next.provider}/${next.model}`
+    void defaultModel.saveSelection(next).catch(() => {})
+    // Refresh the footer's context-window fact for the new model (best effort).
+    void ctx.get('llm')?.resolveModelInfo?.(next.provider, next.model).then((info) => {
+      meta.contextWindow = info?.context?.contextWindow
+      app.render(doc)
+    }).catch(() => {})
+    app.render(doc)
+    return true
+  }
+
+  /** Gather every provider's models as picker rows (`provider/model` keys). */
+  const listModelChoices = async (): Promise<ModelChoice[]> => {
+    const llm = ctx.get('llm')
+    if (llm === undefined) return []
+    const groups = await Promise.all(llm.listProviders().map(async (provider) => {
+      const models = await llm.listModels(provider.id).catch(() => [])
+      return models.map(model => ({
+        value: `${model.provider}/${model.id}`,
+        label: model.name || model.id,
+        description: provider.name,
+      }))
+    }))
+    return groups.flat()
+  }
+
+  /** Apply one preset pick: Full access asks first (web copy); others switch. */
+  const switchPreset = async (value: string): Promise<void> => {
+    if (handle === undefined) return
+    const presets = ctx.get('permissionPresets')
+    if (presets === undefined) return
+    const agent = handle.agent
+    const apply = (): void => {
+      presets.set(agent.session, value)
+      app.toast(strings().presetSwitched(value), 'success')
+      app.render(doc)
+    }
+    if (value.includes('full-access') && presets.current(agent.session.events) !== value) {
+      const answer = await app.askDialog({
+        title: strings().fullAccessConfirmTitle,
+        detail: strings().fullAccessConfirmDescription,
+        options: [strings().fullAccessAcknowledge, strings().cancel],
+        icon: '⚠',
+      })
+      if (answer.reason === 'picked' && answer.picked === strings().fullAccessAcknowledge) apply()
+      return
+    }
+    apply()
+  }
+
+  // ---- /config：web ui-settings 的终端对应（K2）。out-of-tree 约束下通过
+  // 结构化读取 settings / llm 目录服务，与 web 配置页同源同写入路径。
+
+  /** 结构读取 settings 服务（out-of-tree 无 dsh-settings 依赖）。 */
+  interface SettingsSeam {
+    readonly writable?: boolean
+    readonly documentPath?: string
+    prepareDocument?: () => Promise<string | undefined>
+    get?: (ns: string) => unknown
+    update?: (ns: string, patch: Record<string, unknown>) => Promise<unknown>
+  }
+
+  /** llm 可配置供应商目录条目（web 设置页同源）。 */
+  interface ConfigurableProviderEntry {
+    provider: string
+    displayName: string
+    settingsNs: string
+    settingsPath: string[]
+    declared: boolean
+  }
+
+  /** llm 服务的目录读面。 */
+  interface LlmDirectorySeam {
+    listConfigurableProviders?: () => ConfigurableProviderEntry[]
+  }
+
+  const settingsSeam = (): SettingsSeam | undefined =>
+    (ctx as { get: (key: string) => unknown }).get('settings') as SettingsSeam | undefined
+
+  const llmDirectory = (): ConfigurableProviderEntry[] =>
+    (ctx.get('llm') as LlmDirectorySeam | undefined)?.listConfigurableProviders?.() ?? []
+
+  /** settings.yaml 的绝对路径：documentPath → prepareDocument → 默认位置。 */
+  const settingsFilePath = async (): Promise<string> => {
+    const settings = settingsSeam()
+    if (settings?.documentPath !== undefined) return settings.documentPath
+    if (settings?.prepareDocument !== undefined) {
+      const prepared = await settings.prepareDocument().catch(() => undefined)
+      if (prepared !== undefined) return prepared
+    }
+    return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'settings.yaml')
+  }
+
+  /** 按 settingsPath 段从命名空间解析值里取出供应商 profile。 */
+  const resolvedProfile = (entry: ConfigurableProviderEntry): unknown => {
+    const settings = settingsSeam()
+    const section = settings?.get?.(entry.settingsNs)
+    let current: unknown = section
+    for (const segment of entry.settingsPath) {
+      if (typeof current !== 'object' || current === null) return undefined
+      current = (current as Record<string, unknown>)[segment]
+    }
+    return current
+  }
+
+  /** /config 主菜单：列表 / 添加 / 预览 / 编辑 / 复制路径。 */
+  const configMenu = async (): Promise<void> => {
+    const answer = await app.askDialog({
+      title: strings().configTitle,
+      options: [
+        strings().configProviders,
+        strings().configAddProvider,
+        strings().configPreview,
+        strings().configOpenEditor,
+        strings().configCopyPath,
+      ],
+    })
+    if (answer.reason !== 'picked' || answer.picked === undefined) return
+    const path = await settingsFilePath()
+
+    if (answer.picked === strings().configProviders) {
+      const directory = llmDirectory()
+      if (directory.length === 0) {
+        void app.askDialog({ title: strings().configProvidersTitle, detail: strings().configUnavailable, options: [strings().ok] }).then(() => {})
+        return
+      }
+      const rows = directory.map((entry) => {
+        const profile = resolvedProfile(entry) as Record<string, unknown> | undefined
+        const overrides = profile === undefined ? '' : ` · ${JSON.stringify(profile)}`
+        return {
+          value: entry.provider,
+          label: entry.displayName,
+          description: `${entry.settingsNs}${entry.declared ? ' · 自定义路由' : ' · 内置目录'}${overrides}`,
+        }
+      })
+      app.showQueuePicker(rows, (value) => {
+        if (value === null) return
+        const entry = directory.find(item => item.provider === value)
+        if (entry === undefined) return
+        const profile = resolvedProfile(entry)
+        void app.askDialog({
+          title: entry.displayName,
+          detail: `${strings().configPath(path)}\n${JSON.stringify(profile, null, 2)}`,
+          options: [strings().ok],
+        }).then(() => {})
+      }, strings().configProvidersTitle)
+      return
+    }
+
+    if (answer.picked === strings().configAddProvider) {
+      await addProviderWizard(path)
+      return
+    }
+
+    if (answer.picked === strings().configPreview) {
+      let preview = strings().configUnavailable
+      try {
+        const text = readFileSync(path, 'utf8')
+        preview = text.split('\n').slice(0, 12).join('\n')
+        if (text.split('\n').length > 12) preview += `\n…`
+      } catch {
+        preview = `文件不存在：${path}`
+      }
+      void app.askDialog({ title: strings().configPath(path), detail: preview, options: [strings().ok] }).then(() => {})
+      return
+    }
+
+    if (answer.picked === strings().configOpenEditor) {
+      await app.openExternalEditor(path)
+      return
+    }
+
+    // configCopyPath
+    app.copyText(path)
+  }
+
+  /** 交互式添加供应商：路由 → 字段 → 经 settings.update 写入并热生效。 */
+  const addProviderWizard = async (path: string): Promise<void> => {
+    const settings = settingsSeam()
+    if (settings?.update === undefined) {
+      app.toast(strings().configUnavailable, 'error')
+      return
+    }
+    const directory = llmDirectory()
+    // 第一步：路由（目录路由枚举 + 自定义新路由的自由文本）。
+    const routeAnswer = await app.askDialog({
+      title: strings().addProviderTitle,
+      detail: strings().configPath(path),
+      options: [...directory.map(entry => `${entry.provider} · ${entry.displayName}`), strings().addProviderRouteCustom],
+    })
+    if (routeAnswer.reason !== 'picked' || routeAnswer.picked === undefined) return
+    let route: string
+    let namespace = 'llm-pi-ai'
+    if (routeAnswer.picked === strings().addProviderRouteCustom) {
+      const typed = await app.askDialog({ title: strings().addProviderRoutePrompt, options: [] })
+      if (typed.reason !== 'picked' || typed.picked === undefined || typed.picked.trim() === '') return
+      route = typed.picked.trim()
+    } else {
+      const provider = routeAnswer.picked.split(' · ')[0]
+      const entry = directory.find(item => item.provider === provider)
+      if (provider === undefined || provider === '') return
+      route = provider
+      namespace = entry?.settingsNs ?? namespace
+    }
+    // 第二步：字段（displayName/baseURL/api/apiKeyEnv，全部可选）。
+    const profile: Record<string, unknown> = {}
+    const displayName = await app.askDialog({ title: strings().addProviderNamePrompt, options: [] })
+    if (displayName.reason === 'picked' && displayName.picked !== undefined && displayName.picked.trim() !== '') {
+      profile.displayName = displayName.picked.trim()
+    }
+    const baseURL = await app.askDialog({ title: strings().addProviderBaseUrlPrompt, options: [] })
+    if (baseURL.reason === 'picked' && baseURL.picked !== undefined && baseURL.picked.trim() !== '') {
+      profile.baseURL = baseURL.picked.trim()
+    }
+    const protocol = await app.askDialog({
+      title: strings().addProviderProtocolPrompt,
+      options: ['openai-completions', 'openai-responses', 'anthropic-messages', strings().cancel],
+    })
+    if (protocol.reason === 'picked' && protocol.picked !== undefined && protocol.picked !== strings().cancel) {
+      profile.api = protocol.picked
+    }
+    const keyEnv = await app.askDialog({ title: strings().addProviderKeyEnvPrompt, options: [] })
+    if (keyEnv.reason === 'picked' && keyEnv.picked !== undefined && keyEnv.picked.trim() !== '') {
+      profile.apiKeyEnv = keyEnv.picked.trim()
+    }
+    try {
+      await settings.update(namespace, { providers: { [route]: profile } })
+      app.toast(strings().providerSaved(route), 'success')
+    } catch (error: unknown) {
+      app.toast(strings().providerSaveFailed(error instanceof Error ? error.message : String(error)), 'error')
+    }
+  }
+
+  // ---- 插件 session 投影（K3）：sessionProjections 注册表的结构化读取。
+  // 凡符合 select 形态（options/currentValue）的投影自动成为可交互行：
+  // 空闲状态行渲染为 chips，Ctrl+P 打开枚举 picker；写路径优先走同名
+  // 注册命令（permissions 由权限预设服务特例处理，保留 full-access 确认）。
+
+  /** sessionProjections 注册表的读面（out-of-tree 无 dsh-session-projection 依赖）。 */
+  interface ProjectionsSeam {
+    onChanged?: (listener: (session: Session, key: string, value: unknown, seq: number) => void) => (() => void)
+    snapshot?: (session: Session) => { asOfSeq: number; values: Record<string, unknown> }
+  }
+
+  /** 投影值的 select 形态（options 数组 + currentValue）。 */
+  interface ProjectionSelectSeam {
+    options: Array<{ value: string; name: string; description?: string }>
+    currentValue: string
+  }
+
+  const projectionsSeam = (ctx as { get: (key: string) => unknown }).get('sessionProjections') as ProjectionsSeam | undefined
+
+  const isSelectProjection = (value: unknown): value is ProjectionSelectSeam => {
+    if (typeof value !== 'object' || value === null) return false
+    const candidate = value as Record<string, unknown>
+    return Array.isArray(candidate.options)
+      && candidate.options.every(option => typeof option === 'object' && option !== null
+        && typeof (option as Record<string, unknown>).value === 'string'
+        && typeof (option as Record<string, unknown>).name === 'string')
+      && typeof candidate.currentValue === 'string'
+  }
+
+  /** 从当前会话的投影快照刷新 select 形态的交互行。 */
+  const refreshProjections = (): void => {
+    const agent = handle?.agent
+    if (projectionsSeam?.snapshot === undefined || agent === undefined) return
+    const snapshot = projectionsSeam.snapshot(agent.session)
+    const rows: ProjectionRow[] = []
+    for (const [key, value] of Object.entries(snapshot.values)) {
+      if (!isSelectProjection(value)) continue
+      rows.push({
+        key,
+        currentValue: value.currentValue,
+        options: value.options.map(option => ({
+          value: option.value,
+          name: option.name,
+          ...option.description === undefined ? {} : { description: option.description },
+        })),
+      })
+    }
+    projections = rows
+    app.setProjections(rows)
+  }
+
+  /** 多个 select 投影时先选投影（Ctrl+P 的第一级选择）。 */
+  const pickProjection = (rows: readonly ProjectionRow[]): Promise<ProjectionRow | null> =>
+    new Promise((resolve) => {
+      app.showQueuePicker(rows.map(row => ({
+        value: row.key,
+        label: row.key === 'permissions' ? strings().permission : row.key,
+        description: row.options.find(option => option.value === row.currentValue)?.name,
+      })), (value) => {
+        resolve(value === null ? null : rows.find(row => row.key === value) ?? null)
+      }, strings().permission)
+    })
+
+  /** 通用投影枚举 picker + 写路径（同名命令 / permissions 特例）。 */
+  const openProjectionPicker = async (rows: readonly ProjectionRow[]): Promise<void> => {
+    const agent = handle?.agent
+    if (agent === undefined) return
+    const row = rows.length === 1 ? rows[0] : await pickProjection(rows)
+    if (row === undefined || row === null) return
+    // permissions 投影直接复用权限预设 picker（含 full-access 确认）。
+    if (row.key === 'permissions') {
+      if (!quitting) {
+        app.showPermissionPicker(row.options.map(option => ({
+          value: option.value,
+          label: option.name,
+          description: option.description,
+          current: option.value === row.currentValue,
+        })))
+      }
+      return
+    }
+    const picked = await new Promise<string | null>((resolve) => {
+      app.showQueuePicker(row.options.map(option => ({
+        value: option.value,
+        label: option.name,
+        description: option.description,
+        current: option.value === row.currentValue,
+      })), (value) => { resolve(value) }, row.key)
+    })
+    if (picked === null || picked === row.currentValue) return
+    const commands = ctx.get('commands')
+    const descriptor = commands?.list(agent).find(item => item.name === row.key)
+    if (commands === undefined || descriptor === undefined) {
+      app.toast(strings().projectionUnwritable(row.key), 'error')
+      return
+    }
+    void commands.execute(agent, `/${row.key} ${picked}`, new AbortController().signal).then((execution) => {
+      const result = execution?.result
+      const text = result === undefined || result.text === undefined || result.text === ''
+        ? `/${row.key} ${picked} 已执行`
+        : result.text
+      if (result?.kind === 'error') {
+        doc = { ...doc, entries: [...doc.entries, {
+          kind: 'notice' as const, id: `notice:cmd:${cmdSeq++}`,
+          text, tone: 'error' as const,
+        }] }
+      } else {
+        app.toast(text, 'success')
+      }
+      app.render(doc)
+    }).catch((error: unknown) => { fail(exit, error) })
   }
 
   const handlers: TerminalAppHandlers = {
@@ -521,9 +897,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       if (value === null) return
       // Model and reasoning effort are chosen independently: picking a model
       // keeps the current effort; `/effort` switches it separately (T7).
-      const next: ModelSelection = resolveSelection(value, selection)
-      modelRef.current = next
-      void defaultModel.saveSelection(next).catch(() => {})
+      applyModelPick(value)
     },
     onSessionPickerRequest: (): void => {
       const query = ctx.get('sessionQuery')
@@ -626,6 +1000,56 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         })().catch((error: unknown) => { fail(exit, error) })
         return
       }
+      if (name === '__model') {
+        // `/model` bare opens the enum picker; `/model provider/model`
+        // switches directly (validated against the live model listing).
+        const args = rawInput?.trim() ?? ''
+        if (args === '') {
+          handlers.onModelPickerRequest?.()
+          return
+        }
+        void (async () => {
+          const choices = await listModelChoices()
+          const match = choices.find(item => item.value === args)
+          if (match === undefined) {
+            doc = { ...doc, entries: [...doc.entries, {
+              kind: 'notice' as const, id: `notice:cmd:${cmdSeq++}`,
+              text: strings().unknownModel(args), tone: 'error' as const,
+            }] }
+            app.render(doc)
+            return
+          }
+          if (applyModelPick(match.value)) {
+            app.toast(strings().modelSwitched(match.value), 'success')
+          }
+        })().catch((error: unknown) => { fail(exit, error) })
+        return
+      }
+      if (name === '__permission') {
+        // `/permission` bare opens the enum picker; `/permission <preset>`
+        // switches directly (full-access keeps the web confirmation).
+        const presets = ctx.get('permissionPresets')
+        if (presets === undefined || handle === undefined) return
+        const args = rawInput?.trim() ?? ''
+        if (args === '') {
+          handlers.onPermissionPickerRequest?.()
+          return
+        }
+        if (!presets.names.includes(args)) {
+          doc = { ...doc, entries: [...doc.entries, {
+            kind: 'notice' as const, id: `notice:cmd:${cmdSeq++}`,
+            text: strings().unknownPreset(args, presets.names.join(', ')), tone: 'error' as const,
+          }] }
+          app.render(doc)
+          return
+        }
+        void switchPreset(args).catch((error: unknown) => { fail(exit, error) })
+        return
+      }
+      if (name === '__config') {
+        void configMenu().catch((error: unknown) => { fail(exit, error) })
+        return
+      }
       if (name === '__clone') {
         if (handle === undefined) return
         const session = handle.agent.session
@@ -634,11 +1058,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         return
       }
       if (name === '__help') {
-        void app.askDialog({
-          title: strings().hotkeysTitle,
-          detail: strings().hotkeysDetail,
-          options: ['好'],
-        }).then(() => {})
+        app.showHotkeys()
         return
       }
       if (name === '__new') {
@@ -866,6 +1286,12 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       })().catch((error: unknown) => { fail(exit, error) })
     },
     onPermissionPickerRequest: (): void => {
+      // K3: 通用投影优先 —— select 形态的插件投影直接给出枚举 picker。
+      if (projections.length > 0) {
+        void openProjectionPicker(projections).catch((error: unknown) => { fail(exit, error) })
+        return
+      }
+      // 回退：无投影注册表时沿用 permission-presets 服务的直连路径。
       const presets = ctx.get('permissionPresets')
       if (presets === undefined || handle === undefined) return
       const current = presets.current(handle.agent.session.events)
@@ -876,38 +1302,12 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       if (!quitting) app.showPermissionPicker(items)
     },
     onPermissionPicked: (value: string | null): void => {
-      if (value === null || handle === undefined) return
-      const presets = ctx.get('permissionPresets')
-      if (presets === undefined) return
-      // The web confirms before enabling Full access; reuse its copy (T8).
-      if (value.includes('full-access') && presets.current(handle.agent.session.events) !== value) {
-        void (async () => {
-          const answer = await app.askDialog({
-            title: strings().fullAccessConfirmTitle,
-            detail: strings().fullAccessConfirmDescription,
-            options: [strings().fullAccessAcknowledge, strings().cancel],
-            icon: '⚠',
-          })
-          if (answer.reason === 'picked' && answer.picked === strings().fullAccessAcknowledge) {
-            presets.set(handle!.agent.session, value)
-          }
-        })().catch((error: unknown) => { fail(exit, error) })
-        return
-      }
-      presets.set(handle.agent.session, value)
+      if (value === null) return
+      void switchPreset(value).catch((error: unknown) => { fail(exit, error) })
     },
     onModelPickerRequest: (): void => {
-      const llm = ctx.get('llm')
-      if (llm === undefined) return
-      void Promise.all(llm.listProviders().map(async (provider) => {
-        const models = await llm.listModels(provider.id).catch(() => [])
-        return models.map(model => ({
-          value: `${model.provider}/${model.id}`,
-          label: model.name || model.id,
-          description: provider.name,
-        }))
-      })).then((groups) => {
-        if (!quitting) app.showModelPicker(groups.flat())
+      void listModelChoices().then((items) => {
+        if (!quitting) app.showModelPicker(items)
       }).catch((error: unknown) => {
         process.stderr.write(`dsh tui: model listing failed: ${error instanceof Error ? error.message : String(error)}\n`)
       })
@@ -940,6 +1340,11 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     if (handle !== undefined && !quitting) {
       void refreshSkillCatalog(handle.agent).then(items => { app.setCommands(items) }).catch(() => {})
     }
+  })
+  // K3: 投影变更订阅 —— 注册表在每次事件提交后推送新值，刷新交互行。
+  projectionsSeam?.onChanged?.((session) => {
+    if (session.id !== currentSessionId) return
+    refreshProjections()
   })
   if (config.browse === true) handlers.onSessionPickerRequest?.()
   // Interactive answerer seams for tool permissions and agent questions.

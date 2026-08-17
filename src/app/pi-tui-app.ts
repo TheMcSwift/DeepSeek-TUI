@@ -31,7 +31,7 @@ import { emptyDocument } from '../document/document.ts'
 import type { TurnOutcome, ViewDocument, ViewEntry } from '../document/document.ts'
 import { statsStrip } from '../projection/stats.ts'
 import { BrandView, shouldShowBrand, BRAND, ICE, gradientText } from '../view/brand.ts'
-import type { CommandChoice, ModelChoice, PermissionChoice, SessionChoice, SurfaceMeta, TerminalApp, TerminalAppHandlers } from './terminal-app.ts'
+import type { CommandChoice, ModelChoice, PermissionChoice, ProjectionRow, SessionChoice, SurfaceMeta, TerminalApp, TerminalAppHandlers } from './terminal-app.ts'
 import { FilterablePickerPanel } from '../view/components/filterable-picker.ts'
 import type { PickerRow } from '../view/components/filterable-picker.ts'
 import { synthesizeAssistantMessage, synthesizeToolResult } from '../projection/synthesis/pi-messages.ts'
@@ -56,6 +56,7 @@ import { CollapsibleMessage, maybeCollapse } from '../view/components/collapsibl
 import { FocusableFrame } from '../view/components/focus-frame.ts'
 import { SlashMenu } from '../view/components/slash-menu.ts'
 import type { SlashMenuItem } from '../view/components/slash-menu.ts'
+import { HotkeysPanel } from '../view/components/hotkeys-panel.ts'
 import type { OverlayHandle } from '@earendil-works/pi-tui'
 import { ApprovalEntryView, presentApprovalDialog } from '../view/components/approval-view.ts'
 import type { ApprovalAnswer, ApprovalQuestion } from '../view/components/approval-view.ts'
@@ -173,10 +174,11 @@ export const piTuiInternals: {
   // The hardware cursor follows the composer/input caret, so IME candidate
   // windows anchor at the caret instead of the start of the input block.
   // Mouse capture is ON by default: SGR mouse reporting enables in-TUI wheel
-  // scrolling, mouse selection and click-to-expand (thinking blocks, tool
-  // cards, notices, the slash menu). It suppresses the host terminal's
-  // native right-click menu and wheel behavior, so `DSH_TUI_MOUSE=0` opts
-  // back out; PageUp/PageDown/arrow scrolling always works.
+  // scrolling (slash-menu wheel routing included) and native mouse
+  // selection. Expansion toggles are keyboard-only (pi-style), so clicks are
+  // never intercepted. It suppresses the host terminal's native right-click
+  // menu and wheel behavior, so `DSH_TUI_MOUSE=0` opts back out;
+  // PageUp/PageDown/arrow scrolling always works.
   // (TuiMainScreen has no layout engine, so the alt-screen renderer
   // is the only mode this surface can use — see DESIGN.md §10.)
   createTui: (terminal: Terminal) =>
@@ -287,72 +289,6 @@ function frameOrSelf(view: Component, label: string): Component {
   return view instanceof CollapsibleMessage ? view : new FocusableFrame(view, label)
 }
 
-/**
- * Rendered row count for one mounted entry view (click hit-testing; the
- * document renders one line per row, and the bottom pad / scroll offset
- * translate screen coordinates).
- */
-export function clickableRows(view: Component, width: number): number {
-  if (view instanceof FocusableToolCard
-    || view instanceof FocusableRetryRow
-    || view instanceof CollapsibleMessage
-    || view instanceof ExpandableNoticeView) {
-    return view.render(width).length
-  }
-  if (view instanceof FocusableFrame) {
-    return view.inner.render(width).length
-  }
-  if (view instanceof AssistantMessageComponent) {
-    return view.render(width).length
-  }
-  return 0
-}
-
-/**
- * Handle a click on one row of an entry view: only the small toggle icons
- * react (the icon, not the whole message/card). Returns true when the
- * click was consumed.
- */
-export function clickEntryAt(view: Component, row: number, col: number): boolean {
-  // Message/thinking toggle icons ride the first row of the wrapped views.
-  if (view instanceof FocusableFrame) {
-    const inner = view.inner
-    if (inner instanceof AssistantMessageComponent) return clickThinkingToggle(inner, row, col)
-    return false
-  }
-  if (view instanceof AssistantMessageComponent) return clickThinkingToggle(view, row, col)
-  // The icon toggles the same state Enter toggles on the focused view.
-  if (view instanceof FocusableToolCard) {
-    if (!view.clickIcon(row, col)) return false
-    view.handleInput('\r')
-    return true
-  }
-  if (view instanceof CollapsibleMessage) {
-    if (!view.clickIcon(row, col)) return false
-    view.handleInput('\r')
-    return true
-  }
-  if (view instanceof FocusableRetryRow) {
-    if (!view.clickIcon(row, col)) return false
-    view.handleInput('\r')
-    return true
-  }
-  if (view instanceof ExpandableNoticeView) {
-    if (!view.clickIcon(row, col)) return false
-    view.handleInput('\r')
-    return true
-  }
-  return false
-}
-
-/** Click on a message's thinking toggle icon (▸/▾ at the row tail). */
-function clickThinkingToggle(message: AssistantMessageComponent, row: number, col: number): boolean {
-  if (!message.hasHiddenThinking() && !message.isThinkingExpanded()) return false
-  if (!message.clickIcon(row, col)) return false
-  message.toggleThinkingExpanded()
-  return true
-}
-
 /** Entries the document flow renders as components. */
 function isRenderedEntry(entry: ViewEntry): boolean {
   return entry.kind === 'user'
@@ -404,6 +340,8 @@ export class PiTuiApp implements TerminalApp {
   private hideThinking = false
   /** Messages queued upstream while a turn runs (T1⑤). */
   private queueCount = 0
+  /** Live plugin session projections (K3): idle chips + the Ctrl+P picker. */
+  private projections: readonly ProjectionRow[] = []
   /** The command catalog for the inline slash menu (cc/pi style). */
   private commandCatalog: readonly CommandChoice[] = []
   private slashMenu?: SlashMenu
@@ -495,10 +433,12 @@ export class PiTuiApp implements TerminalApp {
         const typed = match?.[1] ?? text.slice(1)
         const rawInput = match?.[2] ?? ''
         // Resolve the typed token against the catalog (labels like
-        // `/quit · 退出 TUI` map to the native `__quit` command).
+        // `/quit · 退出 TUI` map to the native `__quit` command, and
+        // registered aliases like `exit` resolve to their canonical name).
         const resolved = typed === ''
           ? null
           : this.commandCatalog.find(item => item.value === typed)?.value
+            ?? this.commandCatalog.find(item => item.aliases?.includes(typed))?.value
             ?? this.commandCatalog.find(item => item.label.slice(1).startsWith(`${typed} `))?.value
             ?? this.commandCatalog.find(item => item.label.slice(1).startsWith(typed))?.value
             ?? typed
@@ -537,116 +477,124 @@ export class PiTuiApp implements TerminalApp {
     ])
     if (isViewportTUI(tui)) tui.setLayoutRoot(layout)
 
-    this.removeInputListener = tui.addInputListener((data: string) => {
-      if (this.handleSlashMenuKey(data)) return { consume: true }
-      if (matchesKey(data, 'ctrl+c')) {
-        // Claude-Code-style: Esc interrupts the running turn. Ctrl+C only
-        // quits while idle (busy Ctrl+C is swallowed, not an interrupt).
-        if (!this.current.busy) handlers.onQuit()
-        return { consume: true }
-      }
-      if (matchesKey(data, 'ctrl+r')) {
-        this.handlers?.onSessionPickerRequest?.()
-        return { consume: true }
-      }
-      if (matchesKey(data, 'ctrl+g')) {
-        this.handlers?.onModelPickerRequest?.()
-        return { consume: true }
-      }
-      // Terminal sends 0x1F for Ctrl+/; pi's key table maps ctrl+/ to 0x0F
-      // (rawCtrlChar), so match the raw byte directly.
-      if (data === '\x1f' || matchesKey(data, 'ctrl+/')) {
-        this.handlers?.onCommandPickerRequest?.()
-        return { consume: true }
-      }
-      if (matchesKey(data, 'ctrl+e') && this.current.planMode === true) {
-        this.handlers?.onExitPlanModeRequest?.()
-        return { consume: true }
-      }
-      if (matchesKey(data, 'ctrl+w')) {
-        this.handlers?.onWorkspaceSwitchRequest?.()
-        return { consume: true }
-      }
-      if (data === '\x06' || matchesKey(data, 'ctrl+f')) {
-        void this.startSearch()
-        return { consume: true }
-      }
-      if (data === '\x02' || matchesKey(data, 'ctrl+b')) {
-        this.handlers?.onForkPickerRequest?.()
-        return { consume: true }
-      }
-      if (data === '\x19' || matchesKey(data, 'ctrl+y')) {
-        this.handlers?.onRateRequest?.()
-        return { consume: true }
-      }
-      if (data === '\x18' || matchesKey(data, 'ctrl+x')) {
-        this.copyLastReply()
-        return { consume: true }
-      }
-      if ((data === '\x1b\r' || matchesKey(data, 'alt+enter')) && !this.overlayOpen && this.focusIndex === -1) {
-        const text = this.editor?.getText() ?? ''
-        if (text.trim() !== '') {
-          this.editor?.setText('')
-          this.handlers?.onSteerRequest?.(text)
-        }
-        return { consume: true }
-      }
-      if ((data === '\x1b\x1b[A' || matchesKey(data, 'alt+up')) && !this.overlayOpen && this.focusIndex === -1) {
-        this.handlers?.onQueueRetrieveRequest?.()
-        return { consume: true }
-      }
-      // Ctrl+O toggles the collapsed job row (Ctrl+J's byte \x0a is a newline
-      // character the editor needs for multi-line paste, so it can't be a key).
-      if ((data === '\x0f' || matchesKey(data, 'ctrl+o')) && !this.overlayOpen) {
-        this.toggleJobsExpanded()
-        return { consume: true }
-      }
-      if (matchesKey(data, 'ctrl+k')) {
-        const visible = this.current.entries.filter(isRenderedEntry)
-        if (visible.length > FOLD_KEEP) {
-          this.viewFolded = !this.viewFolded
-          this.applyState(this.current)
-        }
-        return { consume: true }
-      }
-      if (matchesKey(data, 'ctrl+p')) {
-        this.handlers?.onPermissionPickerRequest?.()
-        return { consume: true }
-      }
-      if (matchesKey(data, 'ctrl+t')) {
-        this.hideThinking = !this.hideThinking
-        for (const view of this.entryViews.values()) {
-          const inner = view instanceof FocusableFrame ? view.inner : view
-          if (inner instanceof AssistantMessageComponent) inner.setHideThinkingBlock(this.hideThinking)
-        }
-        this.tui?.requestRender()
-        return { consume: true }
-      }
-      if (matchesKey(data, 'ctrl+d')) {
-        handlers.onQuit()
-        return { consume: true }
-      }
-      if (matchesKey(data, 'tab') && !this.overlayOpen && this.focusableItems.length > 0) {
-        this.cycleFocus()
-        return { consume: true }
-      }
-      if (matchesKey(data, 'escape') && !this.overlayOpen && this.focusIndex >= 0) {
-        this.setFocusIndex(-1)
-        return { consume: true }
-      }
-      if (matchesKey(data, 'escape') && !this.overlayOpen && this.current.busy) {
-        // Claude-Code-style interrupt: Esc cancels the running turn
-        // (Alt+Up still retrieves a queued message).
-        handlers.onInterrupt()
-        return { consume: true }
-      }
-      return undefined
-    })
+    this.attachInputListener(tui)
 
     tui.start()
     tui.setFocus(editor)
     this.applyState(this.current)
     tui.requestRender()
+  }
+
+  /** The app's global key handling (raw input no focused view consumed). */
+  private handleGlobalKey(data: string): { consume: boolean } | undefined {
+    if (this.handleSlashMenuKey(data)) return { consume: true }
+    if (matchesKey(data, 'ctrl+c')) {
+      // Claude-Code-style: Esc interrupts the running turn. Ctrl+C only
+      // quits while idle (busy Ctrl+C is swallowed, not an interrupt).
+      if (!this.current.busy) this.handlers?.onQuit()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'ctrl+r')) {
+      this.handlers?.onSessionPickerRequest?.()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'ctrl+g')) {
+      this.handlers?.onModelPickerRequest?.()
+      return { consume: true }
+    }
+    // Terminal sends 0x1F for Ctrl+/; pi's key table maps ctrl+/ to 0x0F
+    // (rawCtrlChar), so match the raw byte directly.
+    if (data === '\x1f' || matchesKey(data, 'ctrl+/')) {
+      this.handlers?.onCommandPickerRequest?.()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'ctrl+e') && this.current.planMode === true) {
+      this.handlers?.onExitPlanModeRequest?.()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'ctrl+w')) {
+      this.handlers?.onWorkspaceSwitchRequest?.()
+      return { consume: true }
+    }
+    if (data === '\x06' || matchesKey(data, 'ctrl+f')) {
+      void this.startSearch()
+      return { consume: true }
+    }
+    if (data === '\x02' || matchesKey(data, 'ctrl+b')) {
+      this.handlers?.onForkPickerRequest?.()
+      return { consume: true }
+    }
+    if (data === '\x19' || matchesKey(data, 'ctrl+y')) {
+      this.handlers?.onRateRequest?.()
+      return { consume: true }
+    }
+    if (data === '\x18' || matchesKey(data, 'ctrl+x')) {
+      this.copyLastReply()
+      return { consume: true }
+    }
+    if ((data === '\x1b\r' || matchesKey(data, 'alt+enter')) && !this.overlayOpen && this.focusIndex === -1) {
+      const text = this.editor?.getText() ?? ''
+      if (text.trim() !== '') {
+        this.editor?.setText('')
+        this.handlers?.onSteerRequest?.(text)
+      }
+      return { consume: true }
+    }
+    if ((data === '\x1b\x1b[A' || matchesKey(data, 'alt+up')) && !this.overlayOpen && this.focusIndex === -1) {
+      this.handlers?.onQueueRetrieveRequest?.()
+      return { consume: true }
+    }
+    // Ctrl+O toggles the collapsed job row (Ctrl+J's byte \x0a is a newline
+    // character the editor needs for multi-line paste, so it can't be a key).
+    if ((data === '\x0f' || matchesKey(data, 'ctrl+o')) && !this.overlayOpen) {
+      this.toggleJobsExpanded()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'ctrl+k')) {
+      const visible = this.current.entries.filter(isRenderedEntry)
+      if (visible.length > FOLD_KEEP) {
+        this.viewFolded = !this.viewFolded
+        this.applyState(this.current)
+      }
+      return { consume: true }
+    }
+    if (matchesKey(data, 'ctrl+p')) {
+      this.handlers?.onPermissionPickerRequest?.()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'ctrl+t')) {
+      this.hideThinking = !this.hideThinking
+      for (const view of this.entryViews.values()) {
+        const inner = view instanceof FocusableFrame ? view.inner : view
+        if (inner instanceof AssistantMessageComponent) inner.setHideThinkingBlock(this.hideThinking)
+      }
+      this.tui?.requestRender()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'ctrl+d')) {
+      this.handlers?.onQuit()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'tab') && !this.overlayOpen && this.focusableItems.length > 0) {
+      this.cycleFocus()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'escape') && !this.overlayOpen && this.focusIndex >= 0) {
+      this.setFocusIndex(-1)
+      return { consume: true }
+    }
+    if (matchesKey(data, 'escape') && !this.overlayOpen && this.current.busy) {
+      // Claude-Code-style interrupt: Esc cancels the running turn
+      // (Alt+Up still retrieves a queued message).
+      this.handlers?.onInterrupt()
+      return { consume: true }
+    }
+    return undefined
+  }
+
+  /** Register the global key listener (re-attached after an editor resume). */
+  private attachInputListener(tui: TUI): void {
+    this.removeInputListener = tui.addInputListener((data: string) => this.handleGlobalKey(data))
   }
 
   render(doc: ViewDocument): void {
@@ -759,6 +707,14 @@ export class PiTuiApp implements TerminalApp {
     if (this.slashMenuOpen) this.updateSlashMenu(this.editor?.getText() ?? '')
   }
 
+  /** Catalog rows matching the current slash query (name, alias, or label). */
+  private matchingCommands(query: string): CommandChoice[] {
+    return this.commandCatalog.filter(item =>
+      item.value.startsWith(query)
+      || (item.aliases?.some(alias => alias.startsWith(query)) ?? false)
+      || item.label.slice(1).toLowerCase().includes(query))
+  }
+
   /** Open/refresh the non-capturing slash menu above the composer. */
   private updateSlashMenu(text: string): void {
     const token = /^\/(\S*)$/.exec(text)
@@ -767,8 +723,7 @@ export class PiTuiApp implements TerminalApp {
       return
     }
     const query = token[1].toLowerCase()
-    const items: SlashMenuItem[] = this.commandCatalog
-      .filter(item => item.value.startsWith(query) || item.label.slice(1).toLowerCase().includes(query))
+    const items: SlashMenuItem[] = this.matchingCommands(query)
       .map((item) => {
         // The display word comes from the label (`/new · 新会话` → `new`);
         // the internal value (e.g. `__new`) resolves on submit.
@@ -827,30 +782,37 @@ export class PiTuiApp implements TerminalApp {
       return true
     }
     if (matchesKey(data, 'tab')) {
-      // Complete the selected command name into the composer.
-      const items = this.commandCatalog.filter(item => this.slashMenuMatches(item.value))
-      const picked = items[this.slashMenuIndex]
-      if (picked !== undefined) this.editor?.setText(`/${picked.value} `)
+      // Complete the selected command name into the composer. Native rows
+      // carry `__`-prefixed internal values (`__model`, `__help`, …) but
+      // display real names in their labels, so the completion inserts the
+      // DISPLAY name — `/model` reads back as `/model`, not `/__model`.
+      const token = /^\/(\S*)$/.exec(this.editor?.getText() ?? '')?.[1]?.toLowerCase() ?? ''
+      const picked = this.matchingCommands(token)[this.slashMenuIndex]
+      if (picked !== undefined) {
+        const rest = picked.label.startsWith('/') ? picked.label.slice(1) : picked.label
+        const displayName = rest.split(' ')[0] ?? picked.value
+        this.editor?.setText(`/${displayName} `)
+      }
       return true
     }
     return false
   }
 
   /**
-   * Instance-level hooks over pi's TuiAltScreen (no node_modules patch):
+   * Instance-level hook over pi's TuiAltScreen (no node_modules patch):
    * while the slash menu is open, the mouse wheel scrolls the MENU instead
-   * of the transcript, and left clicks hit-test the entry rows (see
-   * `handleEntryClick`). `routeWheel`/`handleViewportInput` are prototype
-   * methods, so assigning instance properties shadows them for this app only.
+   * of the transcript. Expansion toggles are keyboard-only (pi-style), so
+   * left clicks are NOT intercepted — pi's native selection/scroll behavior
+   * owns them. `routeWheel` is a prototype method, so assigning an instance
+   * property shadows it for this app only.
    */
   private hookAltScreen(): void {
     const altScreen = this.altScreen
     if (altScreen === undefined) return
-    // pi declares these private; the hooks shadow them at runtime through a
+    // pi declares these private; the hook shadows them at runtime through a
     // structural view (the method names/arity are pi's public surface).
     const alt = altScreen as unknown as {
       routeWheel(event: { direction: number; x: number; y: number }): void
-      handleViewportInput(data: string): { consume?: boolean } | undefined
     }
     const routeWheel = alt.routeWheel.bind(altScreen)
     alt.routeWheel = (event: { direction: number; x: number; y: number }) => {
@@ -862,68 +824,12 @@ export class PiTuiApp implements TerminalApp {
       }
       routeWheel(event)
     }
-    const handleViewportInput = alt.handleViewportInput.bind(altScreen)
-    alt.handleViewportInput = (data: string) => {
-      // Left-button press (SGR: `\x1b[<0;x;yM`): give the app's row
-      // hit-test a chance to expand the clicked entry before pi's
-      // selection/scroll machinery consumes the event.
-      const click = /^\x1b\[<0;(\d+);(\d+)M$/.exec(data)
-      if (click !== null && !this.overlayOpen) {
-        const x = Number(click[1]) - 1
-        const y = Number(click[2]) - 1
-        if (this.handleEntryClick(x, y)) {
-          this.tui?.requestRender()
-          return { consume: true }
-        }
-      }
-      return handleViewportInput(data)
-    }
-  }
-
-  /** Hit-test one terminal click against the entry icons; true = consumed. */
-  private handleEntryClick(x: number, y: number): boolean {
-    if (this.scrollView === undefined) return false
-    // Map the screen row into DOCUMENT rows: the bottom pad leads, then the
-    // brand splash (zero rows once the conversation started) and then the
-    // entries. `scrollTop` shares the document-row space (the scroll view
-    // may hold transient ghost rows while the brand splash settles), so the
-    // pad offset comes from the pad's own height rather than assuming a
-    // zero scroll offset.
-    const width = this.terminal?.columns ?? 100
-    const docY = y + this.scrollView.scrollTop
-    // Entries follow the bottom pad AND whatever transient rows the brand
-    // splash still occupies in the scroll view's document (it can lag one
-    // frame behind the app's visibility flag). Derive the leading offset
-    // from the rendered document itself so the mapping stays exact.
-    const entriesRows = this.entryOrder.reduce((sum, key) => {
-      const view = this.entryViews.get(key)
-      return view === undefined ? sum : sum + clickableRows(view, width)
-    }, 0)
-    const leadingRows = (this.document?.render(width).length ?? 0) - entriesRows
-    let cursor = leadingRows
-    for (const key of this.entryOrder) {
-      const view = this.entryViews.get(key)
-      if (view === undefined) continue
-      const rows = clickableRows(view, width)
-      if (rows <= 0) continue
-      if (docY >= cursor && docY < cursor + rows) {
-        return clickEntryAt(view, docY - cursor, x)
-      }
-      cursor += rows
-    }
-    return false
-  }
-
-  private slashMenuMatches(value: string): boolean {
-    const text = this.editor?.getText() ?? ''
-    const token = /^\/(\S*)$/.exec(text)?.[1]?.toLowerCase() ?? ''
-    return value.startsWith(token) || value.includes(token)
   }
 
   private slashMenuItemsCount(): number {
     const text = this.editor?.getText() ?? ''
     const token = /^\/(\S*)$/.exec(text)?.[1]?.toLowerCase() ?? ''
-    return Math.max(1, this.commandCatalog.filter(item => item.value.startsWith(token) || item.value.includes(token)).length)
+    return Math.max(1, this.matchingCommands(token).length)
   }
 
   showCommandPicker(items: readonly CommandChoice[]): void {
@@ -934,8 +840,8 @@ export class PiTuiApp implements TerminalApp {
     })), (value) => { this.handlers?.onCommandPicked(value) })
   }
 
-  showQueuePicker(rows: readonly PickerRow[], onPicked: (value: string | null) => void): void {
-    this.showChoicePicker('队列 · 选择一条排队消息', rows, onPicked)
+  showQueuePicker(rows: readonly PickerRow[], onPicked: (value: string | null) => void, title = '队列 · 选择一条排队消息'): void {
+    this.showChoicePicker(title, rows, onPicked)
   }
 
   showPermissionPicker(items: readonly PermissionChoice[]): void {
@@ -945,6 +851,33 @@ export class PiTuiApp implements TerminalApp {
       description: item.description,
       current: item.current,
     })), (value) => { this.handlers?.onPermissionPicked(value) })
+  }
+
+  /** Store the live plugin projections and repaint the idle chips (K3). */
+  setProjections(rows: readonly ProjectionRow[]): void {
+    this.projections = [...rows]
+    if (this.tui !== undefined) {
+      this.applyState(this.current)
+      this.tui.requestRender()
+    }
+  }
+
+  /** Open the sectioned /hotkeys reference panel (grouped, aligned columns). */
+  showHotkeys(): void {
+    const tui = this.tui
+    if (tui === undefined) return
+    const panel = new HotkeysPanel(strings().hotkeysSections, () => {
+      this.overlayOpen = false
+      handle.hide()
+    })
+    this.overlayOpen = true
+    // The panel owns keyboard focus (Esc/Enter/q close, arrows scroll) and
+    // restores the composer focus on hide — the same identity trick the
+    // picker panels use.
+    const handle = tui.showOverlay(panel, {
+      anchor: 'bottom-left', offsetY: -6, maxHeight: '50%', width: this.overlayWidth - 8,
+    })
+    tui.setFocus(panel)
   }
 
   /** One searchable overlay for every chooser; rows mark the current value. */
@@ -1275,10 +1208,21 @@ export class PiTuiApp implements TerminalApp {
       }
     }
     // The fixed slot above the input line: running state while busy, the
-    // session's permission preset while idle (web composer-chip parity).
-    this.statusSlot?.setIdleLine(doc.permissionPreset === undefined
-      ? ''
-      : `ℹ ${fg('info')('权限预设')}：${fg('text')(doc.permissionPreset)}`)
+    // plugin projections while idle (web composer-chip parity). The generic
+    // projection chips (K3) win; the fold-derived permission preset is the
+    // fallback when no projection registry is composed.
+    const projectionLine = this.projections
+      .map((row) => {
+        const label = row.key === 'permissions' ? strings().permission : row.key
+        const current = row.options.find(option => option.value === row.currentValue)?.name ?? row.currentValue
+        return `ℹ ${fg('info')(label)}：${fg('text')(current)}`
+      })
+      .join(' · ')
+    this.statusSlot?.setIdleLine(this.projections.length > 0
+      ? projectionLine
+      : doc.permissionPreset === undefined
+        ? ''
+        : `ℹ ${fg('info')('权限预设')}：${fg('text')(doc.permissionPreset)}`)
     this.statusSlot?.setBusy(doc.busy)
     // P2: a toast raised while a turn ran is flushed the moment it ends.
     if (this.wasBusy && !doc.busy && this.pendingToast !== undefined) {
@@ -1529,10 +1473,48 @@ export class PiTuiApp implements TerminalApp {
   /** Ctrl+X: copy the latest assistant reply to the clipboard via OSC 52 (T5⑤). */
   private copyLastReply(): void {
     const last = [...this.current.entries].reverse().find(entry => entry.kind === 'assistant' && entry.text !== '')
-    if (last === undefined || last.kind !== 'assistant' || this.terminal === undefined) return
-    const payload = Buffer.from(last.text, 'utf8').toString('base64')
+    if (last === undefined || last.kind !== 'assistant') return
+    this.copyText(last.text)
+  }
+
+  /** Copy plain text to the host clipboard via OSC 52 (best effort, K2). */
+  copyText(text: string): void {
+    if (this.terminal === undefined || text === '') return
+    const payload = Buffer.from(text, 'utf8').toString('base64')
     this.terminal.write(`\x1b]52;c;${payload}\x07`)
     this.toast(strings().copied, 'success')
+  }
+
+  /**
+   * Suspend the TUI and open `path` in $EDITOR (K2: /config 的编辑器入口).
+   * The alt screen leaves, the app's raw-input listener detaches so the
+   * editor owns every keystroke (Ctrl+C reaches the editor, not quit), and
+   * on exit the surface re-enters, re-attaches keys, and repaints.
+   */
+  async openExternalEditor(path: string): Promise<void> {
+    const tui = this.tui
+    if (tui === undefined) return
+    const editor = process.env.VISUAL !== undefined && process.env.VISUAL !== ''
+      ? process.env.VISUAL
+      : process.env.EDITOR
+    if (editor === undefined || editor === '') {
+      this.toast(strings().editorUnset, 'error')
+      return
+    }
+    this.removeInputListener?.()
+    this.removeInputListener = undefined
+    tui.stop()
+    await new Promise<void>((resolve) => {
+      const child = spawn(`${editor} "${path.replaceAll('"', '\\"')}"`, { stdio: 'inherit', shell: true })
+      child.on('error', () => resolve())
+      child.on('close', () => resolve())
+    })
+    tui.start()
+    this.attachInputListener(tui)
+    const focus = this.editor
+    if (focus !== undefined) tui.setFocus(focus)
+    this.applyState(this.current)
+    tui.requestRender()
   }
 
   /** The document entry id holding focus, or null (T3④ feedback target). */

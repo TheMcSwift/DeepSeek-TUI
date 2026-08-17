@@ -2,9 +2,8 @@
  * A collapsible wrapper for long user/assistant messages: renders the first
  * N lines plus a `… M more lines (⏎ 展开)` footer while collapsed, and the
  * inner component verbatim once expanded. It joins the Tab focus cycle like
- * the tool cards, so Enter expands/collapses it without leaving the keyboard.
- * Mouse parity: a small `⏎` icon at the end of the first row toggles the
- * fold — clicks elsewhere do nothing (the icon, not the whole message).
+ * the tool cards, so Enter expands/collapses it without leaving the keyboard
+ * (pi-style: the ⏎ icon on the first row is a pure status marker).
  * @module dsh-tui-app/view/components/collapsible-message
  */
 
@@ -15,7 +14,7 @@ import { fg } from '../../app/pi/color.ts'
 export const LONG_MESSAGE_LINES = 40
 const PREVIEW_LINES = 12
 
-/** The toggle icon rendered at the end of the first row. */
+/** The status icon rendered at the end of the first row. */
 const TOGGLE_ICON = '⏎'
 
 export class CollapsibleMessage implements Component, Focusable {
@@ -28,9 +27,6 @@ export class CollapsibleMessage implements Component, Focusable {
   expanded = true
   private collapsed: string[]
   private totalLines: number
-  /** Icon position from the last render (row, column) for click hit-testing. */
-  private iconRow = 0
-  private iconCol = 0
 
   constructor(private inner: Component, fullText: string) {
     const lines = fullText.split('\n')
@@ -54,23 +50,15 @@ export class CollapsibleMessage implements Component, Focusable {
     }
   }
 
-  /** True when the click lands on the small toggle icon. */
-  clickIcon(row: number, col: number): boolean {
-    if (row !== this.iconRow) return false
-    return col >= this.iconCol && col <= this.iconCol + 1
-  }
-
   invalidate(): void {
     this.inner.invalidate()
   }
 
   render(width: number): string[] {
-    this.iconRow = 0
-    this.iconCol = Math.max(0, width - 1)
     if (this.expanded) {
       const lines = this.inner.render(width)
       if (lines.length === 0) return lines
-      // The toggle icon rides the end of the first row.
+      // The status icon rides the end of the first row.
       const head = truncateToWidth(lines[0], Math.max(1, width - 2))
       return [`${head}${fg('dim')(TOGGLE_ICON)}`, ...lines.slice(1)]
     }

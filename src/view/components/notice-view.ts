@@ -66,15 +66,13 @@ const DETAIL_LINE_CAP = 12
 /**
  * Focusable notice with a body: the injected-context rows (E12). The row
  * renders as a normal notice; focusing it and pressing Enter expands the
- * full injected text under it, web disclosure-row style.
+ * full injected text under it, web disclosure-row style. The ⏎ icon is a
+ * pure status marker.
  */
 export class ExpandableNoticeView implements Component, Focusable {
   focused = false
   private expanded = false
   private readonly row: NoticeEntryView
-  /** Toggle icon position from the last render (row 0 tail), for clicks. */
-  private iconRow = 0
-  private iconCol = 0
 
   constructor(private entry: NoticeEntry) {
     this.row = new NoticeEntryView(entry)
@@ -89,21 +87,13 @@ export class ExpandableNoticeView implements Component, Focusable {
     if (matchesKey(data, 'enter')) this.expanded = !this.expanded
   }
 
-  /** True when the click lands on the small expand icon. */
-  clickIcon(row: number, col: number): boolean {
-    if (row !== this.iconRow) return false
-    return col >= this.iconCol && col <= this.iconCol + 1
-  }
-
   invalidate(): void {
     this.row.invalidate()
   }
 
   render(width: number): string[] {
     const lines = [...this.row.render(width)]
-    // Small expand icon at the end of the notice row.
-    this.iconRow = 0
-    this.iconCol = Math.max(0, width - 1)
+    // Expand status icon at the end of the notice row.
     if (lines.length > 0) {
       lines[0] = `${truncateToWidth(lines[0], Math.max(1, width - 2))}${fg('dim')('⏎')}`
     }

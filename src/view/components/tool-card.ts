@@ -4,6 +4,8 @@
  * Tab cycles focus between the composer and the mounted cards (see the app).
  * B3: nested `tool/code-dispatch` sub-calls render as an indented tree under
  * the parent card (the web's ToolCallTree subCalls, terminal-flattened).
+ * The ⏎ icon on the first row is a pure status marker (pi-style keyboard
+ * toggling; no mouse listening).
  * @module dsh-tui-app/view/components/tool-card
  */
 
@@ -19,9 +21,6 @@ export class FocusableToolCard implements Component, Focusable {
   private details = false
   private footer: string | undefined
   private children: readonly ToolEntry[] | undefined
-  /** Toggle icon position from the last render (row 0 tail), for clicks. */
-  private iconRow = 0
-  private iconCol = 0
 
   constructor(public readonly inner: ToolExecutionComponent) {}
 
@@ -35,12 +34,6 @@ export class FocusableToolCard implements Component, Focusable {
   setChildren(children: readonly ToolEntry[] | undefined): void {
     this.children = children
     this.invalidate()
-  }
-
-  /** True when the click lands on the small expand/collapse icon. */
-  clickIcon(row: number, col: number): boolean {
-    if (row !== this.iconRow) return false
-    return col >= this.iconCol && col <= this.iconCol + 1
   }
 
   get isExpanded(): boolean {
@@ -90,10 +83,8 @@ export class FocusableToolCard implements Component, Focusable {
 
   render(width: number): string[] {
     const lines = [...this.inner.render(width)]
-    // Small expand/collapse icon at the end of the card's first row —
-    // the mouse toggle target, distinct from clicking the card body.
-    this.iconRow = 0
-    this.iconCol = Math.max(0, width - 1)
+    // Expand/collapse status icon at the end of the card's first row —
+    // a pure marker; the toggle is Enter on the focused card.
     if (lines.length > 0) {
       lines[0] = `${truncateToWidth(lines[0], Math.max(1, width - 2))}${fg('dim')('⏎')}`
     }

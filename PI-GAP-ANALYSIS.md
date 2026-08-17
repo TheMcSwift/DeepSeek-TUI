@@ -58,9 +58,9 @@
 
 | # | Pi 能力 | Pi 实现 | DSH TUI 现状 | 状态 |
 |---|---|---|---|---|
-| E1 | `/settings`（thinking 级别/主题/投递模式） | 设置面板 | Ctrl+T + `DSH_TUI_THEME` env + 固定队列 | 🟡 |
-| E2 | `/hotkeys` 全部快捷键 | 帮助面板 | footer 静态提示 | 🟡 小 |
-| E3 | `/model`（含 scoped-models，Ctrl+P 循环切换模型） | 模型选择器 | Ctrl+G 模型 picker ✅ + effort 二级 ✅ | ✅（pi 的 Ctrl+P 与我们的预设键位同名不同义） |
+| E1 | `/settings`（thinking 级别/主题/投递模式） | 设置面板 | Ctrl+T + `DSH_TUI_THEME` env + 固定队列；`/config` 覆盖配置与供应商管理 | 🟡 |
+| E2 | `/hotkeys` 全部快捷键 | 帮助面板 | 分组对齐列 `HotkeysPanel`（窗口滚动 + PgUp/PgDn） | ✅ |
+| E3 | `/model`（含 scoped-models，Ctrl+P 循环切换模型） | 模型选择器 | Ctrl+G 模型 picker ✅ + effort 二级 ✅ + `/model` 枚举/参数直切 ✅ | ✅（pi 的 Ctrl+P 与我们的预设键位同名不同义） |
 | E4 | 凭据管理 /login /logout | OAuth | DSH 凭据走 env/credentials 服务 | ✅ 等价（无 UI，YAML/env） |
 
 ## F. 运行时能力（非 UI 差距，确认等价）

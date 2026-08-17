@@ -14,20 +14,11 @@ import { RetryStatusIndicator } from '../pi-vendor/status-indicator.ts'
 export class FocusableRetryRow implements Component, Focusable {
   focused = false
   private expanded = false
-  /** Toggle icon position from the last render (row 0 tail), for clicks. */
-  private iconRow = 0
-  private iconCol = 0
 
   constructor(
     public readonly inner: RetryStatusIndicator,
     private readonly failure: { code: string; message: string } | undefined,
   ) {}
-
-  /** True when the click lands on the small expand icon. */
-  clickIcon(row: number, col: number): boolean {
-    if (row !== this.iconRow || this.failure === undefined) return false
-    return col >= this.iconCol && col <= this.iconCol + 1
-  }
 
   handleInput(data: string): void {
     if (matchesKey(data, 'enter') && this.failure !== undefined) {
@@ -41,9 +32,7 @@ export class FocusableRetryRow implements Component, Focusable {
 
   render(width: number): string[] {
     const lines = [...this.inner.render(width)]
-    // Small expand icon at the end of the indicator row.
-    this.iconRow = 0
-    this.iconCol = Math.max(0, width - 1)
+    // Expand status icon at the end of the indicator row.
     if (lines.length > 0 && this.failure !== undefined) {
       lines[0] = `${truncateToWidth(lines[0], Math.max(1, width - 2))}${fg('dim')('⏎')}`
     }

@@ -96,7 +96,7 @@
 | F1 | 滚动锚定 | 底部跟随、上翻保持锚点、Tab 回来恢复 | follow: end + 底部锚定（BottomPad） | ✅ |
 | F2 | 自动滚动开关 + 回底按钮 | 离开底部显示 ↓ 按钮 | End 原生回底；自动滚动开关不可行（pi ScrollView `followEnd` 构造时固定，无 setter）；无回底按钮 | 🟡 |
 | F3 | 逐消息 hover 操作 | hover/focus 露出按钮 | 键盘等价：Tab 焦点环 + Ctrl+Y/X | 🟡 |
-| F4 | 键盘快捷键 | Enter/Shift+Enter/Cmd-Enter/↑↓/Escape/撤销重做 | Esc 中断 · / · Ctrl+R/G/P/F/B/Y/X/W/T/K/O/E/D · Alt+Enter/Up · Ctrl+Z/Shift+Z 撤销重做；Cmd-Enter 无 | 🟡 |
+| F4 | 键盘快捷键 | Enter/Shift+Enter/Cmd-Enter/↑↓/Escape/撤销重做 | Esc 中断 · / 斜杠菜单（含命令别名 exit/clear/?/m/perm/language）· Ctrl+R/G/P/F/B/Y/X/W/T/K/O/E/D · Tab 焦点环 + Enter 展开/收起（thinking/工具卡/长消息）· Alt+Enter/Up · Ctrl+Z/Shift+Z 撤销重做；Cmd-Enter 无 | 🟡 |
 | F5 | 错误/重试/压缩状态行 | turn-error 红点、max-tokens 黄点、重试倒计时、compaction running | 结局徽标（✗/⏹）+ 重试倒计时（真实 delay）+ 压缩状态；重试行 Tab 聚焦 + Enter 展开失败原因（code: message） | ✅ |
 | F6 | 语言 zh/en 切换 | 每包独立 locale 字典 | strings.ts 双词典 + /lang + DSH_TUI_LANG；web 表外硬编码文案不国际化 | ✅ |
 
@@ -141,10 +141,10 @@
 | G33 | terminal 工具（open/list/send/…） | `packages/terminal/tool-terminal` | 通用工具卡 | 🟡 |
 | G34 | web 工具（web_search/web_fetch） | `packages/web/tool-web` | 原始文本展示；无 WebBlock 引用卡 | 🟡 |
 | G35 | 审批瀑布（ask-once/always/never） | `packages/interaction/user-approval` | 审批弹窗 allow once/reject + 审计行（E2E 验证） | ✅ |
-| G36 | 权限预设（read-only/workspace-write/danger-full-access/custom） | `packages/interaction/permission-presets` | Ctrl+P 切换 + full-access 确认 + preset 通知行 | ✅ |
+| G36 | 权限预设（read-only/workspace-write/danger-full-access/custom） | `packages/interaction/permission-presets` | Ctrl+P 切换（K3 投影 chip + 通用枚举 picker）+ `/permission [预设]`（枚举选择/参数直切）+ full-access 确认 + preset 通知行 | ✅ |
 | G37 | sandbox 模式折叠 | `packages/sandbox/*` | 随预设切换（sandbox+approval 一体） | ✅ |
 | G38 | workspace 切换 | `packages/workspace/workspace` | --workspace + Ctrl+W 切换 | ✅ |
-| G39 | provider/model listing + 默认模型持久化 | `packages/llm/llm`、`core/agent-default-model` | Ctrl+G picker + agentDefaultModel.saveSelection | ✅ |
+| G39 | provider/model listing + 默认模型持久化 | `packages/llm/llm`、`core/agent-default-model` | Ctrl+G picker + `/model [provider/model]`（枚举选择/参数直切）+ agentDefaultModel.saveSelection | ✅ |
 | G40 | reasoning effort 层级（不支持显式拒绝） | `packages/llm/llm` | /effort 独立选择；无 efforts 时 notice | ✅ |
 | G41 | token 计量（input/output/cacheRead/cacheWrite） | `packages/llm/token-meter` | 会话统计条 + 每消息 usage + 缓存命中率 | ✅ |
 | G42 | 上下文压力计（request/surface/breakdown） | `packages/llm/token-meter` | footer ctx N% + ▓░ 压力条；无分段 breakdown | 🟡 |
@@ -179,7 +179,7 @@
 | H16 | Enter 行为设置（queue/steer） | EnterBehaviorRow | 固定 Enter 入队 + Alt+Enter steer；无设置 | 🟡 |
 | H17 | 模型默认设置 | ui-agent-preset AgentPresetRow | Ctrl+G 选择 + 持久化 | ✅ |
 | H18 | 权限默认设置 | ui-permission-presets PermissionRow | Ctrl+P + full-access 确认 | ✅ |
-| H19 | 模型设置页（API key/provider/模型目录/onboarding） | ui-settings-models | 无（settings.yaml 手动编辑） | ❌ |
+| H19 | 模型设置页（API key/provider/模型目录/onboarding） | ui-settings-models | `/config`：供应商列表 + 添加向导（路由/显示名/baseURL/协议/apiKeyEnv，经 settings seam 热生效）+ 预览/$EDITOR 编辑 settings.yaml（K2） | 🟡 |
 | H20 | 插件设置页（Bash/AgentLoop/WebSearch 卡） | ui-settings-plugins | 无 | ❌ |
 | H21 | 插件清单 tab | ui-settings-plugin-inventory | 无 | ❌ |
 | H22 | 主题服务/偏好持久化/boot 防闪 | ui-theme + ui-layout | 无 DOM 投影；palette 切换 + 启动应用 | ✅ N/A |

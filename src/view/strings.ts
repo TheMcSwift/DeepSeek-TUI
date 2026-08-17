@@ -14,6 +14,18 @@
 
 export type TuiLanguage = 'zh' | 'en'
 
+/** 快捷键面板的一行：按键组合 + 动作说明。 */
+export interface HotkeyRow {
+  keys: string
+  action: string
+}
+
+/** 快捷键面板的一个分组（/hotkeys）。 */
+export interface HotkeySection {
+  title: string
+  rows: HotkeyRow[]
+}
+
 /** The full copy surface; zh and en implement the same shape. */
 export interface Strings {
   ok: string
@@ -39,7 +51,10 @@ export interface Strings {
   interrupt: string
   inputKept: string
   hotkeysTitle: string
-  hotkeysDetail: string
+  /** 分组 + 对齐列的快捷键面板数据（替代旧的单行拥挤文本）。 */
+  hotkeysSections: readonly HotkeySection[]
+  /** 面板底部提示行。 */
+  hotkeysHint: string
   queued: (n: number) => string
   interrupted: string
   stopped: string
@@ -66,6 +81,32 @@ export interface Strings {
   fullAccessConfirmTitle: string
   fullAccessConfirmDescription: string
   fullAccessAcknowledge: string
+  modelSwitched: (value: string) => string
+  unknownModel: (value: string) => string
+  presetSwitched: (value: string) => string
+  unknownPreset: (value: string, available: string) => string
+  // /config（web ui-settings 的终端对应：路径/预览/编辑/供应商管理）
+  configTitle: string
+  configProviders: string
+  configAddProvider: string
+  configPreview: string
+  configOpenEditor: string
+  configCopyPath: string
+  configPath: (path: string) => string
+  configProvidersTitle: string
+  configUnavailable: string
+  addProviderTitle: string
+  addProviderRoutePrompt: string
+  addProviderRouteCustom: string
+  addProviderNamePrompt: string
+  addProviderBaseUrlPrompt: string
+  addProviderProtocolPrompt: string
+  addProviderKeyEnvPrompt: string
+  providerSaved: (route: string) => string
+  providerSaveFailed: (message: string) => string
+  editorUnset: string
+  // 插件 session 投影（K3）
+  projectionUnwritable: (key: string) => string
   language: string
   chooseLanguage: string
   brandTagline: string
@@ -106,13 +147,57 @@ const zh: Strings = {
   interrupt: '中断',
   inputKept: '输入将保留，回复后自动提交',
   hotkeysTitle: '快捷键',
-  hotkeysDetail: [
-    'Esc 中断 · Ctrl+C 退出 · Ctrl+/ 或 / 命令 · Ctrl+R 会话 · Ctrl+G 模型',
-    'Ctrl+P 预设 · Ctrl+F 搜索 · Ctrl+B 分支 · Ctrl+Y 评价 · Ctrl+X 复制',
-    'Ctrl+W 工作目录 · Ctrl+T thinking · Ctrl+K 折叠 · Ctrl+O jobs · Ctrl+E 退出 plan',
-    'Ctrl+D 退出 · Tab/Esc 焦点循环 · Enter 展开 · PgUp/PgDn 滚动',
-    '!命令 执行并发送 · !!命令 静默执行 · ↑/↓ 历史 · Ctrl+Z/Shift+Z 撤销重做',
-  ].join('\n'),
+  // 分组 + 对齐列：每行一个按键组合，避免旧版一长串 ` · ` 挤压截断。
+  hotkeysSections: [
+    {
+      title: '输入',
+      rows: [
+        { keys: 'Enter', action: '发送消息' },
+        { keys: 'Alt+Enter', action: '并入当前轮（steer）' },
+        { keys: 'Alt+Up', action: '取回排队消息' },
+        { keys: '↑/↓', action: '输入历史' },
+        { keys: 'Ctrl+Z', action: '撤销' },
+        { keys: 'Ctrl+Shift+Z', action: '重做' },
+      ],
+    },
+    {
+      title: '会话与模型',
+      rows: [
+        { keys: 'Ctrl+R', action: '会话列表' },
+        { keys: 'Ctrl+G', action: '选择模型' },
+        { keys: 'Ctrl+P', action: '权限预设' },
+        { keys: 'Ctrl+E', action: '退出 plan 模式' },
+        { keys: 'Ctrl+W', action: '切换工作目录' },
+        { keys: 'Ctrl+B', action: '分支新会话' },
+      ],
+    },
+    {
+      title: '消息与视图',
+      rows: [
+        { keys: 'Ctrl+F', action: '搜索' },
+        { keys: 'Ctrl+Y', action: '评价回复' },
+        { keys: 'Ctrl+X', action: '复制回复' },
+        { keys: 'Ctrl+K', action: '折叠旧消息' },
+        { keys: 'Ctrl+T', action: 'thinking 开关' },
+        { keys: 'Ctrl+O', action: 'jobs 折叠/展开' },
+        { keys: 'PgUp/PgDn', action: '滚动' },
+        { keys: 'Tab · Esc', action: '焦点循环 / 取消' },
+        { keys: 'Enter', action: '展开/收起（thinking/工具卡/长消息）' },
+      ],
+    },
+    {
+      title: '命令与退出',
+      rows: [
+        { keys: '/', action: 'slash 命令（如 /model、/permission、/config）' },
+        { keys: 'Ctrl+/', action: '命令面板' },
+        { keys: '! · !!', action: '执行 shell：发送 / 静默' },
+        { keys: 'Esc', action: '中断当前轮' },
+        { keys: 'Ctrl+C', action: '退出（空闲时）' },
+        { keys: 'Ctrl+D', action: '退出' },
+      ],
+    },
+  ],
+  hotkeysHint: '↑/↓ 滚动 · PgUp/PgDn 翻页 · Esc 关闭',
   queued: (n: number): string => `${n} 条排队消息`,
   interrupted: '已中断',
   stopped: '已停止',
@@ -149,6 +234,32 @@ const zh: Strings = {
   fullAccessConfirmDescription:
     '启用 Full access 后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。',
   fullAccessAcknowledge: '我已了解风险，并愿意继续',
+  modelSwitched: (value: string): string => `模型已切换：${value}`,
+  unknownModel: (value: string): string => `未知模型：${value}（用 /model 打开列表选择）`,
+  presetSwitched: (value: string): string => `权限预设已切换：${value}`,
+  unknownPreset: (value: string, available: string): string => `未知权限预设：${value}（可用：${available}）`,
+
+  // /config（web ui-settings 的终端对应）
+  configTitle: '配置',
+  configProviders: '供应商列表',
+  configAddProvider: '添加供应商',
+  configPreview: '预览配置文件',
+  configOpenEditor: '在编辑器中打开',
+  configCopyPath: '复制配置文件路径',
+  configPath: (path: string): string => `配置文件：${path}`,
+  configProvidersTitle: '供应商',
+  configUnavailable: 'settings 服务不可用（仅支持查看文件路径）',
+  addProviderTitle: '添加供应商',
+  addProviderRoutePrompt: '路由 id（供应商路由名，如 my-gateway）',
+  addProviderRouteCustom: '自定义新路由',
+  addProviderNamePrompt: '显示名称（可选）',
+  addProviderBaseUrlPrompt: 'Base URL（可选，如 https://api.example.com/v1）',
+  addProviderProtocolPrompt: '接口协议',
+  addProviderKeyEnvPrompt: 'API Key 环境变量名（可选，填入变量名而非密钥）',
+  providerSaved: (route: string): string => `已保存供应商：${route}`,
+  providerSaveFailed: (message: string): string => `供应商保存失败：${message}`,
+  editorUnset: '$EDITOR 未设置，无法打开编辑器',
+  projectionUnwritable: (key: string): string => `投影 ${key} 没有对应的写命令（插件需注册同名命令）`,
 
   // TUI-native (no web equivalent; bilingual for consistency)
   language: '语言',
@@ -190,13 +301,58 @@ const en: Strings = {
   interrupt: 'interrupt',
   inputKept: 'input is kept and sent when the reply ends',
   hotkeysTitle: 'Hotkeys',
-  hotkeysDetail: [
-    'Esc interrupt · Ctrl+C quit · Ctrl+/ or / commands · Ctrl+R sessions · Ctrl+G model',
-    'Ctrl+P presets · Ctrl+F search · Ctrl+B fork · Ctrl+Y rate · Ctrl+X copy reply',
-    'Ctrl+W workspace · Ctrl+T thinking · Ctrl+K fold · Ctrl+O jobs · Ctrl+E exit plan mode',
-    'Ctrl+D quit · Tab/Esc focus cycle · Enter expand · PgUp/PgDn scroll',
-    '!command run & send · !!command run silently · ↑/↓ history · Ctrl+Z/Shift+Z undo/redo',
-  ].join('\n'),
+  // Sectioned, aligned-column layout: one binding per row instead of the old
+  // run-on lines that overflowed the card.
+  hotkeysSections: [
+    {
+      title: 'Input',
+      rows: [
+        { keys: 'Enter', action: 'Send message' },
+        { keys: 'Alt+Enter', action: 'Steer into the running turn' },
+        { keys: 'Alt+Up', action: 'Retrieve a queued message' },
+        { keys: '↑/↓', action: 'Input history' },
+        { keys: 'Ctrl+Z', action: 'Undo' },
+        { keys: 'Ctrl+Shift+Z', action: 'Redo' },
+      ],
+    },
+    {
+      title: 'Session & model',
+      rows: [
+        { keys: 'Ctrl+R', action: 'Session list' },
+        { keys: 'Ctrl+G', action: 'Pick model' },
+        { keys: 'Ctrl+P', action: 'Permission preset' },
+        { keys: 'Ctrl+E', action: 'Exit plan mode' },
+        { keys: 'Ctrl+W', action: 'Switch workspace' },
+        { keys: 'Ctrl+B', action: 'Fork new session' },
+      ],
+    },
+    {
+      title: 'Messages & view',
+      rows: [
+        { keys: 'Ctrl+F', action: 'Search' },
+        { keys: 'Ctrl+Y', action: 'Rate reply' },
+        { keys: 'Ctrl+X', action: 'Copy reply' },
+        { keys: 'Ctrl+K', action: 'Fold old messages' },
+        { keys: 'Ctrl+T', action: 'Toggle thinking' },
+        { keys: 'Ctrl+O', action: 'Fold/expand jobs' },
+        { keys: 'PgUp/PgDn', action: 'Scroll' },
+        { keys: 'Tab · Esc', action: 'Focus cycle / cancel' },
+        { keys: 'Enter', action: 'Expand/collapse (thinking / tool cards / long messages)' },
+      ],
+    },
+    {
+      title: 'Commands & quit',
+      rows: [
+        { keys: '/', action: 'Slash commands (e.g. /model, /permission, /config)' },
+        { keys: 'Ctrl+/', action: 'Command palette' },
+        { keys: '! · !!', action: 'Run shell: send / silent' },
+        { keys: 'Esc', action: 'Interrupt the running turn' },
+        { keys: 'Ctrl+C', action: 'Quit (while idle)' },
+        { keys: 'Ctrl+D', action: 'Quit' },
+      ],
+    },
+  ],
+  hotkeysHint: '↑/↓ scroll · PgUp/PgDn page · Esc close',
   queued: (n: number): string => `${n} queued message${n === 1 ? '' : 's'}`,
   interrupted: 'Interrupted',
   stopped: 'Stopped',
@@ -233,6 +389,32 @@ const en: Strings = {
   fullAccessConfirmDescription:
     'Full access lets new sessions reduce confirmation steps and perform more actions directly, including sensitive operations, file changes, or external commands. Only use it when you trust subsequent tasks.',
   fullAccessAcknowledge: 'I understand the risks and want to continue',
+  modelSwitched: (value: string): string => `Model switched: ${value}`,
+  unknownModel: (value: string): string => `Unknown model: ${value} (open /model for the list)`,
+  presetSwitched: (value: string): string => `Permission preset: ${value}`,
+  unknownPreset: (value: string, available: string): string => `Unknown preset: ${value} (available: ${available})`,
+
+  // /config (terminal counterpart of the web ui-settings pages)
+  configTitle: 'Config',
+  configProviders: 'Provider list',
+  configAddProvider: 'Add provider',
+  configPreview: 'Preview settings file',
+  configOpenEditor: 'Open in editor',
+  configCopyPath: 'Copy settings path',
+  configPath: (path: string): string => `Settings file: ${path}`,
+  configProvidersTitle: 'Providers',
+  configUnavailable: 'the settings service is unavailable (path only)',
+  addProviderTitle: 'Add provider',
+  addProviderRoutePrompt: 'Route id (the provider route name, e.g. my-gateway)',
+  addProviderRouteCustom: 'Custom new route',
+  addProviderNamePrompt: 'Display name (optional)',
+  addProviderBaseUrlPrompt: 'Base URL (optional, e.g. https://api.example.com/v1)',
+  addProviderProtocolPrompt: 'Wire protocol',
+  addProviderKeyEnvPrompt: 'API key env var name (optional; the variable name, not the key)',
+  providerSaved: (route: string): string => `Provider saved: ${route}`,
+  providerSaveFailed: (message: string): string => `Provider save failed: ${message}`,
+  editorUnset: '$EDITOR is not set, cannot open an editor',
+  projectionUnwritable: (key: string): string => `Projection ${key} has no writable command (plugins register a command with the same name)`,
 
   // TUI-native
   language: 'Language',

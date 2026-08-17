@@ -25,6 +25,8 @@ export class FakeApp implements TerminalApp {
   forkPoints: SessionChoice[] | undefined
   /** Override the next askDialog answer (free-text dialogs). */
   dialogAnswer: string | undefined
+  /** Per-dialog answers consumed FIFO (multi-step wizards); wins over dialogAnswer. */
+  dialogQueue: string[] = []
   /** Faked focus for focusedEntryId(). */
   focusedId: string | null = null
 
@@ -74,6 +76,12 @@ export class FakeApp implements TerminalApp {
     this.catalogs.push([...items])
   }
 
+  /** Number of /hotkeys panel opens (G38 re-layout). */
+  hotkeysShown = 0
+  showHotkeys(): void {
+    this.hotkeysShown++
+  }
+
   notifyQueue(count: number): void {
     this.queues.push(count)
   }
@@ -96,11 +104,18 @@ export class FakeApp implements TerminalApp {
   }
 
   queueRows: import('../../src/view/components/filterable-picker.ts').PickerRow[][] = []
-  showQueuePicker(rows: readonly import('../../src/view/components/filterable-picker.ts').PickerRow[], onPicked: (value: string | null) => void): void {
+  queueTitles: Array<string | undefined> = []
+  showQueuePicker(rows: readonly import('../../src/view/components/filterable-picker.ts').PickerRow[], onPicked: (value: string | null) => void, title?: string): void {
     this.queueRows.push([...rows])
+    this.queueTitles.push(title)
     this.queuePicked = onPicked
   }
   queuePicked: ((value: string | null) => void) | undefined
+
+  projectionRows: import('../../src/app/terminal-app.ts').ProjectionRow[][] = []
+  setProjections(rows: readonly import('../../src/app/terminal-app.ts').ProjectionRow[]): void {
+    this.projectionRows.push([...rows])
+  }
 
   showForkPicker(items: readonly SessionChoice[]): void {
     this.forkPoints = [...items]
@@ -109,6 +124,16 @@ export class FakeApp implements TerminalApp {
   toasts: Array<{ text: string; tone: string }> = []
   toast(text: string, tone: 'info' | 'error' | 'success' = 'info'): void {
     this.toasts.push({ text, tone })
+  }
+
+  editors: string[] = []
+  async openExternalEditor(path: string): Promise<void> {
+    this.editors.push(path)
+  }
+
+  copied: string[] = []
+  copyText(text: string): void {
+    this.copied.push(text)
   }
 
   /** The most recent rendered document (last render wins). */
@@ -120,7 +145,10 @@ export class FakeApp implements TerminalApp {
 
   async askDialog(question: ApprovalQuestion): Promise<ApprovalAnswer> {
     this.questions.push(question)
-    return { picked: this.dialogAnswer ?? question.options[0] ?? 'typed-answer', reason: 'picked' }
+    const picked = this.dialogQueue.length > 0
+      ? this.dialogQueue.shift()!
+      : this.dialogAnswer ?? question.options[0] ?? 'typed-answer'
+    return { picked, reason: 'picked' }
   }
 
   /** Drive the input handler as if the user submitted text. */

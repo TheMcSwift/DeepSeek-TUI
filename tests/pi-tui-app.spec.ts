@@ -87,9 +87,10 @@ function mount(meta: SurfaceMeta = { model: 'pi-ai/deepseek-v4', session: 'sessi
   }
   app.start(handlers, meta)
   app.setCommands([
-    { value: '__new', label: '/new · 新会话', description: 'test' },
-    { value: '__quit', label: '/quit · 退出 TUI', description: 'test' },
-    { value: 'model', label: '/model <provider/model>', description: 'switch the model' },
+    { value: '__new', label: '/new · 新会话', description: 'test', aliases: ['clear'] },
+    { value: '__quit', label: '/quit · 退出 TUI', description: 'test', aliases: ['exit'] },
+    { value: '__help', label: '/hotkeys · 快捷键', description: 'test', aliases: ['?'] },
+    { value: 'model', label: '/model <provider/model>', description: 'switch the model', aliases: ['m'] },
   ])
   const mounted: Mounted = { app, terminal, handlers, calls }
   mounts.push(mounted)
@@ -392,29 +393,26 @@ describe('pi-tui surface', () => {
     expect(plain).toContain('$ echo hi')
   })
 
-  it('toggles the tool card only via its row-tail icon click (mouse parity)', async () => {
+  it('toggles the tool card with Enter once Tab focuses it (keyboard-only)', async () => {
     const test = mount()
     await settle()
     test.app.render(doc([
       { kind: 'tool', id: 'c1', callId: 'c1', name: 'bash', arguments: '{"cmd":"echo hi"}', state: 'done', output: { blocks: [{ type: 'text', text: 'hi' }] } },
     ]))
     await settle()
-    // Tool cards default to expanded: the command and output are visible.
-    // Hit-test the icon (the card's first row tail): with the brand-ghost
-    // leading rows, the card's first row maps to screen y=15 (verified via
-    // the debug trace: pad+brand=31 leading rows, scrollTop=16). The SGR
-    // byte path (parse + hook) is covered by the PTY suite; here we verify
-    // the hit-test + toggle chain.
-    const app = test.app as unknown as { handleEntryClick(x: number, y: number): boolean }
+    // Tool cards default to collapsed. Tab enters the focus cycle (the card
+    // is the newest item), and Enter on the focused card toggles it — the
+    // mouse click hit-test is gone (pi-style keyboard expansion).
     const views = test.app as unknown as { entryViews: Map<string, { isExpanded: boolean }> }
     const card = views.entryViews.get('c1')
-    expect(card?.isExpanded).toBe(false) // cards start collapsed
-    expect(app.handleEntryClick(99, 15)).toBe(true) // icon column expands
+    expect(card?.isExpanded).toBe(false)
+    test.terminal.feed('\t')
+    await settle()
+    test.terminal.feed('\r')
+    await settle()
     expect(card?.isExpanded).toBe(true)
-    // A body click on the card row is inert.
-    expect(app.handleEntryClick(5, 15)).toBe(false)
-    expect(card?.isExpanded).toBe(true)
-    expect(app.handleEntryClick(99, 15)).toBe(true) // icon toggles back
+    test.terminal.feed('\r')
+    await settle()
     expect(card?.isExpanded).toBe(false)
   })
 
@@ -1182,6 +1180,54 @@ describe('pi-tui surface', () => {
     expect(test.calls.commandPicks).toContainEqual({ name: 'model', raw: 'pi-ai/deepseek-v4' })
   })
 
+  it('completes native rows by their display name, not the internal __ value', async () => {
+    const test = mount()
+    await settle()
+    test.app.setCommands([
+      { value: '__model', label: '/model <provider/model>', description: 'switch the model' },
+      { value: '__permission', label: '/permission <preset>', description: 'switch the preset' },
+    ])
+    test.terminal.feed('/mod')
+    await settle()
+    test.terminal.feed('\t')
+    await settle()
+    expect(test.app.composerText).toBe('/model ')
+    // Submitting the completed line still resolves to the internal value.
+    test.terminal.feed('\r')
+    await settle()
+    expect(test.calls.commandPicks).toContainEqual({ name: '__model', raw: '' })
+  })
+
+  it('resolves command aliases to their canonical commands (K1)', async () => {
+    const test = mount()
+    await settle()
+    // exit → quit
+    test.terminal.feed('/exit\r')
+    await settle()
+    expect(test.calls.quit).toBe(1)
+    // clear → new
+    test.terminal.feed('/clear\r')
+    await settle()
+    expect(test.calls.newSession).toBe(1)
+    // The alias rides the slash line: /m <args> → model <args>.
+    test.terminal.feed('/m pi-ai/deepseek-v4\r')
+    await settle()
+    expect(test.calls.commandPicks).toContainEqual({ name: 'model', raw: 'pi-ai/deepseek-v4' })
+    // /? resolves to the help row.
+    test.terminal.feed('/?\r')
+    await settle()
+    expect(test.calls.commandPicks).toContainEqual({ name: '__help', raw: '' })
+  })
+
+  it('filters the slash menu by alias names while typing', async () => {
+    const test = mount()
+    await settle()
+    test.terminal.feed('/ex')
+    await settle()
+    expect(test.terminal.plain()).toContain('/quit')
+    expect(test.terminal.plain()).toContain('❯')
+  })
+
   it('does not open the palette for a slash typed mid-text', async () => {
     const test = mount()
     await settle()
@@ -1225,6 +1271,83 @@ describe('pi-tui surface', () => {
     test.terminal.feed('\x1b')
     await settle(50)
     expect(await answerPromise).toEqual({ reason: 'cancelled' })
+  })
+
+  it('opens the sectioned /hotkeys panel with aligned binding rows', async () => {
+    const test = mount()
+    await settle()
+    test.app.showHotkeys()
+    await settle()
+    const plain = test.terminal.plain()
+    expect(plain).toContain('快捷键')
+    // Grouped sections with one binding per row (no more run-on lines).
+    expect(plain).toContain('会话与模型')
+    expect(plain).toContain('Ctrl+G')
+    expect(plain).toContain('选择模型')
+    // The 命令与退出 section sits below the panel window: arrow keys scroll
+    // the focused panel and reveal it.
+    for (let i = 0; i < 20; i++) test.terminal.feed('\x1b[B')
+    await settle()
+    expect(test.terminal.plain()).toContain('Ctrl+/')
+    expect(test.terminal.plain()).toContain('命令与退出')
+    // Esc closes the panel through its own focused handler.
+    test.terminal.feed('\x1b')
+    await settle()
+  })
+
+  it('suspends the surface to open $EDITOR and resumes with keys re-attached (K2)', async () => {
+    const previous = { editor: process.env.EDITOR, visual: process.env.VISUAL }
+    // A daemonizing editor (e.g. `code --wait`) holds inherited stdio open
+    // forever, so the test pins a terminal editor that exits immediately.
+    process.env.VISUAL = undefined
+    process.env.EDITOR = 'true'
+    try {
+      const test = mount()
+      await settle()
+      await test.app.openExternalEditor('/tmp/settings.yaml')
+      await settle()
+      // The surface repaints after the resume and the listener works again.
+      expect(test.terminal.plain()).toContain('dsh tui')
+      test.terminal.feed('/quit\r')
+      await settle()
+      expect(test.calls.quit).toBe(1)
+    } finally {
+      process.env.EDITOR = previous.editor
+      process.env.VISUAL = previous.visual
+    }
+  })
+
+  it('copies plain text to the clipboard via OSC 52 (K2)', async () => {
+    const test = mount()
+    await settle()
+    test.app.copyText('settings.yaml path')
+    expect(test.terminal.output).toContain('\x1b]52;c;')
+    expect(test.app.toastVisible).toBe(true)
+  })
+
+  it('renders plugin projection chips in the idle slot (K3)', async () => {
+    const test = mount()
+    await settle()
+    test.app.setProjections([
+      {
+        key: 'permissions', currentValue: 'workspace-write',
+        options: [
+          { value: 'workspace-write', name: 'workspace-write' },
+          { value: 'danger-full-access', name: 'danger-full-access' },
+        ],
+      },
+      {
+        key: 'goal', currentValue: 'a',
+        options: [{ value: 'a', name: 'Goal A' }],
+      },
+    ])
+    test.app.render(doc([]))
+    await settle()
+    const plain = test.terminal.plain()
+    expect(plain).toContain('权限')
+    expect(plain).toContain('workspace-write')
+    expect(plain).toContain('goal')
+    expect(plain).toContain('Goal A')
   })
 
   it('renders error notices from failed turns', async () => {

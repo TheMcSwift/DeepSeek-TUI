@@ -22,16 +22,13 @@ export class AssistantMessageComponent extends Container {
 	private hasToolCalls = false;
 	private isStreaming = false;
 	/**
-	 * Message-level thinking expansion (mouse click on a hidden thinking
-	 * label): when set, THIS message shows its thinking blocks even while
-	 * the global Ctrl+T hide is on. The global toggle still wins when it
-	 * shows everything.
+	 * Message-level thinking expansion: when set, THIS message shows its
+	 * thinking blocks even while the global Ctrl+T hide is on. The global
+	 * toggle still wins when it shows everything. Toggled from the keyboard
+	 * (Enter on the focused message), pi-style — no mouse listening.
 	 */
 	private thinkingExpanded = false;
 	private hasThinking = false;
-	/** Thinking toggle icon position from the last render (click target). */
-	private iconRow = 0
-	private iconCol = 0
 	/** Optional one-line footer under the message (T1② stats). */
 	private footerText?: Text;
 
@@ -81,17 +78,17 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
-	/** Whether thinking blocks exist and are currently hidden (click target). */
+	/** Whether thinking blocks exist and are currently hidden. */
 	hasHiddenThinking(): boolean {
 		return this.hasThinking && this.hideThinkingBlock && !this.thinkingExpanded;
 	}
 
-	/** Whether THIS message's thinking was expanded by click (round-trip). */
+	/** Whether THIS message's thinking was expanded (round-trip). */
 	isThinkingExpanded(): boolean {
 		return this.thinkingExpanded;
 	}
 
-	/** Toggle this message's thinking blocks (mouse click on the label). */
+	/** Toggle this message's thinking blocks (Enter on the focused message). */
 	toggleThinkingExpanded(): void {
 		this.thinkingExpanded = !this.thinkingExpanded;
 		if (this.lastMessage) {
@@ -112,18 +109,11 @@ export class AssistantMessageComponent extends Container {
 		this.invalidate();
 	}
 
-	/** True when the click lands on the small thinking toggle icon. */
-	clickIcon(row: number, col: number): boolean {
-		if (!this.hasThinking || row !== this.iconRow) return false;
-		return col >= this.iconCol && col <= this.iconCol + 1;
-	}
-
 	override render(width: number): string[] {
 		const lines = super.render(width);
-		// Thinking toggle icon at the end of the first row (▸ hidden / ▾
-		// expanded): the mouse target for expanding this message's thinking.
-		this.iconRow = 0;
-		this.iconCol = Math.max(0, width - 1);
+		// Thinking state icon at the end of the first row (▸ hidden / ▾
+		// expanded): a pure status marker — the toggle is the keyboard
+		// (Enter on the focused message).
 		if (this.hasThinking && lines.length > 0) {
 			const icon = this.hideThinkingBlock && !this.thinkingExpanded ? '▸' : '▾';
 			lines[0] = `${truncateToWidth(lines[0], Math.max(1, width - 2))}${theme.fg('thinkingText', icon)}`;
