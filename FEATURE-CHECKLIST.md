@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | A1 | 流式文本渲染 | AssistantMarkdown 增量解析、冻结块只解析尾部 | assistant/chunk 流式追加 + 差分重渲染 | ✅ |
 | A2 | 推理/思考块折叠 | ReasoningRow：运行时显示最后一行、静止第一行、可展开 | thinking L1/L2/L3 分级着色 + Ctrl+T 全局隐藏；无逐块折叠 | 🟡 |
-| A3 | Markdown 管线 | 自研 mdast：GFM + TeX 数学 + 链接协议白名单 | pi Markdown + hljs；无 TeX、无协议白名单 | 🟡 |
+| A3 | Markdown 管线 | 自研 mdast：GFM + TeX 数学 + 链接协议白名单 | pi Markdown + hljs；无 TeX；链接协议白名单 ✅（fileLink 只放行 http/https/mailto + 本地路径，控制字符剥离） | 🟡 |
 | A4 | 代码块高亮 | shiki（懒加载语言、语言横幅 + 复制按钮） | hljs 高亮 + 语言标签（web shiki 色板）；无块级复制按钮 | 🟡 |
 | A5 | 数学公式 KaTeX | `$…$`/`$$…$$`/math 围栏，流式字面、settled 渲染 | pi Markdown 内置 renderLatex → Unicode（`x^2`→`x²`，KaTeX 的终端等价） | ✅ |
 | A6 | 表格/任务列表/脚注 | GFM 表格、脚注编号区、task 禁用复选框 | pi GFM 子集；无脚注 | 🟡 |

@@ -85,6 +85,24 @@ describe('syntax highlighting', () => {
     expect(supportsLanguage('json')).toBe(true)
   })
 
+  it('resolves the pi/web-style aliases of the registered subset', () => {
+    expect(supportsLanguage('shell')).toBe(true) // alias → bash
+    expect(supportsLanguage('ts')).toBe(true) // alias → typescript
+    expect(supportsLanguage('yml')).toBe(true) // alias → yaml
+    expect(supportsLanguage('html')).toBe(true) // xml 模块自带别名
+  })
+
+  it('falls back to auto detection instead of throwing on fences outside the subset', () => {
+    const code = 'const x: number = 1'
+    const highlighted = highlight(code, {
+      language: 'zig', // 未注册语法：core 子集下 hljs.highlight 会抛错，必须兜底
+      ignoreIllegals: true,
+      theme: { keyword: fg('syntaxKeyword'), default: (text: string) => text },
+    })
+    const stripAnsi = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, '')
+    expect(stripAnsi(highlighted)).toBe(code) // 内容完整保留（auto 探测为 ts 并着色）
+  })
+
   it('styles code without losing its content', () => {
     const code = 'const answer = 42 // the answer'
     const highlighted = highlight(code, {

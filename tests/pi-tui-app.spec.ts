@@ -1299,7 +1299,10 @@ describe('pi-tui surface', () => {
     const previous = { editor: process.env.EDITOR, visual: process.env.VISUAL }
     // A daemonizing editor (e.g. `code --wait`) holds inherited stdio open
     // forever, so the test pins a terminal editor that exits immediately.
-    process.env.VISUAL = undefined
+    // 注意：`process.env.VISUAL = undefined` 在 Node 里会写成字符串
+    // "undefined"（而非删除），随后 spawn 出 `undefined "…"` 的 shell 报错；
+    // 必须用 delete 清除。
+    delete process.env.VISUAL
     process.env.EDITOR = 'true'
     try {
       const test = mount()

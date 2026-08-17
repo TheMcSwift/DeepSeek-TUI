@@ -6,7 +6,12 @@
  * @module dsh-tui-app/app/pi/highlight
  */
 
-import hljs from 'highlight.js'
+import hljs from 'highlight.js/lib/core'
+import { registerHighlightLanguages } from './highlight-languages.ts'
+
+// 常用语法子集按需注册（见 highlight-languages.ts）：安装体积与 auto 探测
+// 耗时都远小于全量包，且未注册的围栏语言不会让 highlight() 抛错。
+registerHighlightLanguages(hljs)
 
 export type HighlightFormatter = (text: string) => string
 export type HighlightTheme = Partial<Record<string, HighlightFormatter>>
@@ -187,9 +192,14 @@ export function renderHighlightedHtml(html: string, theme: HighlightTheme = {}):
 
 /** Highlight `code` with hljs and restyle its output through `theme` formatters. */
 export function highlight(code: string, options: HighlightOptions = {}): string {
-  const html = options.language
+  // core 子集未注册的围栏语言回退 auto 探测，而不是让 hljs.highlight 抛
+  // "Unknown language"（全量构建时代大部分语言都在册，切子集后必须兜底）。
+  const language = options.language !== undefined && hljs.getLanguage(options.language) !== undefined
+    ? options.language
+    : undefined
+  const html = language
     ? hljs.highlight(code, {
-      language: options.language,
+      language,
       ignoreIllegals: options.ignoreIllegals,
     }).value
     : hljs.highlightAuto(code, options.languageSubset).value
