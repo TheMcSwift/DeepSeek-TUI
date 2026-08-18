@@ -143,7 +143,7 @@ async function exportSessionLog(ctx: Context, sessions: SessionStore, session: S
     entries: [...doc.entries, { kind: 'notice' as const, id: `notice:export:${session.id}`, text, tone: 'info' as const }],
   }
 }
-import type { SurfaceMeta, TerminalApp, TerminalAppHandlers, ModelChoice, ProjectionRow, SettingsRow, TrajectoryRow } from './app/terminal-app.ts'
+import type { SurfaceMeta, TerminalApp, TerminalAppHandlers, ModelChoice, PluginsRow, ProjectionRow, SettingsRow, TrajectoryRow } from './app/terminal-app.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui-runner'
@@ -502,6 +502,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     push('__theme', '/theme [web|cc|pi|opencode]', '切换视觉主题预设')
     push('__preset', '/preset [cc|pi|opencode]', '一键切换预设（快捷键 + 视觉主题）')
     push('__settings', '/settings · 设置', '聚合设置面板（语言/主题/Enter/键位/动画/配置）')
+    push('__plugins', '/plugins · 插件与能力', '命令/技能/投影清单（H20/H21 代理视图）')
+    push('__workspace', '/workspace · 工作区', '最近使用的工作目录列表（切换）')
     push('__compose', '/compose · 编辑器撰写', '在 $EDITOR 中撰写长消息并发送（pi A3）')
     return items
   }
@@ -979,6 +981,91 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     }).catch((error: unknown) => { fail(exit, error) })
   }
 
+  /** 校验并切换工作区（Ctrl+W 与 /workspace 共用）：目录校验 → 状态同步 → 新会话。 */
+  const applyWorkspacePath = async (path: string): Promise<void> => {
+    try {
+      if (!statSync(path).isDirectory()) throw new Error('not a directory')
+    } catch {
+      doc = { ...doc, entries: [...doc.entries, {
+        kind: 'notice' as const, id: `notice:workspace:${cmdSeq++}`,
+        text: `目录不存在或不可用：${path}`, tone: 'error' as const,
+      }] }
+      app.render(doc)
+      return
+    }
+    workspaceRef.current = path
+    meta.workspace = path
+    app.setWorkspace(path)
+    await swap(undefined)
+  }
+
+  /** /plugins 能力清单（M3，H20/H21 代理视图：命令/技能/投影三区）。 */
+  const openPlugins = async (): Promise<void> => {
+    const agent = handle?.agent
+    const rows: PluginsRow[] = []
+    const commandsService = ctx.get('commands') as { list: (agent: unknown) => Array<{ name: string; description: string }> } | undefined
+    const commands = agent === undefined ? [] : commandsService?.list(agent) ?? []
+    rows.push({ kind: 'header', title: strings().pluginsCommands(commands.length) })
+    for (const command of commands) {
+      rows.push({ kind: 'item', action: `command:${command.name}`, label: `/${command.name}`, detail: command.description })
+    }
+    const skills = agent === undefined ? [] : await Promise.resolve(skillsService()?.list() ?? []).catch(() => [])
+    rows.push({ kind: 'header', title: strings().pluginsSkills(skills.length) })
+    for (const skill of skills as Array<{ name?: string; description?: string; invocation?: { userInvocable?: boolean } }>) {
+      if (typeof skill.name !== 'string' || skill.name === '') continue
+      const invocable = skill.invocation?.userInvocable !== false
+      rows.push({
+        kind: 'item',
+        action: `skill:${skill.name}`,
+        label: `/${skill.name}`,
+        detail: invocable ? strings().pluginsSkillHint : `— · ${skill.description ?? ''}`.replace(/ · $/, ''),
+        tone: invocable ? undefined : 'muted',
+      })
+    }
+    const snapshot = agent === undefined ? undefined : projectionsSeam?.snapshot?.(agent.session)
+    const projectionKeys = Object.keys(snapshot?.values ?? {})
+    rows.push({ kind: 'header', title: strings().pluginsProjections(projectionKeys.length) })
+    for (const key of projectionKeys) {
+      const value = snapshot?.values[key]
+      if (isSelectProjection(value)) {
+        rows.push({ kind: 'item', action: `projection:${key}`, label: key, detail: value.currentValue, tone: 'accent' })
+      } else {
+        rows.push({ kind: 'item', action: `projection:${key}`, label: key, detail: strings().pluginsStructured, tone: 'muted' })
+      }
+    }
+    app.showPlugins(rows)
+  }
+
+  /** /workspace：最近使用的工作目录列表（sessionQuery cwd 去重），选中即切换。 */
+  const openWorkspace = (): void => {
+    const query = ctx.get('sessionQuery')
+    if (query === undefined) return
+    void query.listSessions().then((records) => {
+      const current = resolve(workspaceRef.current ?? config.workspace ?? '.')
+      const byCwd = new Map<string, { at: number; count: number }>()
+      for (const record of records as Array<{ header: { cwd?: string; createdAt: number } }>) {
+        const cwd = record.header.cwd
+        if (cwd === undefined) continue
+        const entry = byCwd.get(cwd)
+        if (entry === undefined) byCwd.set(cwd, { at: record.header.createdAt, count: 1 })
+        else {
+          entry.at = Math.max(entry.at, record.header.createdAt)
+          entry.count += 1
+        }
+      }
+      const items = [...byCwd.entries()]
+        .sort((left, right) => right[1].at - left[1].at)
+        .map(([cwd, info]) => ({
+          value: cwd,
+          label: cwd === current ? `${cwd} ${strings().workspaceCurrent}` : cwd,
+          description: strings().workspaceSessions(info.count),
+        }))
+      app.showQueuePicker(items, (value) => {
+        if (value !== null) void applyWorkspacePath(value).catch((error: unknown) => { fail(exit, error) })
+      }, strings().workspaceTitle)
+    }).catch((error: unknown) => { fail(exit, error) })
+  }
+
   const handlers: TerminalAppHandlers = {
     onInput: (text: string): void => {
       if (quitting || handle === undefined) return
@@ -1305,6 +1392,14 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         void openSettings()
         return
       }
+      if (name === '__plugins') {
+        void openPlugins()
+        return
+      }
+      if (name === '__workspace') {
+        openWorkspace()
+        return
+      }
       if (name === '__preset') {
         // 一键预设：键位 + 视觉主题同时切换（cc/pi/opencode 三档；web 主题
         // 只在 /theme 单切，因为 web 没有对应键位风格）。
@@ -1547,26 +1642,28 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         }
       })()
     },
+    // /plugins 面板条目：命令执行 / 技能插入 composer / 投影打开枚举 picker。
+    onPluginsRowPicked: (action: string): void => {
+      const separator = action.indexOf(':')
+      const kind = action.slice(0, separator)
+      const id = action.slice(separator + 1)
+      if (kind === 'command') {
+        handlers.onCommandPicked(id, '')
+      } else if (kind === 'skill') {
+        handlers.onCommandPicked(`${SKILL_COMMAND_PREFIX}${id}`, '')
+      } else if (kind === 'projection') {
+        const row = projections.find(entry => entry.key === id)
+        if (row !== undefined) {
+          void openProjectionPicker([row]).catch((error: unknown) => { fail(exit, error) })
+        }
+      }
+    },
     onWorkspaceSwitchRequest: (): void => {
       if (quitting) return
       void (async () => {
         const answer = await app.askDialog({ title: '切换到工作目录（绝对路径）', options: [] })
         if (answer.reason !== 'picked' || answer.picked === undefined || answer.picked.trim() === '') return
-        const path = resolve(answer.picked.trim())
-        try {
-          if (!statSync(path).isDirectory()) throw new Error('not a directory')
-        } catch {
-          doc = { ...doc, entries: [...doc.entries, {
-            kind: 'notice' as const, id: `notice:workspace:${cmdSeq++}`,
-            text: `目录不存在或不可用：${path}`, tone: 'error' as const,
-          }] }
-          app.render(doc)
-          return
-        }
-        workspaceRef.current = path
-        meta.workspace = path
-        app.setWorkspace(path)
-        void swap(undefined).catch((error: unknown) => { fail(exit, error) })
+        await applyWorkspacePath(resolve(answer.picked.trim()))
       })().catch((error: unknown) => { fail(exit, error) })
     },
     onPermissionPickerRequest: (): void => {

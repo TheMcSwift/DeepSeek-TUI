@@ -529,6 +529,83 @@ describe('tui runner', () => {
     }
   })
 
+  it('opens the /plugins capability inventory with command/skill/projection rows (M3)', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('commands', {
+        list: () => [
+          { name: 'goal', description: 'Set the session goal' },
+          { name: 'compact', description: 'Compact the transcript' },
+        ],
+        execute: async () => ({ commandId: 'c1', result: { kind: 'success' as const } }),
+      } as never)
+      ctx.provide('skills', { list: async () => [{ name: 'audit', description: 'run a supply-chain audit', invocation: { userInvocable: true } }] } as never)
+      ctx.provide('sessionProjections', {
+        snapshot: () => ({
+          asOfSeq: 0,
+          values: {
+            permissions: { currentValue: 'workspace-write', options: [{ value: 'workspace-write', name: 'workspace-write' }] },
+            contextBreakdown: { systemTokens: 1, toolsTokens: 2, messageTokens: 3 },
+          },
+        }),
+      } as never)
+    })
+    await test.started
+    test.app.handlers?.onCommandPicked('__plugins', '')
+    await settle(150)
+    expect(test.app.pluginsShown).toHaveLength(1)
+    const rows = test.app.pluginsShown[0]
+    const items = rows.filter((row): row is Extract<(typeof rows)[number], { kind: 'item' }> => row.kind === 'item')
+    expect(items.map(item => item.action)).toContain('command:goal')
+    expect(items.map(item => item.action)).toContain('skill:audit')
+    expect(items.map(item => item.action)).toContain('projection:permissions')
+    expect(items.find(item => item.action === 'projection:contextBreakdown')?.detail).toContain('结构化投影')
+    // 命令行 → 执行；技能行 → 插入 composer；投影行 → 枚举 picker。
+    test.app.handlers?.onPluginsRowPicked?.('command:goal')
+    await settle()
+    expect(test.app.catalogs.flat().some(item => item.value === 'goal')).toBe(true)
+    test.app.handlers?.onPluginsRowPicked?.('skill:audit')
+    await settle()
+    expect(test.app.restored).toEqual(['audit'])
+    test.app.handlers?.onPluginsRowPicked?.('projection:permissions')
+    await settle(150)
+    expect(test.app.permissions?.map(item => item.value)).toEqual(['workspace-write'])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('lists recent workspace directories and switches on pick (M4)', async () => {
+    const tmp1 = mkdtempSync(join(tmpdir(), 'dsh-tui-ws-old-'))
+    const tmp2 = mkdtempSync(join(tmpdir(), 'dsh-tui-ws-new-'))
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('sessionQuery', {
+        listSessions: async () => [
+          { header: { version: 1, id: 's1' as never, createdAt: 1000, cwd: tmp1 }, live: false, persisted: true },
+          { header: { version: 1, id: 's2' as never, createdAt: 9000, cwd: tmp2 }, live: false, persisted: true },
+          { header: { version: 1, id: 's3' as never, createdAt: 8000, cwd: tmp2 }, live: false, persisted: true },
+        ],
+        readTitle: async () => undefined,
+      })
+    })
+    try {
+      await test.started
+      test.app.handlers?.onCommandPicked('__workspace', '')
+      await settle(150)
+      expect(test.app.queueRows).toHaveLength(1)
+      const rows = test.app.queueRows[0]
+      expect(rows[0].label).toContain(tmp2) // 最近优先
+      expect(rows[0].description).toBe('2 个会话') // cwd 去重合并
+      expect(rows.some(row => row.label.includes(tmp1))).toBe(true)
+      const picked = test.app.queuePicked
+      expect(picked).toBeDefined()
+      picked?.(tmp2)
+      await settle(150)
+      expect(test.app.workspaces).toContain(tmp2)
+      await test.ctx.fiber.dispose()
+    } finally {
+      rmSync(tmp1, { recursive: true, force: true })
+      rmSync(tmp2, { recursive: true, force: true })
+    }
+  })
+
   it('routes /compose to the editor-compose flow (pi A3)', async () => {
     const test = await bench({}, {})
     await test.started
@@ -601,7 +678,7 @@ describe('tui runner', () => {
     await test.started
     test.app.handlers?.onCommandPickerRequest?.()
     await settle()
-    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__settings', '__compose'])
+    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__settings', '__plugins', '__workspace', '__compose'])
     expect(test.app.commands?.find(item => item.value === 'goal')?.label).toBe('/goal <objective>')
     expect(test.app.commands?.find(item => item.value === '__model')?.label).toBe('/model <provider/model>')
     expect(test.app.commands?.find(item => item.value === '__permission')?.label).toBe('/permission <preset>')

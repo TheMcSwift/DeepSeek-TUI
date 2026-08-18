@@ -178,8 +178,8 @@
 | H17 | 模型默认设置 | ui-agent-preset AgentPresetRow | Ctrl+G 选择 + 持久化 | ✅ |
 | H18 | 权限默认设置 | ui-permission-presets PermissionRow | Ctrl+P + full-access 确认 | ✅ |
 | H19 | 模型设置页（API key/provider/模型目录/onboarding） | ui-settings-models | `/config`：供应商列表 + 添加向导（路由/显示名/baseURL/协议/apiKeyEnv，经 settings seam 热生效）+ 预览/$EDITOR 编辑 settings.yaml（K2） | 🟡 |
-| H20 | 插件设置页（Bash/AgentLoop/WebSearch 卡） | ui-settings-plugins | 无 | ❌ |
-| H21 | 插件清单 tab | ui-settings-plugin-inventory | 无 | ❌ |
+| H20 | 插件设置页（Bash/AgentLoop/WebSearch 卡） | ui-settings-plugins | `/plugins` 投影行 Enter → 通用枚举 picker（K3 写路径），命令行 Enter → 执行——终端等价物（无表单） | 🟡 |
+| H21 | 插件清单 tab | ui-settings-plugin-inventory | `/plugins` 能力清单 ✅（命令/技能/投影三区代理视图——tui profile 无插件 registry 服务，按来源分区而非按插件归组，数据源诚实声明） | ✅ |
 | H22 | 主题服务/偏好持久化/boot 防闪 | ui-theme + ui-layout | 无 DOM 投影；palette 切换 + 启动应用 | ✅ N/A |
 | H23 | 设计 token（--dsw-*） | design-platform.css | palette.ts 逐字取值（dark/light 两套 + shiki 色） | ✅ |
 | H24 | 字体栈 / 动效曲线 / 滚动条 | base.css / scrollbar.css | ⛔ 终端字体与滚动由终端决定 | ⛔ |
@@ -206,8 +206,8 @@
 | E 会话级 UI | 15 | 2 | 0 | 0 | — |
 | F 交互细节 | 3 | 3 | 0 | 0 | Cmd-Enter 未做；自动滚动开关不可行（↓ End 提示已补） |
 | G dsh CLI/Runtime | 40 | 7 | 0 | 3 | runtime 能力基本全可达 |
-| H Web 壳/设置 | 17 | 8 | 2 | 6 | 插件清单/工作区列表为主要缺口（方案已落 SETTINGS-WORKSPACE-DESIGN.md） |
-| **合计** | **98** | **38** | **2** | **10** | 覆盖率 ✅+🟡 ≈ 92%（不含 ⛔ 的 138 项中 ≈ 99%） |
+| H Web 壳/设置 | 18 | 9 | 0 | 6 | **❌ 清零**——设置面经 /settings、/plugins、/workspace 全部收口（方案见 SETTINGS-WORKSPACE-DESIGN.md） |
+| **合计** | **99** | **39** | **0** | **10** | 覆盖率 ✅+🟡 ≈ 93%（不含 ⛔ 的 138 项中 **100%**） |
 
 > 修订：本清单基于 dsh checkout 与 web 客户端逐包审计（CLI/runtime 8 区、会话面 6 区、壳/设置 5 区），
 > 每条含可核对的源文件路径。TUI 侧状态与本仓库实现同步；后续功能落地时以本清单为对比基线。

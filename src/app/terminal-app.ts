@@ -83,6 +83,18 @@ export interface SettingsRow {
   target: string
 }
 
+/** /plugins 面板的一行（M3，H20/H21 代理视图）：分区头或可执行条目。 */
+export type PluginsRow =
+  | { kind: 'header'; title: string }
+  | {
+      kind: 'item'
+      /** 动作编码：`command:<name>` / `skill:<name>` / `projection:<key>`。 */
+      action: string
+      label: string
+      detail: string
+      tone?: 'text' | 'accent' | 'info' | 'success' | 'warning' | 'error' | 'muted' | 'dim'
+    }
+
 /** Static identity shown in the surface header. */
 export interface SurfaceMeta {
   /** `provider/model` of the active agent. */
@@ -152,6 +164,8 @@ export interface TerminalAppHandlers {
   onThemePickerRequest?(): void
   /** /settings 面板里选中了某行（数字直选或 Enter）；index 为行序。 */
   onSettingsRowPicked?(index: number): void
+  /** /plugins 面板里选中了条目；action 为动作编码（command:/skill:/projection:）。 */
+  onPluginsRowPicked?(action: string): void
 }
 
 /** The terminal surface contract the runner drives. */
@@ -199,6 +213,8 @@ export interface TerminalApp {
   showTrajectory(rows: readonly TrajectoryRow[]): void
   /** Open (或就地刷新) /settings 聚合面板；行变化后重复调用即更新。 */
   showSettings(rows: readonly SettingsRow[]): void
+  /** Open the /plugins capability inventory (M3, H20/H21 proxy view). */
+  showPlugins(rows: readonly PluginsRow[]): void
   /** Open a generic single-column picker (queue dock E1, projections K3). */
   showQueuePicker(rows: readonly import('../view/components/filterable-picker.ts').PickerRow[], onPicked: (value: string | null) => void, title?: string): void
   /** Transient action feedback in the status slot (P2; deferred until idle). */

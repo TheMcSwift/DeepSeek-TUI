@@ -1560,6 +1560,23 @@ describe('pi-tui surface', () => {
     expect(test.terminal.plain()).toContain('暗色 · opencode')
   })
 
+  it('打开 /plugins 能力清单（M3）', async () => {
+    const test = mount()
+    await settle()
+    test.app.showPlugins([
+      { kind: 'header', title: '命令 (1)' },
+      { kind: 'item', action: 'command:goal', label: '/goal', detail: 'Set the session goal' },
+      { kind: 'header', title: '投影 (1)' },
+      { kind: 'item', action: 'projection:permissions', label: 'permissions', detail: 'workspace-write', tone: 'accent' },
+    ])
+    await settle()
+    const plain = test.terminal.plain()
+    expect(plain).toContain('插件与能力')
+    expect(plain).toContain('命令 (1)')
+    expect(plain).toContain('/goal')
+    expect(plain).toContain('permissions')
+  })
+
   it('renders error notices from failed turns', async () => {
     const test = mount()
     await settle()

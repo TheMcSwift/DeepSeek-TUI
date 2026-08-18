@@ -42,9 +42,10 @@ web 的 `ui-settings-*` 是分区模态（General/Models/Plugins/Plugin inventor
 | 会话重命名 | ✅ | `/rename [标题]` |
 | 工作区重命名 | ✅ **本轮新落地（H11 半程）** | 裸 `/rename` → 目标选择 → 目录单段名校验 → `fs.rename` |
 | 工作区切换 | ✅ 自由文本路径 + 校验 | Ctrl+W |
-| 插件清单 | ❌ 无集中视图 | — |
-| 插件设置 | ❌ 无（散在命令/投影） | — |
+| 插件清单 | ✅ **`/plugins` 能力清单（M3 落地）**——命令/技能/投影三区代理视图 | `/plugins` |
+| 插件设置 | ✅ 代理写路径：投影行 Enter → 通用枚举 picker；命令行 Enter → 执行；技能行 Enter → 插入 composer | `/plugins` |
 | 集中状态一览 | 🟡 散在 header/footer | — |
+| 工作区列表 | ✅ **`/workspace`（M4 落地）**——sessionQuery cwd 去重 + 会话计数 + 最近优先 + 当前标记 | `/workspace` |
 
 ## 3. 方案：`/settings` 分区面板 + 三个补全命令
 
@@ -73,33 +74,33 @@ web 的 `ui-settings-*` 是分区模态（General/Models/Plugins/Plugin inventor
 持久化策略：语言在 dsh 侧；keymap/theme 走 sidecar；Enter/动画经 settings seam 的
 `tui` 命名空间（out-of-tree 只写自己占用的键），启动时若 env 未显式设置则回填。
 
-### 3.2 `/plugins` — 插件清单与设置（H20 + H21 收口）
+### 3.2 `/plugins` — 插件清单与设置（H20 + H21 收口）✅ 已落地（M3）
 
 **数据源诚实声明**：tui profile 挂载的是 dsh-base，**没有独立插件 registry 服务**；
 ctx 白名单（AGENTS.md）为 commands / skills / sessionQuery / sessionTitle / jobs /
-userQuestions / sessionProjections（K3 已用）。因此插件清单是**代理视图**：
+userQuestions / sessionProjections（K3 已用）。因此插件清单是**代理视图**——按来源
+三区（命令/技能/投影），而非按插件归组：
 
-- 行来源：`ctx.commands.list(agent)` 的命令 → 反查注册插件名（目录 label 前缀）；
-  `ctx.skills.list()` 的技能 → 技能目录行（G22/H33 已有）；
-  `sessionProjections.snapshot` 的投影 → 投影行（K3 chips 已有）。
-- 每插件一行：`名称 · 命令 N · 技能 M · 投影 K`，Enter 展开明细（该插件提供的命令/
-  技能/投影逐行）。
-- **H20 插件设置页**：插件行 Enter → 明细里列出该插件的**可写投影**（select 形态 →
-  复用 Ctrl+P 通用 picker）与其**注册命令**（→ 命令面板执行）。bash/agentloop/websearch
-  卡在 web 里是表单；终端等价物就是「投影枚举 + 同名命令」这条 K3 已建好的写路径。
+- 命令区：`ctx.commands.list(agent)` → 行 `/<name> · description`，Enter 执行；
+- 技能区：`ctx.skills.list()` → 行 `/<name> · 选中插入输入框`（非 user-invocable 灰显），
+  Enter 插入 composer（与 slash 菜单一致）；
+- 投影区：`sessionProjections.snapshot` → select 形态行显示当前值（Enter → 通用枚举
+  picker，H20 的终端等价「设置页」）；结构化投影灰显标注。
+- 组件 `src/view/components/plugins-panel.ts`（窗口滚动 + ↑/↓ 跳过头部 + Enter + Esc，
+  纯语义色随主题预设换肤）。
 
-这一步**零新服务依赖**，全部数据已在白名单内——纯聚合视图，M 级工作量。
+**零新服务依赖**，全部数据已在白名单内。
 
-### 3.3 `/workspace` — 工作区管理（H11 收口）
+### 3.3 `/workspace` — 工作区管理（H11 收口）✅ 列表落地（M4）
 
 | 能力 | 方案 | 状态 |
 |---|---|---|
-| 列出工作区 | `sessionQuery.listSessions()` 的 cwd 去重 + 当前工作区置顶（● 标记） | 待做（S 级） |
-| 切换 | 选中行 → Ctrl+W 既有流程 | ✅ 复用 |
-| 重命名 | 裸 `/rename` → 目标「工作区目录」→ 单段名校验 → `fs.rename` + footer/路径更新 | ✅ 本轮落地 |
+| 列出工作区 | `sessionQuery.listSessions()` 的 cwd 去重 + 会话计数 + 最近优先 + 当前标记 | ✅ `/workspace` |
+| 切换 | 选中行 → 目录校验 → `workspaceRef/meta/footer` 同步 → 新会话（与 Ctrl+W 共用 `applyWorkspacePath`） | ✅ 复用 |
+| 重命名 | 裸 `/rename` → 目标「工作区目录」→ 单段名校验 → `fs.rename` + footer/路径更新 | ✅ 0.2.1 |
 | 删除 | **默认不做**：`fs.rm -r` 的误触代价不可逆，且删除后 dsh 会话的 cwd 记录悬空；列为 ⛔/低优先 | ⛔ 克制 |
 
-H11 在清单中从 ❌ 调整为 🟡（重命名 ✅ / 删除 ⛔ 克制 / 列表 M1 补）。
+H11 保持 🟡（删除克制）。
 
 ## 4. 实施批次
 
@@ -107,8 +108,8 @@ H11 在清单中从 ❌ 调整为 🟡（重命名 ✅ / 删除 ⛔ 克制 / 列
 |---|---|---|
 | **M1（已完成）** | `/keymap` 双预设 + `/rename` 工作区重命名 + `/compose`（pi A3） | ✅ 0.2.1 |
 | **M2（已完成）** | `/settings` General 分区面板（六行聚合 + 跳转既有命令 + 面板内就地换肤） | ✅ 0.2.1 |
-| **M3（下批）** | `/plugins` 代理清单 + 插件明细（命令/技能/投影聚合） | M |
-| **M4** | `/workspace` 列表 + 切换（复用 Ctrl+W） | S |
+| **M3（已完成）** | `/plugins` 代理清单（命令/技能/投影三区 + 行级执行/插入/枚举） | ✅ 0.2.1 |
+| **M4（已完成）** | `/workspace` 列表 + 切换（sessionQuery cwd 去重，与 Ctrl+W 共用路径） | ✅ 0.2.1 |
 
 ## 5. 验收口径
 

@@ -453,8 +453,10 @@ def scenario_surface() -> None:
             print(plain(tui.out.decode("utf-8", "replace"))[-3000:])
             raise AssertionError("surface: banner did not render")
         # /hotkeys：分组快捷键面板（别名路径解析为 __help）。
+        # 等待面板首屏可见的分区头（底部提示行会被窗口裁剪，'快捷键' 会被
+        # slash 菜单候选先命中）。
         tui.type("/hotkeys\r")
-        if not tui.wait_for("快捷键", 30):
+        if not tui.wait_for("会话与模型", 30):
             dump_failure("hotkeys")
             raise AssertionError("hotkeys panel did not open")
         tui.type("\x1b")
@@ -507,19 +509,36 @@ def scenario_surface() -> None:
             raise AssertionError("preset switch back failed")
         time.sleep(0.5)
         # /settings：聚合面板（六行设置，数字直选/Enter 跳转，Esc 关闭）。
+        # 注意：等待面板独有文案（'设置'/'快捷键预设' 会先被 slash 菜单候选行
+        # 命中），面板提示行 '数字直选' 只出现在面板本体。
         tui.type("/settings\r")
-        if not tui.wait_for("设置", 30):
+        if not tui.wait_for("数字直选", 30):
             dump_failure("settings")
             raise AssertionError("settings panel did not open")
-        screen = plain(tui.out.decode("utf-8", "replace"))
-        if "快捷键预设" not in screen or "配置文件" not in screen:
-            dump_failure("settings rows")
-            raise AssertionError("settings rows missing")
+        tui.type("\x1b")
+        time.sleep(0.5)
+        # /plugins：能力清单（命令/技能/投影三区）；分区头 '命令 (' 仅面板有。
+        tui.type("/plugins\r")
+        if not tui.wait_for("命令 (", 30):
+            dump_failure("plugins")
+            raise AssertionError("plugins panel did not open")
+        tui.type("\x1b")
+        time.sleep(0.5)
+        # /workspace：最近工作目录列表；picker 提示行 '输入即过滤' 仅面板有。
+        tui.type("/workspace\r")
+        if not tui.wait_for("输入即过滤", 30):
+            dump_failure("workspace")
+            raise AssertionError("workspace picker did not open")
+        time.sleep(0.5)  # 等 picker 的过滤输入获得焦点，Esc 才能被其消费
         tui.type("\x1b")
         time.sleep(0.5)
         tui.type("/quit\r")
-        assert tui.wait_exit(30) == 0, "surface quit failed"
-        print("[e2e] surface: /hotkeys, Ctrl+P, /config, /keymap, /theme, /preset, /settings all worked")
+        try:
+            assert tui.wait_exit(30) == 0, "surface quit failed"
+        except TimeoutError:
+            dump_failure("quit")
+            raise
+        print("[e2e] surface: /hotkeys, Ctrl+P, /config, /keymap, /theme, /preset, /settings, /plugins, /workspace all worked")
     finally:
         tui.kill()
         mock.terminate()

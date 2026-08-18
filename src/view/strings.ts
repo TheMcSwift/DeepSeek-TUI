@@ -155,6 +155,17 @@ export interface Strings {
   animOn: string
   animOff: string
   animSwitched: (state: string) => string
+  // /plugins（H20/H21 代理视图）与 /workspace（M3/M4）
+  pluginsTitle: string
+  pluginsHint: string
+  pluginsCommands: (n: number) => string
+  pluginsSkills: (n: number) => string
+  pluginsProjections: (n: number) => string
+  pluginsSkillHint: string
+  pluginsStructured: string
+  workspaceTitle: string
+  workspaceCurrent: string
+  workspaceSessions: (n: number) => string
   // /rename（会话标题 + 工作区目录两种目标）
   renameSession: string
   renameWorkspace: string
@@ -484,6 +495,17 @@ const zh: Strings = {
   animOn: '开',
   animOff: '关',
   animSwitched: (state: string): string => `动画：${state}`,
+  // /plugins（H20/H21 代理视图）与 /workspace（M3/M4）
+  pluginsTitle: '插件与能力',
+  pluginsHint: '↑/↓ 选择 · Enter 执行/查看 · PgUp/PgDn 翻页 · Esc 关闭',
+  pluginsCommands: (n: number): string => `命令 (${n})`,
+  pluginsSkills: (n: number): string => `技能 (${n})`,
+  pluginsProjections: (n: number): string => `投影 (${n})`,
+  pluginsSkillHint: '选中插入输入框',
+  pluginsStructured: '结构化投影（无枚举）',
+  workspaceTitle: '工作区',
+  workspaceCurrent: '当前',
+  workspaceSessions: (n: number): string => `${n} 个会话`,
 
   // TUI-native (no web equivalent; bilingual for consistency)
   language: '语言',
@@ -807,6 +829,17 @@ const en: Strings = {
   animOn: 'On',
   animOff: 'Off',
   animSwitched: (state: string): string => `Animations: ${state}`,
+  // /plugins (H20/H21 proxy inventory) & /workspace (M3/M4)
+  pluginsTitle: 'Plugins & capabilities',
+  pluginsHint: '↑/↓ select · Enter run/inspect · PgUp/PgDn page · Esc close',
+  pluginsCommands: (n: number): string => `Commands (${n})`,
+  pluginsSkills: (n: number): string => `Skills (${n})`,
+  pluginsProjections: (n: number): string => `Projections (${n})`,
+  pluginsSkillHint: 'selected skills go into the composer',
+  pluginsStructured: 'structured projection (no enum)',
+  workspaceTitle: 'Workspace',
+  workspaceCurrent: 'current',
+  workspaceSessions: (n: number): string => `${n} sessions`,
 
   // TUI-native
   language: 'Language',

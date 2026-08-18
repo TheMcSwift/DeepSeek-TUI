@@ -31,7 +31,7 @@ import { emptyDocument } from '../document/document.ts'
 import type { AssistantEntry, TurnOutcome, ViewDocument, ViewEntry } from '../document/document.ts'
 import { statsStrip } from '../projection/stats.ts'
 import { BrandView, shouldShowBrand, BRAND, ICE, gradientText } from '../view/brand.ts'
-import type { CommandChoice, ModelChoice, PermissionChoice, ProjectionRow, SessionChoice, SettingsRow, SurfaceMeta, TerminalApp, TerminalAppHandlers, TrajectoryRow } from './terminal-app.ts'
+import type { CommandChoice, ModelChoice, PermissionChoice, PluginsRow, ProjectionRow, SessionChoice, SettingsRow, SurfaceMeta, TerminalApp, TerminalAppHandlers, TrajectoryRow } from './terminal-app.ts'
 import { FilterablePickerPanel } from '../view/components/filterable-picker.ts'
 import type { PickerRow } from '../view/components/filterable-picker.ts'
 import { synthesizeAssistantMessage, synthesizeToolResult } from '../projection/synthesis/pi-messages.ts'
@@ -57,6 +57,7 @@ import { FocusableFrame } from '../view/components/focus-frame.ts'
 import { SlashMenu } from '../view/components/slash-menu.ts'
 import type { SlashMenuItem } from '../view/components/slash-menu.ts'
 import { HotkeysPanel } from '../view/components/hotkeys-panel.ts'
+import { PluginsPanel } from '../view/components/plugins-panel.ts'
 import { SettingsPanel } from '../view/components/settings-panel.ts'
 import { TrajectoryPanel } from '../view/components/trajectory-panel.ts'
 import { matchCommands, permissionTone } from './pi/command-match.ts'
@@ -1063,6 +1064,21 @@ export class PiTuiApp implements TerminalApp {
     this.overlayOpen = true
     const handle = tui.showOverlay(panel, {
       anchor: 'bottom-left', offsetY: -6, maxHeight: '50%', width: this.overlayWidth - 8,
+    })
+    tui.setFocus(panel)
+  }
+
+  /** /plugins 能力清单（M3，H20/H21 代理视图：命令/技能/投影分区）。 */
+  showPlugins(rows: readonly PluginsRow[]): void {
+    const tui = this.tui
+    if (tui === undefined) return
+    const panel = new PluginsPanel(rows, () => {
+      this.overlayOpen = false
+      handle.hide()
+    }, (action) => { this.handlers?.onPluginsRowPicked?.(action) })
+    this.overlayOpen = true
+    const handle = tui.showOverlay(panel, {
+      anchor: 'bottom-left', offsetY: -6, maxHeight: '60%', width: this.overlayWidth - 8,
     })
     tui.setFocus(panel)
   }

@@ -161,6 +161,11 @@ export class FakeApp implements TerminalApp {
     this.settingsShown.push([...rows])
   }
 
+  pluginsShown: Array<Array<import('../../src/app/terminal-app.ts').PluginsRow>> = []
+  showPlugins(rows: readonly import('../../src/app/terminal-app.ts').PluginsRow[]): void {
+    this.pluginsShown.push([...rows])
+  }
+
   /** The most recent rendered document (last render wins). */
   get last(): ViewDocument {
     return this.rendered[this.rendered.length - 1]
