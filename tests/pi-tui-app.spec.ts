@@ -1432,6 +1432,71 @@ describe('pi-tui surface', () => {
     expect(plain).toContain('tool/call')
   })
 
+  it('pi 预设下 Ctrl+C 中断当前轮、Ctrl+P 打开模型 picker（keymap）', async () => {
+    const test = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, { keymap: 'pi' })
+    await settle()
+    test.app.render({ entries: [], busy: true })
+    await settle()
+    test.terminal.feed('\x03') // Ctrl+C
+    await settle()
+    expect(test.calls.interrupt).toBe(1)
+    expect(test.calls.quit).toBe(0)
+    // 空闲 Ctrl+C → 退出（pi 语义）。
+    test.app.render({ entries: [], busy: false })
+    await settle()
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(1)
+    // Ctrl+P → 模型 picker（pi：循环模型），权限改走 /permission。
+    test.terminal.feed('\x10')
+    await settle()
+    expect(test.calls.models).toBe(1)
+    expect(test.calls.permissions).toBe(0)
+  })
+
+  it('setKeymap 热切换后全局键立即按新预设解析', async () => {
+    const test = mount()
+    await settle()
+    test.app.setKeymap('pi')
+    test.app.render({ entries: [], busy: true })
+    await settle()
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.interrupt).toBe(1)
+  })
+
+  it('pi 预设下 /hotkeys 面板展示 pi 键位说明', async () => {
+    const test = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, { keymap: 'pi' })
+    await settle()
+    test.app.showHotkeys()
+    await settle()
+    const plain = test.terminal.plain()
+    // 窗口首屏可见的 pi 键位：Ctrl+P 选择模型（cc 预设下 Ctrl+P 是权限）。
+    expect(plain).toContain('Ctrl+P')
+    expect(plain).toContain('选择模型')
+    // 其余行在滚动窗口内。
+    expect(plain).toContain('↓ 还有')
+  })
+
+  it('compose 在 $EDITOR 中打开草稿，空草稿不发送（pi A3）', async () => {
+    const previous = { editor: process.env.EDITOR, visual: process.env.VISUAL }
+    delete process.env.VISUAL
+    process.env.EDITOR = 'true'
+    try {
+      const test = mount()
+      await settle()
+      await test.app.composeInEditor()
+      await settle()
+      expect(test.calls.input).toEqual([])
+      expect(test.terminal.plain()).toContain('草稿为空，未发送')
+    } finally {
+      if (previous.editor === undefined) delete process.env.EDITOR
+      else process.env.EDITOR = previous.editor
+      if (previous.visual === undefined) delete process.env.VISUAL
+      else process.env.VISUAL = previous.visual
+    }
+  })
+
   it('renders error notices from failed turns', async () => {
     const test = mount()
     await settle()

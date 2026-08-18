@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | A1 | `!command` 执行 shell 并把输出发给模型 | composer 拦截 `!` | ✅ T5①：`!`/`!!` composer 拦截 + cross-spawn 30s 超时（可见输出→模型、静默→notice） | ✅ |
 | A2 | `!!command` 静默执行（输出不进模型） | 同上 | ✅ 同上（输出仅 notice，不进模型） | ✅ |
-| A3 | Ctrl+G 外部编辑器撰写长消息 | `$VISUAL`/`$EDITOR`/nano 临时文件 | 无（TUI 的 Ctrl+G 已用于模型选择，键位冲突；`/config` 的 $EDITOR 挂起编辑仅覆盖 settings.yaml） | ❌ |
+| A3 | Ctrl+G 外部编辑器撰写长消息 | `$VISUAL`/`$EDITOR`/nano 临时文件 | ✅ `/compose` 命令 + **pi 预设下 Ctrl+G**（临时草稿 → $EDITOR 挂起编辑 → 读回提交；cc 预设 Ctrl+G 保持模型选择，撰写经 `/compose`） | ✅ |
 | A4 | Ctrl+X 复制最后一条回复 | pi 剪贴板模块（OSC52） | ✅ T5⑤：Ctrl+X OSC52 复制（终端原生选择复制仍可用） | ✅ |
 | A5 | `@` 模糊搜索文件 | fuzzy | `@/#` 前缀补全（pi-tui CombinedAutocompleteProvider） | ✅ 近似 |
 | A6 | Shift+Enter 多行 | — | ✅ | ✅ |
@@ -58,9 +58,9 @@
 
 | # | Pi 能力 | Pi 实现 | DSH TUI 现状 | 状态 |
 |---|---|---|---|---|
-| E1 | `/settings`（thinking 级别/主题/投递模式） | 设置面板 | Ctrl+T + `DSH_TUI_THEME=light/dark/auto` + `DSH_TUI_ENTER=steer` env；`/config` 覆盖配置与供应商管理（添加向导/预览/$EDITOR 编辑） | 🟡 |
+| E1 | `/settings`（thinking 级别/主题/投递模式） | 设置面板 | Ctrl+T + `DSH_TUI_THEME=light/dark/auto` + `DSH_TUI_ENTER=steer` + **`/keymap [cc|pi]` 双预设**；`/config` 覆盖配置与供应商管理（添加向导/预览/$EDITOR 编辑）；`/settings` 聚合面板规划见 SETTINGS-WORKSPACE-DESIGN.md | 🟡 |
 | E2 | `/hotkeys` 全部快捷键 | 帮助面板 | 分组对齐列 `HotkeysPanel`（窗口滚动 + PgUp/PgDn） | ✅ |
-| E3 | `/model`（含 scoped-models，Ctrl+P 循环切换模型） | 模型选择器 | Ctrl+G 模型 picker ✅ + effort 二级 ✅ + `/model` 枚举/参数直切 ✅ | ✅（pi 的 Ctrl+P 与我们的预设键位同名不同义） |
+| E3 | `/model`（含 scoped-models，Ctrl+P 循环切换模型） | 模型选择器 | Ctrl+G 模型 picker ✅ + effort 二级 ✅ + `/model` 枚举/参数直切 ✅；**pi 预设下 Ctrl+P = 模型选择**（pi 原语义），cc 预设下 Ctrl+P = 权限预设 | ✅（两预设各自还原了同名键位的原生语义） |
 | E4 | 凭据管理 /login /logout | OAuth | DSH 凭据走 env/credentials 服务 | ✅ 等价（无 UI，YAML/env） |
 
 ## F. 运行时能力（非 UI 差距，确认等价）

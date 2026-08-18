@@ -96,7 +96,7 @@
 | F1 | 滚动锚定 | 底部跟随、上翻保持锚点、Tab 回来恢复 | follow: end + 底部锚定（BottomPad） | ✅ |
 | F2 | 自动滚动开关 + 回底按钮 | 离开底部显示 ↓ 按钮 | End 原生回底；离开底部时状态行挂 `↓ 回到底部 (End)` 提示（500ms 轮询 + 视口键 hook，动画冻结下仍工作）；自动滚动开关不可行（pi `followEnd` 构造期固定，上翻即停推已覆盖主场景） | 🟡 |
 | F3 | 逐消息 hover 操作 | hover/focus 露出按钮 | 键盘等价：Tab 焦点环 + Ctrl+Y/X | 🟡 |
-| F4 | 键盘快捷键 | Enter/Shift+Enter/Cmd-Enter/↑↓/Escape/撤销重做 | Esc 中断 · / 斜杠菜单（含命令别名 exit/clear/?/m/perm/language）· Ctrl+R/G/P/F/B/Y/X/W/T/K/O/E/D · Tab 焦点环 + Enter 展开/收起（thinking/工具卡/长消息）· Alt+Enter/Up · Ctrl+Z/Shift+Z 撤销重做；Cmd-Enter 无 | 🟡 |
+| F4 | 键盘快捷键 | Enter/Shift+Enter/Cmd-Enter/↑↓/Escape/撤销重做 | **cc/pi 双预设可切换**（`/keymap [cc|pi]` + `DSH_TUI_KEYMAP`，keymaps.ts 动作表）：cc = Esc 中断 · / 斜杠菜单（含命令别名 exit/clear/?/m/perm/language）· Ctrl+R/G/P/F/B/Y/X/W/T/K/O/L/E/D · Tab 焦点环 + Enter 展开/收起（thinking/工具卡/长消息）· Alt+Enter/Up · Ctrl+Z/Shift+Z 撤销重做；pi = Ctrl+C 中断 · Ctrl+G 编辑器撰写 · Ctrl+P 模型 · 权限走 /permission；Cmd-Enter 无 | 🟡 |
 | F5 | 错误/重试/压缩状态行 | turn-error 红点、max-tokens 黄点、重试倒计时、compaction running | 结局徽标（✗/⏹）+ 重试倒计时（真实 delay）+ 压缩状态；重试行 Tab 聚焦 + Enter 展开失败原因（code: message） | ✅ |
 | F6 | 语言 zh/en 切换 | 每包独立 locale 字典 | strings.ts 双词典 + /lang + DSH_TUI_LANG；web 表外硬编码文案不国际化 | ✅ |
 
@@ -169,12 +169,12 @@
 | H8 | 会话归档 | archiveSession | ⛔ `workspaceRegistry` 服务未挂载于 tui profile（bundle 无 workspace 插件，挂载会因缺 storageDomain 静默挂起） | ⛔ |
 | H9 | 拖拽重排（会话/工作区） | HTML5 DnD | ⛔ | ⛔ |
 | H10 | 相对时间显示 | relativeTime 双语 | 刚刚/N 分钟前/N 小时前/N 天前/日期 | ✅ |
-| H11 | 工作区重命名/删除对话框 | WorkspaceBrowser | 无 | ❌ |
+| H11 | 工作区重命名/删除对话框 | WorkspaceBrowser | 重命名 ✅：裸 `/rename` → 目标「工作区目录」→ 单段名校验 → `fs.rename`（footer/路径同步）；删除 ⛔ 克制（`fs.rm -r` 不可逆）；列表/浏览规划见 SETTINGS-WORKSPACE-DESIGN.md M4 | 🟡 |
 | H12 | 会话导出/下载 UI | 客户端无此功能（grep 确认）；runtime /export | /export 展示 jsonl 路径（原生等价） | ✅ |
-| H13 | 设置面板（模态 + 导航 + General 区） | ui-settings-general | 无设置面板；env + /lang + pickers 等价 | 🟡 |
+| H13 | 设置面板（模态 + 导航 + General 区） | ui-settings-general | 无独立设置页；env + /lang + pickers 等价，`/settings` 聚合面板规划见 SETTINGS-WORKSPACE-DESIGN.md M2 | 🟡 |
 | H14 | 语言选择（zh/en + 持久化） | locale LanguageRow | /lang + DSH_TUI_LANG + strings() 双词典 | ✅ |
 | H15 | 外观主题（浅/深/跟随系统） | ui-theme AppearanceRow | DSH_TUI_THEME=light/dark/auto（OSC11 探测）；色板逐字采用 web token | ✅ |
-| H16 | Enter 行为设置（queue/steer） | EnterBehaviorRow | 固定 Enter 入队 + Alt+Enter steer；无设置 | 🟡 |
+| H16 | Enter 行为设置（queue/steer） | EnterBehaviorRow | `DSH_TUI_ENTER=steer` env 可切 busy Enter 为 steer（默认 queue，web 默认一致）；无设置面板行（规划见 M2） | 🟡 |
 | H17 | 模型默认设置 | ui-agent-preset AgentPresetRow | Ctrl+G 选择 + 持久化 | ✅ |
 | H18 | 权限默认设置 | ui-permission-presets PermissionRow | Ctrl+P + full-access 确认 | ✅ |
 | H19 | 模型设置页（API key/provider/模型目录/onboarding） | ui-settings-models | `/config`：供应商列表 + 添加向导（路由/显示名/baseURL/协议/apiKeyEnv，经 settings seam 热生效）+ 预览/$EDITOR 编辑 settings.yaml（K2） | 🟡 |
@@ -206,8 +206,8 @@
 | E 会话级 UI | 15 | 2 | 0 | 0 | — |
 | F 交互细节 | 3 | 3 | 0 | 0 | Cmd-Enter 未做；自动滚动开关不可行（↓ End 提示已补） |
 | G dsh CLI/Runtime | 40 | 7 | 0 | 3 | runtime 能力基本全可达 |
-| H Web 壳/设置 | 16 | 8 | 3 | 6 | 设置页/插件页为主要缺口 |
-| **合计** | **97** | **38** | **3** | **10** | 覆盖率 ✅+🟡 ≈ 91%（不含 ⛔ 的 138 项中 ≈ 98%） |
+| H Web 壳/设置 | 16 | 9 | 2 | 6 | 设置页/插件页为主要缺口（方案已落 SETTINGS-WORKSPACE-DESIGN.md） |
+| **合计** | **97** | **39** | **2** | **10** | 覆盖率 ✅+🟡 ≈ 92%（不含 ⛔ 的 138 项中 ≈ 99%） |
 
 > 修订：本清单基于 dsh checkout 与 web 客户端逐包审计（CLI/runtime 8 区、会话面 6 区、壳/设置 5 区），
 > 每条含可核对的源文件路径。TUI 侧状态与本仓库实现同步；后续功能落地时以本清单为对比基线。

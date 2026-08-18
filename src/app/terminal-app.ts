@@ -189,4 +189,8 @@ export interface TerminalApp {
   openExternalEditor(path: string): Promise<void>
   /** Copy plain text to the host clipboard via OSC 52 (best effort, K2). */
   copyText(text: string): void
+  /** Switch the global hotkey preset between cc and pi (/keymap). */
+  setKeymap(id: import('./pi/keymaps.ts').KeymapId): void
+  /** Compose a message in $EDITOR and submit it (pi A3, /compose). */
+  composeInEditor(): Promise<void>
 }

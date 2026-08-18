@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
@@ -391,6 +391,61 @@ describe('tui runner', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('switches the hotkey preset via /keymap and persists it', async () => {
+    // persistKeymap 写 $DSH_HOME/tui-keymap.txt——测试期间隔离到临时目录。
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-keymap-home-'))
+    const previous = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const test = await bench({}, {})
+      await test.started
+      test.app.handlers?.onCommandPicked('__keymap', 'pi')
+      await settle()
+      expect(test.app.keymaps).toEqual(['pi'])
+      expect(test.app.toasts.some(toast => toast.text.includes('快捷键预设已切换：pi'))).toBe(true)
+      expect(readFileSync(join(home, 'tui-keymap.txt'), 'utf8').trim()).toBe('pi')
+      // 未知预设值报错提示。
+      test.app.handlers?.onCommandPicked('__keymap', 'vim')
+      await settle()
+      expect(test.app.toasts.some(toast => toast.tone === 'error' && toast.text.includes('未知快捷键预设'))).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previous === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previous
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('routes /compose to the editor-compose flow (pi A3)', async () => {
+    const test = await bench({}, {})
+    await test.started
+    test.app.handlers?.onCommandPicked('__compose', '')
+    await settle()
+    expect(test.app.composes).toBe(1)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('renames the workspace directory via bare /rename (H11)', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'dsh-tui-rename-'))
+    const ws = join(tmp, 'orig')
+    mkdirSync(ws)
+    try {
+      const test = await bench({}, { workspace: ws })
+      await test.started
+      // 第一个对话框选目标（工作区目录），第二个输入新目录名。
+      test.app.dialogQueue.push('工作区目录', 'renamed')
+      test.app.handlers?.onCommandPicked('__rename', '')
+      await settle(150)
+      expect(existsSync(join(tmp, 'renamed'))).toBe(true)
+      expect(existsSync(ws)).toBe(false)
+      expect(test.app.workspaces).toContain(join(tmp, 'renamed'))
+      expect(test.app.toasts.some(toast => toast.text.includes('工作区已重命名'))).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
   it('opens the preset picker with the current preset marked and applies the pick', async () => {
     const picked: string[] = []
     const test = await bench({}, {}, (ctx) => {
@@ -433,7 +488,7 @@ describe('tui runner', () => {
     await test.started
     test.app.handlers?.onCommandPickerRequest?.()
     await settle()
-    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory'])
+    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__compose'])
     expect(test.app.commands?.find(item => item.value === 'goal')?.label).toBe('/goal <objective>')
     expect(test.app.commands?.find(item => item.value === '__model')?.label).toBe('/model <provider/model>')
     expect(test.app.commands?.find(item => item.value === '__permission')?.label).toBe('/permission <preset>')

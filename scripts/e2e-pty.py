@@ -473,9 +473,20 @@ def scenario_surface() -> None:
             raise AssertionError("config panel did not open")
         tui.type("\x1b")
         time.sleep(0.5)
+        # /keymap：切 pi 预设再切回 cc（sidecar 持久化在隔离 E2E_HOME 内）。
+        tui.type("/keymap pi\r")
+        if not tui.wait_for("快捷键预设已切换：pi", 30):
+            dump_failure("keymap")
+            raise AssertionError("keymap switch did not apply")
+        time.sleep(0.5)
+        tui.type("/keymap cc\r")
+        if not tui.wait_for("快捷键预设已切换：cc", 30):
+            dump_failure("keymap back")
+            raise AssertionError("keymap switch back failed")
+        time.sleep(0.5)
         tui.type("/quit\r")
         assert tui.wait_exit(30) == 0, "surface quit failed"
-        print("[e2e] surface: /hotkeys, Ctrl+P permission picker, /config all opened")
+        print("[e2e] surface: /hotkeys, Ctrl+P permission picker, /config, /keymap all worked")
     finally:
         tui.kill()
         mock.terminate()

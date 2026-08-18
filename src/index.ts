@@ -8,9 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { skillCommands, SKILL_COMMAND_PREFIX } from './skill-catalog.ts'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
@@ -38,7 +38,34 @@ import { fold, replay } from './projection/fold.ts'
 import { feedbackSummary, readFeedback, writeFeedback } from './session/feedback.ts'
 import type { FeedbackRecord } from './session/feedback.ts'
 import { approvalContext, findToolCall, relTime, trajectorySummary } from './control/summaries.ts'
+import { isKeymapId, KEYMAPS } from './app/pi/keymaps.ts'
+import type { KeymapId } from './app/pi/keymaps.ts'
 import type { ViewDocument } from './document/document.ts'
+
+/** 快捷键预设 sidecar（与反馈/历史同目录的 TUI 自有配置）。 */
+function keymapFile(): string {
+  return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'tui-keymap.txt')
+}
+
+/** 读取持久化的快捷键预设；缺失/损坏返回 undefined（回退 cc）。 */
+function loadPersistedKeymap(): KeymapId | undefined {
+  try {
+    const value = readFileSync(keymapFile(), 'utf8').trim()
+    return isKeymapId(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 把预设写进 sidecar；只读 home 不致命。 */
+function persistKeymap(id: KeymapId): void {
+  try {
+    mkdirSync(dirname(keymapFile()), { recursive: true })
+    writeFileSync(keymapFile(), `${id}\n`)
+  } catch {
+    // A read-only home must not break the surface.
+  }
+}
 
 /** One persisted reply rating (TUI-owned sidecar; the web keeps its own store). */
 // 反馈 sidecar 的读写/汇总已拆到 src/session/feedback.ts（T2②）。
@@ -136,6 +163,8 @@ export const internals: {
     applyPalette(resolveThemeVariant(process.env.DSH_TUI_THEME, detectThemeLive))
     return new PiTuiApp({
       historyFile: join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'tui-history.json'),
+      // 快捷键预设：env 优先，其次 $DSH_HOME/tui-keymap.txt 持久化值，缺省 cc。
+      keymap: isKeymapId(process.env.DSH_TUI_KEYMAP ?? '') ? process.env.DSH_TUI_KEYMAP as KeymapId : loadPersistedKeymap() ?? 'cc',
     })
   },
   isTty: () => Boolean(process.stdout.isTTY && process.stdin.isTTY),
@@ -432,6 +461,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     push('__rename', '/rename · 重命名会话', '固定会话标题（替代自动生成）')
     push('__queue', '/queue · 查看队列', '列出排队消息：取回或删除（E1）')
     push('__trajectory', '/trajectory · 轨迹', '原始事件日志视图（Inspect，B11/H31）')
+    push('__keymap', '/keymap [cc|pi]', '切换快捷键预设：Claude Code 式 / pi 式键位')
+    push('__compose', '/compose · 编辑器撰写', '在 $EDITOR 中撰写长消息并发送（pi A3）')
     return items
   }
 
@@ -1054,17 +1085,54 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         return
       }
       if (name === '__rename') {
-        // H7: pin the session title (automatic generation stops). Inline
-        // args ride the slash line; a bare `/rename` asks for the title.
-        const title = rawInput?.trim() ?? ''
+        // H7 + H11: 裸 /rename 弹「会话标题 / 工作区目录」目标选择；内联参数
+        // 保持会话重命名的直切语义（向后兼容）。
+        const arg = rawInput?.trim() ?? ''
         void (async () => {
-          let finalTitle = title
-          if (finalTitle === '') {
-            const answer = await app.askDialog({ title: '会话标题', options: [] })
-            if (answer.reason !== 'picked' || answer.picked === undefined) return
-            finalTitle = answer.picked.trim()
+          const askName = async (prompt: string): Promise<string | undefined> => {
+            const answer = await app.askDialog({ title: prompt, options: [] })
+            if (answer.reason !== 'picked' || answer.picked === undefined) return undefined
+            const value = answer.picked.trim()
+            return value === '' ? undefined : value
           }
-          if (finalTitle === '') return
+          let target: 'session' | 'workspace' = 'session'
+          if (arg === '') {
+            const pick = await app.askDialog({
+              title: strings().renameTarget,
+              options: [strings().renameSession, strings().renameWorkspace],
+            })
+            if (pick.reason !== 'picked' || pick.picked === undefined) return
+            target = pick.picked === strings().renameWorkspace ? 'workspace' : 'session'
+          }
+          if (target === 'workspace') {
+            // H11: 重命名当前工作区目录（单段名校验后 fs.rename）。
+            const newName = await askName(strings().wsRenamePrompt)
+            if (newName === undefined) return
+            if (newName.includes('/') || newName.includes('\\') || newName === '.' || newName === '..') {
+              app.toast(strings().wsRenameInvalid, 'error')
+              return
+            }
+            const current = resolve(workspaceRef.current ?? config.workspace ?? '.')
+            const next = resolve(dirname(current), newName)
+            if (next === current) return
+            try {
+              renameSync(current, next)
+              workspaceRef.current = next
+              meta.workspace = next
+              app.setWorkspace(next)
+              app.toast(strings().wsRenamed(next), 'success')
+            } catch (error) {
+              app.toast(strings().wsRenameFailed(error instanceof Error ? error.message : String(error)), 'error')
+            }
+            return
+          }
+          // 会话标题（原语义）：sessionTitle.rename 固定标题，自动生成停止。
+          let finalTitle = arg
+          if (finalTitle === '') {
+            const title = await askName(strings().renameSession)
+            if (title === undefined) return
+            finalTitle = title
+          }
           const titleService = ctx.get('sessionTitle')
           if (titleService === undefined) {
             app.toast('会话重命名不可用（sessionTitle 服务未挂载）', 'error')
@@ -1084,6 +1152,33 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       }
       if (name === '__trajectory') {
         handlers.onTrajectoryRequest?.()
+        return
+      }
+      if (name === '__keymap') {
+        const arg = rawInput?.trim() ?? ''
+        const apply = (id: KeymapId): void => {
+          app.setKeymap(id)
+          persistKeymap(id)
+          app.toast(strings().keymapSwitched(id), 'success')
+        }
+        if (arg !== '') {
+          if (isKeymapId(arg)) apply(arg)
+          else app.toast(strings().keymapUnknown(arg, 'cc, pi'), 'error')
+          return
+        }
+        void (async () => {
+          const answer = await app.askDialog({
+            title: strings().keymap,
+            detail: strings().keymapDescription,
+            options: [KEYMAPS[0].label, KEYMAPS[1].label],
+          })
+          if (answer.reason !== 'picked' || answer.picked === undefined) return
+          apply(answer.picked === KEYMAPS[1].label ? 'pi' : 'cc')
+        })()
+        return
+      }
+      if (name === '__compose') {
+        void app.composeInEditor()
         return
       }
       if (name === '__queue') {

@@ -141,6 +141,16 @@ export class FakeApp implements TerminalApp {
     this.copied.push(text)
   }
 
+  keymaps: Array<import('../../src/app/pi/keymaps.ts').KeymapId> = []
+  setKeymap(id: import('../../src/app/pi/keymaps.ts').KeymapId): void {
+    this.keymaps.push(id)
+  }
+
+  composes = 0
+  async composeInEditor(): Promise<void> {
+    this.composes++
+  }
+
   /** The most recent rendered document (last render wins). */
   get last(): ViewDocument {
     return this.rendered[this.rendered.length - 1]

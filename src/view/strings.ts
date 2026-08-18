@@ -116,6 +116,25 @@ export interface Strings {
   trajectoryTitle: string
   trajectoryEvents: (n: number) => string
   trajectoryFilterHint: string
+  // /compose（pi A3，$EDITOR 撰写消息）
+  composePlaceholder: string
+  composeEmpty: string
+  composeFailed: (message: string) => string
+  // /keymap（cc/pi 快捷键双预设）
+  keymap: string
+  keymapDescription: string
+  keymapSwitched: (id: string) => string
+  keymapUnknown: (value: string, available: string) => string
+  /** pi 预设的快捷键面板（cc 面板见 hotkeysSections）。 */
+  hotkeysSectionsPi: readonly HotkeySection[]
+  // /rename（会话标题 + 工作区目录两种目标）
+  renameSession: string
+  renameWorkspace: string
+  renameTarget: string
+  wsRenamePrompt: string
+  wsRenameInvalid: string
+  wsRenamed: (path: string) => string
+  wsRenameFailed: (message: string) => string
   language: string
   chooseLanguage: string
   brandTagline: string
@@ -208,6 +227,58 @@ const zh: Strings = {
     },
   ],
   hotkeysHint: '↑/↓ 滚动 · PgUp/PgDn 翻页 · Esc 关闭',
+  // pi 预设面板（Ctrl+C 中断 / Ctrl+G 撰写 / Ctrl+P 模型；权限走 /permission）
+  hotkeysSectionsPi: [
+    {
+      title: '输入',
+      rows: [
+        { keys: 'Enter', action: '发送消息' },
+        { keys: 'Alt+Enter', action: '并入当前轮（steer）' },
+        { keys: 'Alt+Up', action: '取回排队消息' },
+        { keys: '↑/↓', action: '输入历史' },
+        { keys: 'Ctrl+Z', action: '撤销' },
+        { keys: 'Ctrl+Shift+Z', action: '重做' },
+      ],
+    },
+    {
+      title: '会话与模型',
+      rows: [
+        { keys: 'Ctrl+R', action: '会话列表' },
+        { keys: 'Ctrl+P', action: '选择模型' },
+        { keys: 'Ctrl+G', action: '编辑器撰写消息' },
+        { keys: 'Ctrl+E', action: '退出 plan 模式' },
+        { keys: 'Ctrl+W', action: '切换工作目录' },
+        { keys: 'Ctrl+B', action: '分支新会话' },
+        { keys: '/permission', action: '权限预设' },
+      ],
+    },
+    {
+      title: '消息与视图',
+      rows: [
+        { keys: 'Ctrl+F', action: '搜索' },
+        { keys: 'Ctrl+Y', action: '评价回复' },
+        { keys: 'Ctrl+X', action: '复制回复' },
+        { keys: 'Ctrl+K', action: '折叠旧消息' },
+        { keys: 'Ctrl+T', action: 'thinking 开关' },
+        { keys: 'Ctrl+O', action: 'jobs 折叠/展开' },
+        { keys: 'Ctrl+L', action: '轨迹（事件日志）' },
+        { keys: 'PgUp/PgDn', action: '滚动' },
+        { keys: 'Tab · Esc', action: '焦点循环 / 取消' },
+        { keys: 'Enter', action: '展开/收起（thinking/工具卡/长消息）' },
+      ],
+    },
+    {
+      title: '命令与退出',
+      rows: [
+        { keys: '/', action: 'slash 命令（如 /model、/permission、/config）' },
+        { keys: 'Ctrl+/', action: '命令面板' },
+        { keys: '! · !!', action: '执行 shell：发送 / 静默' },
+        { keys: 'Ctrl+C', action: '中断当前轮' },
+        { keys: 'Esc', action: '中断当前轮' },
+        { keys: 'Ctrl+D', action: '退出' },
+      ],
+    },
+  ],
   queued: (n: number): string => `${n} 条排队消息`,
   interrupted: '已中断',
   stopped: '已停止',
@@ -275,10 +346,27 @@ const zh: Strings = {
   permissionImpact: (path: string): string => `将修改：${path}`,
   // 会话切换反馈（CC-09）
   resumedSession: (session: string): string => `已恢复会话 ${session}`,
+  // /rename（会话标题 + 工作区目录两种目标）
+  renameSession: '会话标题',
+  renameWorkspace: '工作区目录',
+  renameTarget: '重命名目标',
+  wsRenamePrompt: '新的目录名（单段，不含路径分隔符）',
+  wsRenameInvalid: '名称需为单段目录名（不含 / 或 \\）',
+  wsRenamed: (path: string): string => `工作区已重命名：${path}`,
+  wsRenameFailed: (message: string): string => `工作区重命名失败：${message}`,
   // 轨迹视图（B11/H31）
   trajectoryTitle: '轨迹',
   trajectoryEvents: (n: number): string => `${n} 条事件`,
   trajectoryFilterHint: '输入过滤 · ↑/↓ 滚动 · PgUp/PgDn 翻页 · Esc 关闭',
+  // /compose（pi A3，$EDITOR 撰写消息）
+  composePlaceholder: '# 在此撰写消息，保存并退出后发送（删除本行可移除注释）',
+  composeEmpty: '草稿为空，未发送',
+  composeFailed: (message: string): string => `编辑器撰写失败：${message}`,
+  // /keymap（cc/pi 快捷键双预设）
+  keymap: '快捷键预设',
+  keymapDescription: 'cc 为 Claude Code 式键位，pi 为 pi coding-agent 式键位',
+  keymapSwitched: (id: string): string => `快捷键预设已切换：${id}`,
+  keymapUnknown: (value: string, available: string): string => `未知快捷键预设：${value}（可用：${available}）`,
 
   // TUI-native (no web equivalent; bilingual for consistency)
   language: '语言',
@@ -373,6 +461,58 @@ const en: Strings = {
     },
   ],
   hotkeysHint: '↑/↓ scroll · PgUp/PgDn page · Esc close',
+  // pi-preset panel (Ctrl+C interrupt / Ctrl+G compose / Ctrl+P model)
+  hotkeysSectionsPi: [
+    {
+      title: 'Input',
+      rows: [
+        { keys: 'Enter', action: 'Send message' },
+        { keys: 'Alt+Enter', action: 'Steer into the running turn' },
+        { keys: 'Alt+Up', action: 'Retrieve a queued message' },
+        { keys: '↑/↓', action: 'Input history' },
+        { keys: 'Ctrl+Z', action: 'Undo' },
+        { keys: 'Ctrl+Shift+Z', action: 'Redo' },
+      ],
+    },
+    {
+      title: 'Session & model',
+      rows: [
+        { keys: 'Ctrl+R', action: 'Session list' },
+        { keys: 'Ctrl+P', action: 'Pick model' },
+        { keys: 'Ctrl+G', action: 'Compose in editor' },
+        { keys: 'Ctrl+E', action: 'Exit plan mode' },
+        { keys: 'Ctrl+W', action: 'Switch workspace' },
+        { keys: 'Ctrl+B', action: 'Fork new session' },
+        { keys: '/permission', action: 'Permission preset' },
+      ],
+    },
+    {
+      title: 'Messages & view',
+      rows: [
+        { keys: 'Ctrl+F', action: 'Search' },
+        { keys: 'Ctrl+Y', action: 'Rate reply' },
+        { keys: 'Ctrl+X', action: 'Copy reply' },
+        { keys: 'Ctrl+K', action: 'Fold old messages' },
+        { keys: 'Ctrl+T', action: 'Toggle thinking' },
+        { keys: 'Ctrl+O', action: 'Fold/expand jobs' },
+        { keys: 'Ctrl+L', action: 'Trajectory (event log)' },
+        { keys: 'PgUp/PgDn', action: 'Scroll' },
+        { keys: 'Tab · Esc', action: 'Focus cycle / cancel' },
+        { keys: 'Enter', action: 'Expand/collapse (thinking/tool/long message)' },
+      ],
+    },
+    {
+      title: 'Commands & quit',
+      rows: [
+        { keys: '/', action: 'Slash commands (e.g. /model, /permission, /config)' },
+        { keys: 'Ctrl+/', action: 'Command palette' },
+        { keys: '! · !!', action: 'Run shell: send / silent' },
+        { keys: 'Ctrl+C', action: 'Interrupt the running turn' },
+        { keys: 'Esc', action: 'Interrupt the running turn' },
+        { keys: 'Ctrl+D', action: 'Quit' },
+      ],
+    },
+  ],
   queued: (n: number): string => `${n} queued message${n === 1 ? '' : 's'}`,
   interrupted: 'Interrupted',
   stopped: 'Stopped',
@@ -440,10 +580,27 @@ const en: Strings = {
   permissionImpact: (path: string): string => `Files affected: ${path}`,
   // Session-switch feedback (CC-09)
   resumedSession: (session: string): string => `Resumed session ${session}`,
+  // /rename (session title + workspace directory targets)
+  renameSession: 'Session title',
+  renameWorkspace: 'Workspace directory',
+  renameTarget: 'Rename target',
+  wsRenamePrompt: 'New directory name (a single segment, no path separators)',
+  wsRenameInvalid: 'The name must be a single directory segment (no / or \\)',
+  wsRenamed: (path: string): string => `Workspace renamed: ${path}`,
+  wsRenameFailed: (message: string): string => `Workspace rename failed: ${message}`,
   // Trajectory view (B11/H31)
   trajectoryTitle: 'Trajectory',
   trajectoryEvents: (n: number): string => `${n} events`,
   trajectoryFilterHint: 'Type to filter · ↑/↓ scroll · PgUp/PgDn page · Esc close',
+  // /compose (pi A3, compose in $EDITOR)
+  composePlaceholder: '# Write your message here; save and exit to send (delete this line to drop the comment)',
+  composeEmpty: 'Draft was empty, nothing sent',
+  composeFailed: (message: string): string => `Editor compose failed: ${message}`,
+  // /keymap (cc/pi switchable hotkey presets)
+  keymap: 'Hotkey preset',
+  keymapDescription: 'cc is the Claude Code layout, pi the pi coding-agent layout',
+  keymapSwitched: (id: string): string => `Hotkey preset: ${id}`,
+  keymapUnknown: (value: string, available: string): string => `Unknown hotkey preset: ${value} (available: ${available})`,
 
   // TUI-native
   language: 'Language',

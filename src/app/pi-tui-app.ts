@@ -59,13 +59,16 @@ import type { SlashMenuItem } from '../view/components/slash-menu.ts'
 import { HotkeysPanel } from '../view/components/hotkeys-panel.ts'
 import { TrajectoryPanel } from '../view/components/trajectory-panel.ts'
 import { matchCommands, permissionTone } from './pi/command-match.ts'
+import { isKeymapId, keymapById, resolveKeyAction } from './pi/keymaps.ts'
+import type { KeymapId } from './pi/keymaps.ts'
 import type { OverlayHandle } from '@earendil-works/pi-tui'
 import { ApprovalEntryView, presentApprovalDialog } from '../view/components/approval-view.ts'
 import type { ApprovalAnswer, ApprovalQuestion } from '../view/components/approval-view.ts'
 import { fg, bold, italic } from './pi/color.ts'
 import { strings } from '../view/strings.ts'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import spawn from 'cross-spawn'
 
 /** A fixed-height blank block: bottom-anchors short transcripts (T7). */
@@ -324,6 +327,8 @@ function isRenderedEntry(entry: ViewEntry): boolean {
 export interface PiTuiAppOptions {
   /** JSON history file the composer persists to (P2 2.4); off when omitted. */
   historyFile?: string
+  /** 快捷键预设（cc/pi）；缺省取 DSH_TUI_KEYMAP env，再缺省 cc。 */
+  keymap?: KeymapId
 }
 
 export class PiTuiApp implements TerminalApp {
@@ -385,9 +390,12 @@ export class PiTuiApp implements TerminalApp {
   private lastFollowingEnd = true
   /** Busy flag of the previous render (elapsed-time anchor). */
   private wasBusy = false
+  /** 当前快捷键预设（cc/pi），/keymap 与 DSH_TUI_KEYMAP 切换。 */
+  private keymap: KeymapId = 'cc'
 
   constructor(options: PiTuiAppOptions = {}) {
     this.historyFile = options.historyFile
+    this.keymap = options.keymap ?? (isKeymapId(process.env.DSH_TUI_KEYMAP ?? '') ? process.env.DSH_TUI_KEYMAP as KeymapId : 'cc')
   }
 
   start(handlers: TerminalAppHandlers, meta: SurfaceMeta): void {
@@ -510,98 +518,7 @@ export class PiTuiApp implements TerminalApp {
   /** The app's global key handling (raw input no focused view consumed). */
   private handleGlobalKey(data: string): { consume: boolean } | undefined {
     if (this.handleSlashMenuKey(data)) return { consume: true }
-    if (matchesKey(data, 'ctrl+c')) {
-      // Claude-Code-style: Esc interrupts the running turn. Ctrl+C only
-      // quits while idle (busy Ctrl+C is swallowed, not an interrupt).
-      if (!this.current.busy) this.handlers?.onQuit()
-      return { consume: true }
-    }
-    if (matchesKey(data, 'ctrl+r')) {
-      this.handlers?.onSessionPickerRequest?.()
-      return { consume: true }
-    }
-    if (matchesKey(data, 'ctrl+g')) {
-      this.handlers?.onModelPickerRequest?.()
-      return { consume: true }
-    }
-    // Terminal sends 0x1F for Ctrl+/; pi's key table maps ctrl+/ to 0x0F
-    // (rawCtrlChar), so match the raw byte directly.
-    if (data === '\x1f' || matchesKey(data, 'ctrl+/')) {
-      this.handlers?.onCommandPickerRequest?.()
-      return { consume: true }
-    }
-    if (matchesKey(data, 'ctrl+e') && this.current.planMode === true) {
-      this.handlers?.onExitPlanModeRequest?.()
-      return { consume: true }
-    }
-    if (matchesKey(data, 'ctrl+w')) {
-      this.handlers?.onWorkspaceSwitchRequest?.()
-      return { consume: true }
-    }
-    if (data === '\x06' || matchesKey(data, 'ctrl+f')) {
-      void this.startSearch()
-      return { consume: true }
-    }
-    if (data === '\x02' || matchesKey(data, 'ctrl+b')) {
-      this.handlers?.onForkPickerRequest?.()
-      return { consume: true }
-    }
-    if (data === '\x19' || matchesKey(data, 'ctrl+y')) {
-      this.handlers?.onRateRequest?.()
-      return { consume: true }
-    }
-    if (data === '\x18' || matchesKey(data, 'ctrl+x')) {
-      this.copyLastReply()
-      return { consume: true }
-    }
-    if ((data === '\x1b\r' || matchesKey(data, 'alt+enter')) && !this.overlayOpen && this.focusIndex === -1) {
-      const text = this.editor?.getText() ?? ''
-      if (text.trim() !== '') {
-        this.editor?.setText('')
-        this.handlers?.onSteerRequest?.(text)
-      }
-      return { consume: true }
-    }
-    if ((data === '\x1b\x1b[A' || matchesKey(data, 'alt+up')) && !this.overlayOpen && this.focusIndex === -1) {
-      this.handlers?.onQueueRetrieveRequest?.()
-      return { consume: true }
-    }
-    // Ctrl+O toggles the collapsed job row (Ctrl+J's byte \x0a is a newline
-    // character the editor needs for multi-line paste, so it can't be a key).
-    if ((data === '\x0f' || matchesKey(data, 'ctrl+o')) && !this.overlayOpen) {
-      this.toggleJobsExpanded()
-      return { consume: true }
-    }
-    // Ctrl+L: 轨迹视图（B11/H31）。Ctrl+I 与 Tab 同字节不可分，故用 L(og)。
-    if (data === '\x0c' || matchesKey(data, 'ctrl+l')) {
-      this.handlers?.onTrajectoryRequest?.()
-      return { consume: true }
-    }
-    if (matchesKey(data, 'ctrl+k')) {
-      const visible = this.current.entries.filter(isRenderedEntry)
-      if (visible.length > FOLD_KEEP) {
-        this.viewFolded = !this.viewFolded
-        this.applyState(this.current)
-      }
-      return { consume: true }
-    }
-    if (matchesKey(data, 'ctrl+p')) {
-      this.handlers?.onPermissionPickerRequest?.()
-      return { consume: true }
-    }
-    if (matchesKey(data, 'ctrl+t')) {
-      this.hideThinking = !this.hideThinking
-      for (const view of this.entryViews.values()) {
-        const inner = view instanceof FocusableFrame ? view.inner : view
-        if (inner instanceof AssistantMessageComponent) inner.setHideThinkingBlock(this.hideThinking)
-      }
-      this.tui?.requestRender()
-      return { consume: true }
-    }
-    if (matchesKey(data, 'ctrl+d')) {
-      this.handlers?.onQuit()
-      return { consume: true }
-    }
+    // 通用交互不进预设：Tab 焦点环与 Esc 焦点复位。
     if (matchesKey(data, 'tab') && !this.overlayOpen && this.focusableItems.length > 0) {
       this.cycleFocus()
       return { consume: true }
@@ -610,13 +527,105 @@ export class PiTuiApp implements TerminalApp {
       this.setFocusIndex(-1)
       return { consume: true }
     }
-    if (matchesKey(data, 'escape') && !this.overlayOpen && this.current.busy) {
-      // Claude-Code-style interrupt: Esc cancels the running turn
-      // (Alt+Up still retrieves a queued message).
-      this.handlers?.onInterrupt()
-      return { consume: true }
+    // 快捷键动作经当前预设解析（cc/pi，见 app/pi/keymaps.ts）。
+    const action = resolveKeyAction(keymapById(this.keymap), data, this.current.busy)
+    switch (action) {
+      case 'interrupt':
+        this.handlers?.onInterrupt()
+        return { consume: true }
+      case 'quit':
+        this.handlers?.onQuit()
+        return { consume: true }
+      case 'quitCtrlD':
+        this.handlers?.onQuit()
+        return { consume: true }
+      case 'swallow':
+        // cc 预设 busy Ctrl+C：吞掉（Esc 才是中断键）。
+        return { consume: true }
+      case 'sessions':
+        this.handlers?.onSessionPickerRequest?.()
+        return { consume: true }
+      case 'model':
+        this.handlers?.onModelPickerRequest?.()
+        return { consume: true }
+      case 'permission':
+        this.handlers?.onPermissionPickerRequest?.()
+        return { consume: true }
+      case 'compose':
+        void this.composeInEditor()
+        return { consume: true }
+      case 'palette':
+        this.handlers?.onCommandPickerRequest?.()
+        return { consume: true }
+      case 'exitPlan':
+        if (this.current.planMode === true) this.handlers?.onExitPlanModeRequest?.()
+        return this.current.planMode === true ? { consume: true } : undefined
+      case 'workspace':
+        this.handlers?.onWorkspaceSwitchRequest?.()
+        return { consume: true }
+      case 'search':
+        void this.startSearch()
+        return { consume: true }
+      case 'fork':
+        this.handlers?.onForkPickerRequest?.()
+        return { consume: true }
+      case 'rate':
+        this.handlers?.onRateRequest?.()
+        return { consume: true }
+      case 'copy':
+        this.copyLastReply()
+        return { consume: true }
+      case 'steer':
+        if (!this.overlayOpen && this.focusIndex === -1) {
+          const text = this.editor?.getText() ?? ''
+          if (text.trim() !== '') {
+            this.editor?.setText('')
+            this.handlers?.onSteerRequest?.(text)
+          }
+          return { consume: true }
+        }
+        return undefined
+      case 'retrieve':
+        if (!this.overlayOpen && this.focusIndex === -1) {
+          this.handlers?.onQueueRetrieveRequest?.()
+          return { consume: true }
+        }
+        return undefined
+      case 'jobs':
+        // Ctrl+O toggles the collapsed job row (Ctrl+J's byte \x0a is a newline
+        // character the editor needs for multi-line paste, so it can't be a key).
+        if (!this.overlayOpen) this.toggleJobsExpanded()
+        return this.overlayOpen ? undefined : { consume: true }
+      case 'trajectory':
+        // Ctrl+L（Log）：Ctrl+I 与 Tab 同字节不可分，故用 L。
+        this.handlers?.onTrajectoryRequest?.()
+        return { consume: true }
+      case 'fold': {
+        const visible = this.current.entries.filter(isRenderedEntry)
+        if (visible.length > FOLD_KEEP) {
+          this.viewFolded = !this.viewFolded
+          this.applyState(this.current)
+        }
+        return { consume: true }
+      }
+      case 'thinking':
+        this.hideThinking = !this.hideThinking
+        for (const view of this.entryViews.values()) {
+          const inner = view instanceof FocusableFrame ? view.inner : view
+          if (inner instanceof AssistantMessageComponent) inner.setHideThinkingBlock(this.hideThinking)
+        }
+        this.tui?.requestRender()
+        return { consume: true }
+      default:
+        return undefined
     }
-    return undefined
+  }
+
+  /** 切换快捷键预设（/keymap）；热键面板与全局键立即随新预设解析。 */
+  setKeymap(id: KeymapId): void {
+    if (this.keymap === id) return
+    this.keymap = id
+    this.tui?.requestRender()
   }
 
   /** Register the global key listener (re-attached after an editor resume). */
@@ -918,7 +927,9 @@ export class PiTuiApp implements TerminalApp {
   showHotkeys(): void {
     const tui = this.tui
     if (tui === undefined) return
-    const panel = new HotkeysPanel(strings().hotkeysSections, () => {
+    // 面板内容随当前快捷键预设切换（cc/pi 两套键位说明）。
+    const sections = this.keymap === 'pi' ? strings().hotkeysSectionsPi : strings().hotkeysSections
+    const panel = new HotkeysPanel(sections, () => {
       this.overlayOpen = false
       handle.hide()
     })
@@ -1595,6 +1606,42 @@ export class PiTuiApp implements TerminalApp {
     if (focus !== undefined) tui.setFocus(focus)
     this.applyState(this.current)
     tui.requestRender()
+  }
+
+  /**
+   * $EDITOR 撰写长消息（pi A3）：pi 预设 Ctrl+G / cc 预设 `/compose`。
+   * 挂起 alt screen → 打开临时草稿（首行占位注释）→ 恢复 → 读回正文提交；
+   * 草稿被清空则提示不发送。
+   */
+  async composeInEditor(): Promise<void> {
+    if (this.tui === undefined) return
+    const path = join(tmpdir(), `dsh-tui-compose-${Date.now()}.md`)
+    try {
+      writeFileSync(path, `${strings().composePlaceholder}\n`, 'utf8')
+    } catch {
+      this.toast(strings().composeEmpty, 'error')
+      return
+    }
+    try {
+      await this.openExternalEditor(path)
+      let text = readFileSync(path, 'utf8')
+      const placeholder = strings().composePlaceholder
+      if (text.startsWith(placeholder)) text = text.slice(placeholder.length)
+      text = text.replace(/^\n+/, '').trimEnd()
+      if (text.trim() === '') {
+        this.toast(strings().composeEmpty, 'info')
+        return
+      }
+      this.handlers?.onInput(text)
+    } catch (error) {
+      this.toast(strings().composeFailed(error instanceof Error ? error.message : String(error)), 'error')
+    } finally {
+      try {
+        rmSync(path, { force: true })
+      } catch {
+        // 临时草稿清理失败无害。
+      }
+    }
   }
 
   /** The document entry id holding focus, or null (T3④ feedback target). */
