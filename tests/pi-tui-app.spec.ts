@@ -1543,6 +1543,23 @@ describe('pi-tui surface', () => {
     expect(test.terminal.plain()).toContain('换肤前的消息')
   })
 
+  it('打开 /settings 面板并就地刷新行（M2）', async () => {
+    const test = mount()
+    await settle()
+    test.app.showSettings([
+      { key: '语言', current: 'zh', target: '→ /lang' },
+      { key: '主题', current: '暗色 · web', tone: 'accent', target: '→ /theme' },
+    ])
+    await settle()
+    expect(test.terminal.plain()).toContain('设置')
+    expect(test.terminal.plain()).toContain('语言')
+    expect(test.terminal.plain()).toContain('暗色 · web')
+    // 行变化后就地刷新。
+    test.app.showSettings([{ key: '主题', current: '暗色 · opencode', tone: 'accent', target: '→ /theme' }])
+    await settle()
+    expect(test.terminal.plain()).toContain('暗色 · opencode')
+  })
+
   it('renders error notices from failed turns', async () => {
     const test = mount()
     await settle()

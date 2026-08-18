@@ -171,10 +171,10 @@
 | H10 | 相对时间显示 | relativeTime 双语 | 刚刚/N 分钟前/N 小时前/N 天前/日期 | ✅ |
 | H11 | 工作区重命名/删除对话框 | WorkspaceBrowser | 重命名 ✅：裸 `/rename` → 目标「工作区目录」→ 单段名校验 → `fs.rename`（footer/路径同步）；删除 ⛔ 克制（`fs.rm -r` 不可逆）；列表/浏览规划见 SETTINGS-WORKSPACE-DESIGN.md M4 | 🟡 |
 | H12 | 会话导出/下载 UI | 客户端无此功能（grep 确认）；runtime /export | /export 展示 jsonl 路径（原生等价） | ✅ |
-| H13 | 设置面板（模态 + 导航 + General 区） | ui-settings-general | 无独立设置页；env + /lang + pickers 等价，`/settings` 聚合面板规划见 SETTINGS-WORKSPACE-DESIGN.md M2 | 🟡 |
+| H13 | 设置面板（模态 + 导航 + General 区） | ui-settings-general | `/settings` 聚合面板 ✅（语言/主题/Enter 行为/键位预设/动画/配置六行，数字直选 + Enter 跳转既有命令，面板随主题预设自动换肤；H16 的 Enter 行为设置一并收口）；非独立设置页（终端形态等价） | 🟡 |
 | H14 | 语言选择（zh/en + 持久化） | locale LanguageRow | /lang + DSH_TUI_LANG + strings() 双词典 | ✅ |
 | H15 | 外观主题（浅/深/跟随系统） | ui-theme AppearanceRow | `DSH_TUI_THEME=light/dark/auto`（OSC11 探测）× **视觉主题四预设**（`/theme [web|cc|pi|opencode]` + `DSH_TUI_THEME_PRESET` + sidecar 持久化，palette 热切换 + 视图重建）；pi/opencode 取官方主题逐字值、cc 为诠释 | ✅ |
-| H16 | Enter 行为设置（queue/steer） | EnterBehaviorRow | `DSH_TUI_ENTER=steer` env 可切 busy Enter 为 steer（默认 queue，web 默认一致）；无设置面板行（规划见 M2） | 🟡 |
+| H16 | Enter 行为设置（queue/steer） | EnterBehaviorRow | `/settings` 面板 Enter 行为行 ✅（queue/steer 两选，settings seam `tui.enterBehavior` 持久化）+ `DSH_TUI_ENTER` env（web 默认一致） | ✅ |
 | H17 | 模型默认设置 | ui-agent-preset AgentPresetRow | Ctrl+G 选择 + 持久化 | ✅ |
 | H18 | 权限默认设置 | ui-permission-presets PermissionRow | Ctrl+P + full-access 确认 | ✅ |
 | H19 | 模型设置页（API key/provider/模型目录/onboarding） | ui-settings-models | `/config`：供应商列表 + 添加向导（路由/显示名/baseURL/协议/apiKeyEnv，经 settings seam 热生效）+ 预览/$EDITOR 编辑 settings.yaml（K2） | 🟡 |
@@ -206,8 +206,8 @@
 | E 会话级 UI | 15 | 2 | 0 | 0 | — |
 | F 交互细节 | 3 | 3 | 0 | 0 | Cmd-Enter 未做；自动滚动开关不可行（↓ End 提示已补） |
 | G dsh CLI/Runtime | 40 | 7 | 0 | 3 | runtime 能力基本全可达 |
-| H Web 壳/设置 | 16 | 9 | 2 | 6 | 设置页/插件页为主要缺口（方案已落 SETTINGS-WORKSPACE-DESIGN.md） |
-| **合计** | **97** | **39** | **2** | **10** | 覆盖率 ✅+🟡 ≈ 92%（不含 ⛔ 的 138 项中 ≈ 99%） |
+| H Web 壳/设置 | 17 | 8 | 2 | 6 | 插件清单/工作区列表为主要缺口（方案已落 SETTINGS-WORKSPACE-DESIGN.md） |
+| **合计** | **98** | **38** | **2** | **10** | 覆盖率 ✅+🟡 ≈ 92%（不含 ⛔ 的 138 项中 ≈ 99%） |
 
 > 修订：本清单基于 dsh checkout 与 web 客户端逐包审计（CLI/runtime 8 区、会话面 6 区、壳/设置 5 区），
 > 每条含可核对的源文件路径。TUI 侧状态与本仓库实现同步；后续功能落地时以本清单为对比基线。

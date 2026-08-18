@@ -28,7 +28,7 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-jobs'
-import { PiTuiApp } from './app/pi-tui-app.ts'
+import { PiTuiApp, piTuiInternals } from './app/pi-tui-app.ts'
 import { applyPalette } from './app/pi/color.ts'
 import { detectThemeLive, resolveThemeVariant } from './app/pi/theme-detect.ts'
 import { installApprovals } from './control/approvals.ts'
@@ -143,7 +143,7 @@ async function exportSessionLog(ctx: Context, sessions: SessionStore, session: S
     entries: [...doc.entries, { kind: 'notice' as const, id: `notice:export:${session.id}`, text, tone: 'info' as const }],
   }
 }
-import type { SurfaceMeta, TerminalApp, TerminalAppHandlers, ModelChoice, ProjectionRow, TrajectoryRow } from './app/terminal-app.ts'
+import type { SurfaceMeta, TerminalApp, TerminalAppHandlers, ModelChoice, ProjectionRow, SettingsRow, TrajectoryRow } from './app/terminal-app.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui-runner'
@@ -247,6 +247,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   let activeThemePreset: ThemePresetId = isThemePresetId(process.env.DSH_TUI_THEME_PRESET ?? '')
     ? process.env.DSH_TUI_THEME_PRESET as ThemePresetId
     : loadPersistedThemePreset() ?? 'web'
+  const bootKeymap: KeymapId = isKeymapId(process.env.DSH_TUI_KEYMAP ?? '') ? process.env.DSH_TUI_KEYMAP as KeymapId : loadPersistedKeymap() ?? 'cc'
+  let activeKeymap: KeymapId = bootKeymap
   const app = internals.createApp(activeThemePreset, themeVariant)
   /** 应用视觉主题预设：palette 热切换 + 视图重建 + 持久化 + toast。 */
   const applyThemePreset = (preset: ThemePresetId): void => {
@@ -499,6 +501,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     push('__keymap', '/keymap [cc|pi|opencode]', '切换快捷键预设：Claude Code / pi / OpenCode 式键位')
     push('__theme', '/theme [web|cc|pi|opencode]', '切换视觉主题预设')
     push('__preset', '/preset [cc|pi|opencode]', '一键切换预设（快捷键 + 视觉主题）')
+    push('__settings', '/settings · 设置', '聚合设置面板（语言/主题/Enter/键位/动画/配置）')
     push('__compose', '/compose · 编辑器撰写', '在 $EDITOR 中撰写长消息并发送（pi A3）')
     return items
   }
@@ -612,6 +615,28 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   const settingsSeam = (): SettingsSeam | undefined =>
     (ctx as { get: (key: string) => unknown }).get('settings') as SettingsSeam | undefined
 
+  // ---- M2：TUI 自有设置的 settings.yaml hydration（tui 命名空间，best-effort）。
+  // Enter 行为与动画开关在运行时改 env/internals；持久化经 settings seam，
+  // 启动时若 env 未显式设置则回填。
+
+  /** tui 命名空间的持久化段（结构化只读）。 */
+  const tuiSettingsSection = (): { enterBehavior?: string; anim?: string } | undefined => {
+    const section = settingsSeam()?.get?.('tui')
+    return typeof section === 'object' && section !== null
+      ? section as { enterBehavior?: string; anim?: string }
+      : undefined
+  }
+
+  if ((process.env.DSH_TUI_ENTER ?? '') === '') {
+    const saved = tuiSettingsSection()?.enterBehavior
+    if (saved === 'steer' || saved === 'queue') process.env.DSH_TUI_ENTER = saved
+  }
+  if ((process.env.DSH_TUI_ANIM ?? '') === '') {
+    const saved = tuiSettingsSection()?.anim
+    if (saved === 'off') piTuiInternals.animFrameMs = 0
+    else if (saved === 'on') piTuiInternals.animFrameMs = 60
+  }
+
   const llmDirectory = (): ConfigurableProviderEntry[] =>
     (ctx.get('llm') as LlmDirectorySeam | undefined)?.listConfigurableProviders?.() ?? []
 
@@ -624,6 +649,65 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       if (prepared !== undefined) return prepared
     }
     return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'settings.yaml')
+  }
+
+  /** 键位三选：应用 + 持久化 + toast；取消返回 false。 */
+  const pickKeymap = async (): Promise<boolean> => {
+    const answer = await app.askDialog({
+      title: strings().keymap,
+      detail: strings().keymapDescription,
+      options: KEYMAPS.map(keymap => keymap.label),
+    })
+    if (answer.reason !== 'picked' || answer.picked === undefined) return false
+    const picked = KEYMAPS.find(keymap => keymap.label === answer.picked)
+    if (picked === undefined) return false
+    activeKeymap = picked.id
+    app.setKeymap(picked.id)
+    persistKeymap(picked.id)
+    app.toast(strings().keymapSwitched(picked.id), 'success')
+    return true
+  }
+
+  /** 主题四选：应用 + 持久化 + toast；取消返回 false。 */
+  const pickTheme = async (): Promise<boolean> => {
+    const answer = await app.askDialog({
+      title: strings().themePreset,
+      detail: strings().themePresetDescription,
+      options: THEME_PRESETS.map(preset => preset.label),
+    })
+    if (answer.reason !== 'picked' || answer.picked === undefined) return false
+    const picked = THEME_PRESETS.find(preset => preset.label === answer.picked)
+    if (picked === undefined) return false
+    applyThemePreset(picked.id)
+    return true
+  }
+
+  /** 明暗变体的显示名（/settings 主题行的现状值）。 */
+  const themeVariantLabel = (): string => {
+    const env = process.env.DSH_TUI_THEME
+    if (env === 'auto') return strings().themeVariantAuto
+    if (env === 'light') return strings().themeVariantLight
+    return strings().themeVariantDark
+  }
+
+  /** /settings 面板行：现状值实时收集（面板是瞬态派生视图，不落文档）。 */
+  const settingsRows = async (): Promise<SettingsRow[]> => {
+    const enter = process.env.DSH_TUI_ENTER === 'steer' ? strings().enterSteer : strings().enterQueue
+    const anim = piTuiInternals.animFrameMs > 0 ? strings().animOn : strings().animOff
+    const config = await settingsFilePath().catch(() => 'settings.yaml')
+    return [
+      { key: strings().settingsLanguage, current: resolveLanguage(process.env.DSH_TUI_LANG), target: '→ /lang' },
+      { key: strings().settingsTheme, current: `${themeVariantLabel()} · ${activeThemePreset}`, tone: 'accent', target: '→ /theme' },
+      { key: strings().settingsEnter, current: enter, tone: 'info', target: '→ 切换' },
+      { key: strings().settingsKeymap, current: activeKeymap, tone: 'accent', target: '→ /keymap' },
+      { key: strings().settingsAnim, current: anim, target: '→ 切换' },
+      { key: strings().settingsConfig, current: config, tone: 'muted', target: '→ /config' },
+    ]
+  }
+
+  /** 打开 /settings 面板（已开则就地刷新行——主题切换后随新预设重绘）。 */
+  const openSettings = async (): Promise<void> => {
+    app.showSettings(await settingsRows())
   }
 
   /** 按 settingsPath 段从命名空间解析值里取出供应商 profile。 */
@@ -1194,6 +1278,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       if (name === '__keymap') {
         const arg = rawInput?.trim() ?? ''
         const apply = (id: KeymapId): void => {
+          activeKeymap = id
           app.setKeymap(id)
           persistKeymap(id)
           app.toast(strings().keymapSwitched(id), 'success')
@@ -1203,16 +1288,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
           else app.toast(strings().keymapUnknown(arg, 'cc, pi, opencode'), 'error')
           return
         }
-        void (async () => {
-          const answer = await app.askDialog({
-            title: strings().keymap,
-            detail: strings().keymapDescription,
-            options: KEYMAPS.map(keymap => keymap.label),
-          })
-          if (answer.reason !== 'picked' || answer.picked === undefined) return
-          const picked = KEYMAPS.find(keymap => keymap.label === answer.picked)
-          if (picked !== undefined) apply(picked.id)
-        })()
+        void pickKeymap()
         return
       }
       if (name === '__theme') {
@@ -1222,16 +1298,11 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
           else app.toast(strings().themeUnknown(arg, 'web, cc, pi, opencode'), 'error')
           return
         }
-        void (async () => {
-          const answer = await app.askDialog({
-            title: strings().themePreset,
-            detail: strings().themePresetDescription,
-            options: THEME_PRESETS.map(preset => preset.label),
-          })
-          if (answer.reason !== 'picked' || answer.picked === undefined) return
-          const picked = THEME_PRESETS.find(preset => preset.label === answer.picked)
-          if (picked !== undefined) applyThemePreset(picked.id)
-        })()
+        void pickTheme()
+        return
+      }
+      if (name === '__settings') {
+        void openSettings()
         return
       }
       if (name === '__preset') {
@@ -1239,6 +1310,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         // 只在 /theme 单切，因为 web 没有对应键位风格）。
         const arg = rawInput?.trim() ?? ''
         const applyProfile = (id: KeymapId): void => {
+          activeKeymap = id
           app.setKeymap(id)
           persistKeymap(id)
           activeThemePreset = id
@@ -1430,15 +1502,49 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     },
     // opencode 预设的 <leader>t：打开主题预设 picker。
     onThemePickerRequest: (): void => {
+      void pickTheme()
+    },
+    // /settings 面板行选中：数字直选或 Enter。
+    onSettingsRowPicked: (index: number): void => {
       void (async () => {
-        const answer = await app.askDialog({
-          title: strings().themePreset,
-          detail: strings().themePresetDescription,
-          options: THEME_PRESETS.map(preset => preset.label),
-        })
-        if (answer.reason !== 'picked' || answer.picked === undefined) return
-        const picked = THEME_PRESETS.find(preset => preset.label === answer.picked)
-        if (picked !== undefined) applyThemePreset(picked.id)
+        const refresh = async (): Promise<void> => { app.showSettings(await settingsRows()) }
+        switch (index) {
+          case 0: // 语言
+            handlers.onCommandPicked('__lang', '')
+            break
+          case 1: // 主题（四选；切换后面板就地重绘新预设风格）
+            if (await pickTheme()) await refresh()
+            break
+          case 2: { // Enter 行为（queue/steer，settings seam 持久化 best-effort）
+            const answer = await app.askDialog({ title: strings().settingsEnter, options: [strings().enterQueue, strings().enterSteer] })
+            if (answer.reason !== 'picked' || answer.picked === undefined) return
+            const steer = answer.picked === strings().enterSteer
+            if (steer) process.env.DSH_TUI_ENTER = 'steer'
+            else delete process.env.DSH_TUI_ENTER
+            void settingsSeam()?.update?.('tui', { enterBehavior: steer ? 'steer' : 'queue' }).catch(() => {})
+            app.toast(strings().enterSwitched(steer ? strings().enterSteer : strings().enterQueue), 'success')
+            await refresh()
+            break
+          }
+          case 3: // 键位（三选）
+            if (await pickKeymap()) await refresh()
+            break
+          case 4: { // 动画（运行时切 animFrameMs + 持久化 best-effort）
+            const off = piTuiInternals.animFrameMs > 0
+            piTuiInternals.animFrameMs = off ? 0 : 60
+            if (off) process.env.DSH_TUI_ANIM = '0'
+            else delete process.env.DSH_TUI_ANIM
+            void settingsSeam()?.update?.('tui', { anim: off ? 'off' : 'on' }).catch(() => {})
+            app.toast(strings().animSwitched(off ? strings().animOff : strings().animOn), 'success')
+            await refresh()
+            break
+          }
+          case 5: // 配置文件
+            handlers.onCommandPicked('__config', '')
+            break
+          default:
+            break
+        }
       })()
     },
     onWorkspaceSwitchRequest: (): void => {

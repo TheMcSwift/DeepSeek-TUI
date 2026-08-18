@@ -462,6 +462,73 @@ describe('tui runner', () => {
     }
   })
 
+  it('opens the /settings panel with live values (M2)', async () => {
+    const test = await bench({}, {})
+    await test.started
+    test.app.handlers?.onCommandPicked('__settings', '')
+    await settle(150)
+    expect(test.app.settingsShown).toHaveLength(1)
+    const rows = test.app.settingsShown[0]
+    expect(rows.map(row => row.key)).toContain('语言')
+    expect(rows.map(row => row.key)).toContain('主题')
+    expect(rows.map(row => row.key)).toContain('Enter 行为')
+    expect(rows.map(row => row.key)).toContain('快捷键预设')
+    expect(rows.map(row => row.key)).toContain('动画')
+    expect(rows.map(row => row.key)).toContain('配置文件')
+    const themeRow = rows.find(row => row.key === '主题')
+    expect(themeRow?.current).toContain('web') // 默认主题预设
+    await test.ctx.fiber.dispose()
+  })
+
+  it('switches Enter behavior from the /settings panel and persists it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-settings-home-'))
+    const previousHome = process.env.DSH_HOME
+    const previousEnter = process.env.DSH_TUI_ENTER
+    process.env.DSH_HOME = home
+    try {
+      const test = await bench({}, {})
+      await test.started
+      test.app.handlers?.onCommandPicked('__settings', '')
+      await settle(150)
+      test.app.dialogAnswer = '并入当前轮（steer）'
+      test.app.handlers?.onSettingsRowPicked?.(2)
+      await settle(150)
+      expect(process.env.DSH_TUI_ENTER).toBe('steer')
+      expect(test.app.toasts.some(toast => toast.text.includes('Enter 行为'))).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      if (previousEnter === undefined) delete process.env.DSH_TUI_ENTER
+      else process.env.DSH_TUI_ENTER = previousEnter
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('switches the theme from the /settings panel and refreshes rows in place', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-settings-theme-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const test = await bench({}, {})
+      await test.started
+      test.app.handlers?.onCommandPicked('__settings', '')
+      await settle(150)
+      test.app.dialogAnswer = 'opencode — OpenCode 默认主题'
+      test.app.handlers?.onSettingsRowPicked?.(1)
+      await settle(150)
+      expect(test.app.themeRefreshes).toBe(1)
+      // 行就地刷新：主题现状值已更新为 opencode。
+      const last = test.app.settingsShown[test.app.settingsShown.length - 1]
+      expect(last.find(row => row.key === '主题')?.current).toContain('opencode')
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('routes /compose to the editor-compose flow (pi A3)', async () => {
     const test = await bench({}, {})
     await test.started
@@ -534,7 +601,7 @@ describe('tui runner', () => {
     await test.started
     test.app.handlers?.onCommandPickerRequest?.()
     await settle()
-    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__compose'])
+    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__settings', '__compose'])
     expect(test.app.commands?.find(item => item.value === 'goal')?.label).toBe('/goal <objective>')
     expect(test.app.commands?.find(item => item.value === '__model')?.label).toBe('/model <provider/model>')
     expect(test.app.commands?.find(item => item.value === '__permission')?.label).toBe('/permission <preset>')

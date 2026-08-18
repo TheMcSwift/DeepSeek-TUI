@@ -506,9 +506,20 @@ def scenario_surface() -> None:
             dump_failure("preset back")
             raise AssertionError("preset switch back failed")
         time.sleep(0.5)
+        # /settings：聚合面板（六行设置，数字直选/Enter 跳转，Esc 关闭）。
+        tui.type("/settings\r")
+        if not tui.wait_for("设置", 30):
+            dump_failure("settings")
+            raise AssertionError("settings panel did not open")
+        screen = plain(tui.out.decode("utf-8", "replace"))
+        if "快捷键预设" not in screen or "配置文件" not in screen:
+            dump_failure("settings rows")
+            raise AssertionError("settings rows missing")
+        tui.type("\x1b")
+        time.sleep(0.5)
         tui.type("/quit\r")
         assert tui.wait_exit(30) == 0, "surface quit failed"
-        print("[e2e] surface: /hotkeys, Ctrl+P, /config, /keymap, /theme, /preset all worked")
+        print("[e2e] surface: /hotkeys, Ctrl+P, /config, /keymap, /theme, /preset, /settings all worked")
     finally:
         tui.kill()
         mock.terminate()

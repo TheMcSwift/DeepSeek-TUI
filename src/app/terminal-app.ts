@@ -71,6 +71,18 @@ export interface TrajectoryRow {
   summary: string
 }
 
+/** One row in the /settings panel (M2): display name, live value, action hint. */
+export interface SettingsRow {
+  /** 行名（经 strings 本地化）。 */
+  key: string
+  /** 现状值（本地化显示文本）。 */
+  current: string
+  /** 现状值的语义色调（纯语义名——面板随主题预设自动换色）。 */
+  tone?: 'text' | 'accent' | 'info' | 'success' | 'warning' | 'error' | 'muted' | 'dim'
+  /** 操作提示（如 `→ /theme`）。 */
+  target: string
+}
+
 /** Static identity shown in the surface header. */
 export interface SurfaceMeta {
   /** `provider/model` of the active agent. */
@@ -138,6 +150,8 @@ export interface TerminalAppHandlers {
   onTrajectoryRequest?(): void
   /** /theme 或 opencode 预设的 <leader>t：runner 应打开主题预设 picker。 */
   onThemePickerRequest?(): void
+  /** /settings 面板里选中了某行（数字直选或 Enter）；index 为行序。 */
+  onSettingsRowPicked?(index: number): void
 }
 
 /** The terminal surface contract the runner drives. */
@@ -183,6 +197,8 @@ export interface TerminalApp {
   showForkPicker(items: readonly SessionChoice[]): void
   /** Open the trajectory (Inspect) overlay over the raw event log (B11/H31). */
   showTrajectory(rows: readonly TrajectoryRow[]): void
+  /** Open (或就地刷新) /settings 聚合面板；行变化后重复调用即更新。 */
+  showSettings(rows: readonly SettingsRow[]): void
   /** Open a generic single-column picker (queue dock E1, projections K3). */
   showQueuePicker(rows: readonly import('../view/components/filterable-picker.ts').PickerRow[], onPicked: (value: string | null) => void, title?: string): void
   /** Transient action feedback in the status slot (P2; deferred until idle). */

@@ -58,7 +58,7 @@
 
 | # | Pi 能力 | Pi 实现 | DSH TUI 现状 | 状态 |
 |---|---|---|---|---|
-| E1 | `/settings`（thinking 级别/主题/投递模式） | 设置面板 | Ctrl+T + `DSH_TUI_THEME=light/dark/auto` + **`/theme [web|cc|pi|opencode]` 视觉主题预设**（pi 官方 dark/light.json 逐字）+ `DSH_TUI_ENTER=steer` + **`/keymap [cc|pi|opencode]` 三预设**；`/config` 覆盖配置与供应商管理；`/settings` 聚合面板规划见 SETTINGS-WORKSPACE-DESIGN.md | 🟡 |
+| E1 | `/settings`（thinking 级别/主题/投递模式） | 设置面板 | Ctrl+T + `DSH_TUI_THEME=light/dark/auto` + **`/theme [web|cc|pi|opencode]` 视觉主题预设**（pi 官方 dark/light.json 逐字）+ `DSH_TUI_ENTER=steer` + **`/keymap [cc|pi|opencode]` 三预设** + **`/settings` 聚合面板 ✅（语言/主题/Enter/键位/动画/配置六行，随主题预设换肤）**；`/config` 覆盖配置与供应商管理 | 🟡 |
 | E2 | `/hotkeys` 全部快捷键 | 帮助面板 | 分组对齐列 `HotkeysPanel`（窗口滚动 + PgUp/PgDn） | ✅ |
 | E3 | `/model`（含 scoped-models，Ctrl+P 循环切换模型） | 模型选择器 | Ctrl+G 模型 picker ✅ + effort 二级 ✅ + `/model` 枚举/参数直切 ✅；**pi 预设下 Ctrl+P = 模型选择**（pi 原语义），cc 预设下 Ctrl+P = 权限预设，opencode 预设下 Ctrl+P = 命令面板（opencode 原语义） | ✅（三预设各自还原了同名键位的原生语义） |
 | E4 | 凭据管理 /login /logout | OAuth | DSH 凭据走 env/credentials 服务 | ✅ 等价（无 UI，YAML/env） |

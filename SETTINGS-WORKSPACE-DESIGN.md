@@ -51,22 +51,27 @@ web 的 `ui-settings-*` 是分区模态（General/Models/Plugins/Plugin inventor
 原则：**面板是瞬态派生视图**（单向数据流不破——只读现成 seam，写路径全部走既有命令），
 **每个分区一个现有命令的聚合入口**，不新建第二份状态。
 
-### 3.1 `/settings` — General 分区（H13 收口）
+### 3.1 `/settings` — General 分区（H13 收口）✅ 已落地（M2）
 
-入口命令 `/settings`（裸命令开面板，行式条目沿用 HotkeysPanel 的窗口滚动形态）：
+入口命令 `/settings`（裸命令开面板；已开则就地刷新行）。面板是**瞬态派生视图**：
+打开时实时收集现状值，不落文档；行操作全部跳转既有命令/闭包，零新写逻辑。
 
 | 行 | 现状值（数据源） | 操作 |
 |---|---|---|
-| 语言 | `strings()` 当前 locale（dsh 持久化） | Enter → `/lang` 枚举 |
-| 主题 | `DSH_TUI_THEME` 明暗 × 当前视觉预设（web/cc/pi/opencode） | Enter → `/theme` 枚举 |
-| Enter 行为 | `DSH_TUI_ENTER` 默认 queue | Enter → queue/steer 枚举 |
-| 快捷键预设 | 当前 `cc`/`pi`/`opencode` | Enter → `/keymap` 枚举 |
-| 动画 | `DSH_TUI_ANIM` | Enter → on/off |
-| 配置文件 | settings.yaml 路径 | Enter → `/config` |
+| 语言 | `resolveLanguage(DSH_TUI_LANG)` | → `/lang` 枚举 |
+| 主题 | 明暗变体（暗色/亮色/跟随终端）× 当前预设（web/cc/pi/opencode） | → 主题四选（切换后面板就地重绘新预设风格） |
+| Enter 行为 | `DSH_TUI_ENTER`（排队/steer） | → 两选；写 settings seam `tui.enterBehavior`（best-effort） |
+| 快捷键预设 | 当前 `cc`/`pi`/`opencode` | → 键位三选（sidecar 持久化） |
+| 动画 | `piTuiInternals.animFrameMs`（开/关） | → 运行时切换 + settings seam `tui.anim`（best-effort） |
+| 配置文件 | settings.yaml 路径 | → `/config` |
 
-持久化策略：能进 settings.yaml 的（语言已在 dsh 侧；keymap 已落 sidecar）维持现状；
-新增 env 型设置先「运行时 + sidecar + 面板提示」三级，不强行改写 dsh settings 命名空间
-（out-of-tree 约束：settings 是 dsh 的服务，TUI 只写自己已占用的键）。
+**视觉**：面板只用语义色名（accent/muted/dim/borderMuted/selectedBg），零硬编码 hex——
+随当前主题预设（web/cc/pi/opencode）自动呈现对应风格；面板内切主题后行数据就地刷新、
+颜色在下一次渲染随新预设生效。组件 `src/view/components/settings-panel.ts`
+（窗口滚动 + 数字直选 + Enter 执行 + Esc 关闭，HotkeysPanel 同形态）。
+
+持久化策略：语言在 dsh 侧；keymap/theme 走 sidecar；Enter/动画经 settings seam 的
+`tui` 命名空间（out-of-tree 只写自己占用的键），启动时若 env 未显式设置则回填。
 
 ### 3.2 `/plugins` — 插件清单与设置（H20 + H21 收口）
 
@@ -100,9 +105,9 @@ H11 在清单中从 ❌ 调整为 🟡（重命名 ✅ / 删除 ⛔ 克制 / 列
 
 | 批次 | 内容 | 量级 |
 |---|---|---|
-| **M1（本批已完成）** | `/keymap` 双预设 + `/rename` 工作区重命名 + `/compose`（pi A3） | ✅ 0.2.1 |
-| **M2（下批）** | `/settings` General 分区面板（只读聚合 + 跳转既有命令） | S–M |
-| **M3** | `/plugins` 代理清单 + 插件明细（命令/技能/投影聚合） | M |
+| **M1（已完成）** | `/keymap` 双预设 + `/rename` 工作区重命名 + `/compose`（pi A3） | ✅ 0.2.1 |
+| **M2（已完成）** | `/settings` General 分区面板（六行聚合 + 跳转既有命令 + 面板内就地换肤） | ✅ 0.2.1 |
+| **M3（下批）** | `/plugins` 代理清单 + 插件明细（命令/技能/投影聚合） | M |
 | **M4** | `/workspace` 列表 + 切换（复用 Ctrl+W） | S |
 
 ## 5. 验收口径

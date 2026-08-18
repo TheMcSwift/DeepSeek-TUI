@@ -156,6 +156,11 @@ export class FakeApp implements TerminalApp {
     this.themeRefreshes++
   }
 
+  settingsShown: Array<Array<import('../../src/app/terminal-app.ts').SettingsRow>> = []
+  showSettings(rows: readonly import('../../src/app/terminal-app.ts').SettingsRow[]): void {
+    this.settingsShown.push([...rows])
+  }
+
   /** The most recent rendered document (last render wins). */
   get last(): ViewDocument {
     return this.rendered[this.rendered.length - 1]

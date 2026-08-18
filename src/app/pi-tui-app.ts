@@ -31,7 +31,7 @@ import { emptyDocument } from '../document/document.ts'
 import type { AssistantEntry, TurnOutcome, ViewDocument, ViewEntry } from '../document/document.ts'
 import { statsStrip } from '../projection/stats.ts'
 import { BrandView, shouldShowBrand, BRAND, ICE, gradientText } from '../view/brand.ts'
-import type { CommandChoice, ModelChoice, PermissionChoice, ProjectionRow, SessionChoice, SurfaceMeta, TerminalApp, TerminalAppHandlers, TrajectoryRow } from './terminal-app.ts'
+import type { CommandChoice, ModelChoice, PermissionChoice, ProjectionRow, SessionChoice, SettingsRow, SurfaceMeta, TerminalApp, TerminalAppHandlers, TrajectoryRow } from './terminal-app.ts'
 import { FilterablePickerPanel } from '../view/components/filterable-picker.ts'
 import type { PickerRow } from '../view/components/filterable-picker.ts'
 import { synthesizeAssistantMessage, synthesizeToolResult } from '../projection/synthesis/pi-messages.ts'
@@ -57,6 +57,7 @@ import { FocusableFrame } from '../view/components/focus-frame.ts'
 import { SlashMenu } from '../view/components/slash-menu.ts'
 import type { SlashMenuItem } from '../view/components/slash-menu.ts'
 import { HotkeysPanel } from '../view/components/hotkeys-panel.ts'
+import { SettingsPanel } from '../view/components/settings-panel.ts'
 import { TrajectoryPanel } from '../view/components/trajectory-panel.ts'
 import { matchCommands, permissionTone } from './pi/command-match.ts'
 import { isKeymapId, isLeaderKey, keymapById, resolveKeyAction, resolveLeaderChord } from './pi/keymaps.ts'
@@ -395,6 +396,8 @@ export class PiTuiApp implements TerminalApp {
   /** opencode leader 键等待态（Ctrl+X 前缀 + 2s 超时）。 */
   private pendingLeader = false
   private leaderTimer?: ReturnType<typeof setTimeout>
+  /** /settings 面板实例（打开期间就地刷新行）。 */
+  private settingsPanel?: SettingsPanel
 
   constructor(options: PiTuiAppOptions = {}) {
     this.historyFile = options.historyFile
@@ -1037,6 +1040,29 @@ export class PiTuiApp implements TerminalApp {
     this.overlayOpen = true
     const handle = tui.showOverlay(panel, {
       anchor: 'bottom-left', offsetY: -6, maxHeight: '60%', width: this.overlayWidth - 8,
+    })
+    tui.setFocus(panel)
+  }
+
+  /** /settings 聚合面板（M2）：打开或就地刷新行；纯语义色随主题预设换肤。 */
+  showSettings(rows: readonly SettingsRow[]): void {
+    const tui = this.tui
+    if (tui === undefined) return
+    if (this.settingsPanel !== undefined) {
+      // 面板内切换主题/键位后：行数据就地刷新，颜色在下次渲染随新预设生效。
+      this.settingsPanel.setRows(rows)
+      tui.requestRender()
+      return
+    }
+    const panel = new SettingsPanel(rows, () => {
+      this.overlayOpen = false
+      this.settingsPanel = undefined
+      handle.hide()
+    }, (index) => { this.handlers?.onSettingsRowPicked?.(index) })
+    this.settingsPanel = panel
+    this.overlayOpen = true
+    const handle = tui.showOverlay(panel, {
+      anchor: 'bottom-left', offsetY: -6, maxHeight: '50%', width: this.overlayWidth - 8,
     })
     tui.setFocus(panel)
   }

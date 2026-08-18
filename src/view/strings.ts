@@ -137,6 +137,24 @@ export interface Strings {
   profileTitle: string
   profileSwitched: (id: string) => string
   profileUnknown: (value: string, available: string) => string
+  // /settings 聚合面板（M2，行名/现状值/提示；全部经词典）
+  settingsTitle: string
+  settingsHint: string
+  settingsLanguage: string
+  settingsTheme: string
+  settingsEnter: string
+  settingsKeymap: string
+  settingsAnim: string
+  settingsConfig: string
+  themeVariantDark: string
+  themeVariantLight: string
+  themeVariantAuto: string
+  enterQueue: string
+  enterSteer: string
+  enterSwitched: (mode: string) => string
+  animOn: string
+  animOff: string
+  animSwitched: (state: string) => string
   // /rename（会话标题 + 工作区目录两种目标）
   renameSession: string
   renameWorkspace: string
@@ -448,6 +466,24 @@ const zh: Strings = {
   profileTitle: '预设',
   profileSwitched: (id: string): string => `预设已切换：${id}（键位 + 视觉主题）`,
   profileUnknown: (value: string, available: string): string => `未知预设：${value}（可用：${available}）`,
+  // /settings 聚合面板（M2）
+  settingsTitle: '设置',
+  settingsHint: '↑/↓ 选择 · 数字直选 · Enter 执行 · Esc 关闭',
+  settingsLanguage: '语言',
+  settingsTheme: '主题',
+  settingsEnter: 'Enter 行为',
+  settingsKeymap: '快捷键预设',
+  settingsAnim: '动画',
+  settingsConfig: '配置文件',
+  themeVariantDark: '暗色',
+  themeVariantLight: '亮色',
+  themeVariantAuto: '跟随终端',
+  enterQueue: '排队（web 默认）',
+  enterSteer: '并入当前轮（steer）',
+  enterSwitched: (mode: string): string => `Enter 行为：${mode}`,
+  animOn: '开',
+  animOff: '关',
+  animSwitched: (state: string): string => `动画：${state}`,
 
   // TUI-native (no web equivalent; bilingual for consistency)
   language: '语言',
@@ -753,6 +789,24 @@ const en: Strings = {
   profileTitle: 'Preset',
   profileSwitched: (id: string): string => `Preset: ${id} (keymap + theme)`,
   profileUnknown: (value: string, available: string): string => `Unknown preset: ${value} (available: ${available})`,
+  // /settings panel (M2)
+  settingsTitle: 'Settings',
+  settingsHint: '↑/↓ select · number to jump · Enter run · Esc close',
+  settingsLanguage: 'Language',
+  settingsTheme: 'Theme',
+  settingsEnter: 'Enter behavior',
+  settingsKeymap: 'Hotkey preset',
+  settingsAnim: 'Animations',
+  settingsConfig: 'Config file',
+  themeVariantDark: 'Dark',
+  themeVariantLight: 'Light',
+  themeVariantAuto: 'Follow terminal',
+  enterQueue: 'Queue (web default)',
+  enterSteer: 'Steer into the running turn',
+  enterSwitched: (mode: string): string => `Enter behavior: ${mode}`,
+  animOn: 'On',
+  animOff: 'Off',
+  animSwitched: (state: string): string => `Animations: ${state}`,
 
   // TUI-native
   language: 'Language',
