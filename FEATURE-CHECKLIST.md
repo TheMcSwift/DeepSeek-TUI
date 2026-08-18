@@ -96,7 +96,7 @@
 | F1 | 滚动锚定 | 底部跟随、上翻保持锚点、Tab 回来恢复 | follow: end + 底部锚定（BottomPad） | ✅ |
 | F2 | 自动滚动开关 + 回底按钮 | 离开底部显示 ↓ 按钮 | End 原生回底；离开底部时状态行挂 `↓ 回到底部 (End)` 提示（500ms 轮询 + 视口键 hook，动画冻结下仍工作）；自动滚动开关不可行（pi `followEnd` 构造期固定，上翻即停推已覆盖主场景） | 🟡 |
 | F3 | 逐消息 hover 操作 | hover/focus 露出按钮 | 键盘等价：Tab 焦点环 + Ctrl+Y/X | 🟡 |
-| F4 | 键盘快捷键 | Enter/Shift+Enter/Cmd-Enter/↑↓/Escape/撤销重做 | **cc/pi 双预设可切换**（`/keymap [cc|pi]` + `DSH_TUI_KEYMAP`，keymaps.ts 动作表）：cc = Esc 中断 · / 斜杠菜单（含命令别名 exit/clear/?/m/perm/language）· Ctrl+R/G/P/F/B/Y/X/W/T/K/O/L/E/D · Tab 焦点环 + Enter 展开/收起（thinking/工具卡/长消息）· Alt+Enter/Up · Ctrl+Z/Shift+Z 撤销重做；pi = Ctrl+C 中断 · Ctrl+G 编辑器撰写 · Ctrl+P 模型 · 权限走 /permission；Cmd-Enter 无 | 🟡 |
+| F4 | 键盘快捷键 | Enter/Shift+Enter/Cmd-Enter/↑↓/Escape/撤销重做 | **cc/pi/opencode 三预设可切换**（`/keymap` + `DSH_TUI_KEYMAP`，keymaps.ts 动作表）：cc = Esc 中断 · / 斜杠菜单（含命令别名）· Ctrl+R/G/P/F/B/Y/X/W/T/K/O/L/E/D · Tab 焦点环 + Enter 展开/收起 · Alt+Enter/Up · Ctrl+Z/Shift+Z；pi = Ctrl+C 中断 · Ctrl+G 编辑器撰写 · Ctrl+P 模型；opencode = **Ctrl+X leader 键 + 和弦**（l/n/m/g/e/t/y/x/h/c）· Ctrl+P 命令面板 · Ctrl+R 重命名 · busy Ctrl+C 清空输入；Cmd-Enter 无 | 🟡 |
 | F5 | 错误/重试/压缩状态行 | turn-error 红点、max-tokens 黄点、重试倒计时、compaction running | 结局徽标（✗/⏹）+ 重试倒计时（真实 delay）+ 压缩状态；重试行 Tab 聚焦 + Enter 展开失败原因（code: message） | ✅ |
 | F6 | 语言 zh/en 切换 | 每包独立 locale 字典 | strings.ts 双词典 + /lang + DSH_TUI_LANG；web 表外硬编码文案不国际化 | ✅ |
 
@@ -173,7 +173,7 @@
 | H12 | 会话导出/下载 UI | 客户端无此功能（grep 确认）；runtime /export | /export 展示 jsonl 路径（原生等价） | ✅ |
 | H13 | 设置面板（模态 + 导航 + General 区） | ui-settings-general | 无独立设置页；env + /lang + pickers 等价，`/settings` 聚合面板规划见 SETTINGS-WORKSPACE-DESIGN.md M2 | 🟡 |
 | H14 | 语言选择（zh/en + 持久化） | locale LanguageRow | /lang + DSH_TUI_LANG + strings() 双词典 | ✅ |
-| H15 | 外观主题（浅/深/跟随系统） | ui-theme AppearanceRow | DSH_TUI_THEME=light/dark/auto（OSC11 探测）；色板逐字采用 web token | ✅ |
+| H15 | 外观主题（浅/深/跟随系统） | ui-theme AppearanceRow | `DSH_TUI_THEME=light/dark/auto`（OSC11 探测）× **视觉主题四预设**（`/theme [web|cc|pi|opencode]` + `DSH_TUI_THEME_PRESET` + sidecar 持久化，palette 热切换 + 视图重建）；pi/opencode 取官方主题逐字值、cc 为诠释 | ✅ |
 | H16 | Enter 行为设置（queue/steer） | EnterBehaviorRow | `DSH_TUI_ENTER=steer` env 可切 busy Enter 为 steer（默认 queue，web 默认一致）；无设置面板行（规划见 M2） | 🟡 |
 | H17 | 模型默认设置 | ui-agent-preset AgentPresetRow | Ctrl+G 选择 + 持久化 | ✅ |
 | H18 | 权限默认设置 | ui-permission-presets PermissionRow | Ctrl+P + full-access 确认 | ✅ |

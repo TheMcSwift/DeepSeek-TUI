@@ -136,6 +136,8 @@ export interface TerminalAppHandlers {
   onForkPicked(seq: number | null): void
   /** Ctrl+I / /trajectory: the runner should fetch the raw log and open the view. */
   onTrajectoryRequest?(): void
+  /** /theme 或 opencode 预设的 <leader>t：runner 应打开主题预设 picker。 */
+  onThemePickerRequest?(): void
 }
 
 /** The terminal surface contract the runner drives. */
@@ -189,8 +191,10 @@ export interface TerminalApp {
   openExternalEditor(path: string): Promise<void>
   /** Copy plain text to the host clipboard via OSC 52 (best effort, K2). */
   copyText(text: string): void
-  /** Switch the global hotkey preset between cc and pi (/keymap). */
+  /** Switch the global hotkey preset between cc, pi and opencode (/keymap). */
   setKeymap(id: import('./pi/keymaps.ts').KeymapId): void
   /** Compose a message in $EDITOR and submit it (pi A3, /compose). */
   composeInEditor(): Promise<void>
+  /** 换肤后重建消息视图与 markdown 主题（/theme、/preset；保留 composer 文本）。 */
+  refreshTheme(): void
 }

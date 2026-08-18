@@ -59,8 +59,8 @@ import type { SlashMenuItem } from '../view/components/slash-menu.ts'
 import { HotkeysPanel } from '../view/components/hotkeys-panel.ts'
 import { TrajectoryPanel } from '../view/components/trajectory-panel.ts'
 import { matchCommands, permissionTone } from './pi/command-match.ts'
-import { isKeymapId, keymapById, resolveKeyAction } from './pi/keymaps.ts'
-import type { KeymapId } from './pi/keymaps.ts'
+import { isKeymapId, isLeaderKey, keymapById, resolveKeyAction, resolveLeaderChord } from './pi/keymaps.ts'
+import type { KeyAction, KeymapId } from './pi/keymaps.ts'
 import type { OverlayHandle } from '@earendil-works/pi-tui'
 import { ApprovalEntryView, presentApprovalDialog } from '../view/components/approval-view.ts'
 import type { ApprovalAnswer, ApprovalQuestion } from '../view/components/approval-view.ts'
@@ -390,8 +390,11 @@ export class PiTuiApp implements TerminalApp {
   private lastFollowingEnd = true
   /** Busy flag of the previous render (elapsed-time anchor). */
   private wasBusy = false
-  /** 当前快捷键预设（cc/pi），/keymap 与 DSH_TUI_KEYMAP 切换。 */
+  /** 当前快捷键预设（cc/pi/opencode），/keymap 与 DSH_TUI_KEYMAP 切换。 */
   private keymap: KeymapId = 'cc'
+  /** opencode leader 键等待态（Ctrl+X 前缀 + 2s 超时）。 */
+  private pendingLeader = false
+  private leaderTimer?: ReturnType<typeof setTimeout>
 
   constructor(options: PiTuiAppOptions = {}) {
     this.historyFile = options.historyFile
@@ -527,23 +530,49 @@ export class PiTuiApp implements TerminalApp {
       this.setFocusIndex(-1)
       return { consume: true }
     }
-    // 快捷键动作经当前预设解析（cc/pi，见 app/pi/keymaps.ts）。
-    const action = resolveKeyAction(keymapById(this.keymap), data, this.current.busy)
+    const preset = keymapById(this.keymap)
+    // leader 和弦（opencode：Ctrl+X 前缀 + 2s 超时）：已按下 leader 则解析
+    // 下一键；未命中吞掉。
+    if (this.pendingLeader) {
+      this.clearLeaderPending()
+      const chord = resolveLeaderChord(preset, data, this.current.busy)
+      return chord === undefined ? { consume: true } : this.runAction(chord)
+    }
+    if (isLeaderKey(preset, data)) {
+      this.armLeaderPending()
+      return { consume: true }
+    }
+    // 普通按键：经当前预设解析动作（cc/pi/opencode，见 app/pi/keymaps.ts）。
+    const action = resolveKeyAction(preset, data, this.current.busy)
+    return action === undefined ? undefined : this.runAction(action)
+  }
+
+  /** 执行一个全局键动作（预设解析后的公共分发点）。 */
+  private runAction(action: KeyAction): { consume: boolean } | undefined {
     switch (action) {
       case 'interrupt':
         this.handlers?.onInterrupt()
         return { consume: true }
       case 'quit':
-        this.handlers?.onQuit()
-        return { consume: true }
       case 'quitCtrlD':
         this.handlers?.onQuit()
         return { consume: true }
       case 'swallow':
         // cc 预设 busy Ctrl+C：吞掉（Esc 才是中断键）。
         return { consume: true }
+      case 'clearInput':
+        // opencode input_clear：busy Ctrl+C 清空输入而非中断。
+        this.editor?.setText('')
+        this.tui?.requestRender()
+        return { consume: true }
       case 'sessions':
         this.handlers?.onSessionPickerRequest?.()
+        return { consume: true }
+      case 'newSession':
+        this.handlers?.onNewSessionRequest?.()
+        return { consume: true }
+      case 'rename':
+        this.handlers?.onCommandPicked('__rename', '')
         return { consume: true }
       case 'model':
         this.handlers?.onModelPickerRequest?.()
@@ -551,8 +580,17 @@ export class PiTuiApp implements TerminalApp {
       case 'permission':
         this.handlers?.onPermissionPickerRequest?.()
         return { consume: true }
+      case 'theme':
+        this.handlers?.onThemePickerRequest?.()
+        return { consume: true }
       case 'compose':
         void this.composeInEditor()
+        return { consume: true }
+      case 'export':
+        this.handlers?.onCommandPicked('__export', '')
+        return { consume: true }
+      case 'compact':
+        this.handlers?.onCommandPicked('compact', '')
         return { consume: true }
       case 'palette':
         this.handlers?.onCommandPickerRequest?.()
@@ -625,6 +663,45 @@ export class PiTuiApp implements TerminalApp {
   setKeymap(id: KeymapId): void {
     if (this.keymap === id) return
     this.keymap = id
+    this.clearLeaderPending()
+    this.tui?.requestRender()
+  }
+
+  /** 进入 leader 等待态（opencode：2s 超时）。 */
+  private armLeaderPending(): void {
+    this.pendingLeader = true
+    this.clearLeaderTimer()
+    this.leaderTimer = setTimeout(() => { this.pendingLeader = false }, 2000)
+  }
+
+  private clearLeaderPending(): void {
+    this.pendingLeader = false
+    this.clearLeaderTimer()
+  }
+
+  private clearLeaderTimer(): void {
+    if (this.leaderTimer !== undefined) {
+      clearTimeout(this.leaderTimer)
+      this.leaderTimer = undefined
+    }
+  }
+
+  /**
+   * 换肤后重建视图（/theme、/preset）：markdown 主题与既有消息视图在构造期
+   * 烘焙了 formatter，palette 切换后必须重建；composer 文本保留。已知限制：
+   * 编辑器边框与 @/# 补全弹层在 pi-tui 里构造期烘焙主题、无 setter，保持
+   * 换肤前的颜色直到重启（消息/工具/页脚/状态/面板全部即时生效）。
+   */
+  refreshTheme(): void {
+    this.markdownTheme = getMarkdownTheme()
+    const document = this.document
+    if (document !== undefined) {
+      for (const view of this.entryViews.values()) document.removeChild(view)
+    }
+    this.entryViews.clear()
+    this.entryOrder = []
+    this.lastEntry.clear()
+    this.applyState(this.current)
     this.tui?.requestRender()
   }
 
@@ -681,6 +758,8 @@ export class PiTuiApp implements TerminalApp {
   stop(): void {
     this.removeInputListener?.()
     this.removeInputListener = undefined
+    this.clearLeaderTimer()
+    this.pendingLeader = false
     if (this.toastTimer !== undefined) {
       clearTimeout(this.toastTimer)
       this.toastTimer = undefined
@@ -927,8 +1006,12 @@ export class PiTuiApp implements TerminalApp {
   showHotkeys(): void {
     const tui = this.tui
     if (tui === undefined) return
-    // 面板内容随当前快捷键预设切换（cc/pi 两套键位说明）。
-    const sections = this.keymap === 'pi' ? strings().hotkeysSectionsPi : strings().hotkeysSections
+    // 面板内容随当前快捷键预设切换（cc/pi/opencode 三套键位说明）。
+    const sections = this.keymap === 'pi'
+      ? strings().hotkeysSectionsPi
+      : this.keymap === 'opencode'
+        ? strings().hotkeysSectionsOpencode
+        : strings().hotkeysSections
     const panel = new HotkeysPanel(sections, () => {
       this.overlayOpen = false
       handle.hide()

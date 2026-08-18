@@ -127,6 +127,16 @@ export interface Strings {
   keymapUnknown: (value: string, available: string) => string
   /** pi 预设的快捷键面板（cc 面板见 hotkeysSections）。 */
   hotkeysSectionsPi: readonly HotkeySection[]
+  /** opencode 预设的快捷键面板（leader 键体系）。 */
+  hotkeysSectionsOpencode: readonly HotkeySection[]
+  // /theme + /preset（视觉主题预设 + 一键双预设）
+  themePreset: string
+  themePresetDescription: string
+  themeSwitched: (id: string) => string
+  themeUnknown: (value: string, available: string) => string
+  profileTitle: string
+  profileSwitched: (id: string) => string
+  profileUnknown: (value: string, available: string) => string
   // /rename（会话标题 + 工作区目录两种目标）
   renameSession: string
   renameWorkspace: string
@@ -279,6 +289,69 @@ const zh: Strings = {
       ],
     },
   ],
+  // opencode 预设面板（Ctrl+X leader + 和弦、Ctrl+P 命令面板、Ctrl+C 清输入）
+  hotkeysSectionsOpencode: [
+    {
+      title: '输入',
+      rows: [
+        { keys: 'Enter', action: '发送消息' },
+        { keys: 'Alt+Enter', action: '并入当前轮（steer）' },
+        { keys: 'Alt+Up', action: '取回排队消息' },
+        { keys: 'Ctrl+C', action: '清空输入（运行中）' },
+        { keys: '↑/↓', action: '输入历史' },
+        { keys: 'Ctrl+Z', action: '撤销' },
+        { keys: 'Ctrl+Shift+Z', action: '重做' },
+      ],
+    },
+    {
+      title: '会话与分支',
+      rows: [
+        { keys: 'Ctrl+X l', action: '会话列表' },
+        { keys: 'Ctrl+X n', action: '新会话' },
+        { keys: 'Ctrl+R', action: '重命名会话' },
+        { keys: 'Ctrl+X g', action: '轨迹（时间线）' },
+        { keys: 'Ctrl+B', action: '分支新会话' },
+        { keys: 'Ctrl+W', action: '切换工作目录' },
+      ],
+    },
+    {
+      title: '模型与命令',
+      rows: [
+        { keys: 'Ctrl+X m', action: '选择模型' },
+        { keys: 'Ctrl+P', action: '命令面板' },
+        { keys: 'Ctrl+X e', action: '编辑器撰写' },
+        { keys: 'Ctrl+X t', action: '主题预设' },
+        { keys: 'Ctrl+X c', action: '压缩上下文' },
+        { keys: '/permission', action: '权限预设' },
+      ],
+    },
+    {
+      title: '消息与视图',
+      rows: [
+        { keys: 'Ctrl+F', action: '搜索' },
+        { keys: 'Ctrl+X y', action: '复制回复' },
+        { keys: 'Ctrl+X h', action: 'thinking 开关' },
+        { keys: 'Ctrl+Y', action: '评价回复' },
+        { keys: 'Ctrl+K', action: '折叠旧消息' },
+        { keys: 'Ctrl+O', action: 'jobs 折叠/展开' },
+        { keys: 'PgUp/PgDn', action: '滚动' },
+        { keys: 'Tab · Esc', action: '焦点循环 / 取消' },
+        { keys: 'Enter', action: '展开/收起（thinking/工具卡/长消息）' },
+      ],
+    },
+    {
+      title: '命令与退出',
+      rows: [
+        { keys: 'Ctrl+X', action: 'leader 键（先按 Ctrl+X 再按字母）' },
+        { keys: '/', action: 'slash 命令（如 /model、/permission、/config）' },
+        { keys: '! · !!', action: '执行 shell：发送 / 静默' },
+        { keys: 'Esc', action: '中断当前轮' },
+        { keys: 'Ctrl+C', action: '退出（空闲时）' },
+        { keys: 'Ctrl+D', action: '退出' },
+        { keys: 'Ctrl+X x', action: '导出会话日志' },
+      ],
+    },
+  ],
   queued: (n: number): string => `${n} 条排队消息`,
   interrupted: '已中断',
   stopped: '已停止',
@@ -367,6 +440,14 @@ const zh: Strings = {
   keymapDescription: 'cc 为 Claude Code 式键位，pi 为 pi coding-agent 式键位',
   keymapSwitched: (id: string): string => `快捷键预设已切换：${id}`,
   keymapUnknown: (value: string, available: string): string => `未知快捷键预设：${value}（可用：${available}）`,
+  // /theme + /preset（视觉主题预设 + 一键双预设）
+  themePreset: '视觉主题',
+  themePresetDescription: 'web 为 dsh web 设计 token，cc/pi/opencode 为对应产品风格的色板',
+  themeSwitched: (id: string): string => `视觉主题已切换：${id}`,
+  themeUnknown: (value: string, available: string): string => `未知视觉主题：${value}（可用：${available}）`,
+  profileTitle: '预设',
+  profileSwitched: (id: string): string => `预设已切换：${id}（键位 + 视觉主题）`,
+  profileUnknown: (value: string, available: string): string => `未知预设：${value}（可用：${available}）`,
 
   // TUI-native (no web equivalent; bilingual for consistency)
   language: '语言',
@@ -513,6 +594,69 @@ const en: Strings = {
       ],
     },
   ],
+  // opencode-preset panel (Ctrl+X leader chords, Ctrl+P command list, Ctrl+C clears input)
+  hotkeysSectionsOpencode: [
+    {
+      title: 'Input',
+      rows: [
+        { keys: 'Enter', action: 'Send message' },
+        { keys: 'Alt+Enter', action: 'Steer into the running turn' },
+        { keys: 'Alt+Up', action: 'Retrieve a queued message' },
+        { keys: 'Ctrl+C', action: 'Clear input (while running)' },
+        { keys: '↑/↓', action: 'Input history' },
+        { keys: 'Ctrl+Z', action: 'Undo' },
+        { keys: 'Ctrl+Shift+Z', action: 'Redo' },
+      ],
+    },
+    {
+      title: 'Session & fork',
+      rows: [
+        { keys: 'Ctrl+X l', action: 'Session list' },
+        { keys: 'Ctrl+X n', action: 'New session' },
+        { keys: 'Ctrl+R', action: 'Rename session' },
+        { keys: 'Ctrl+X g', action: 'Trajectory (timeline)' },
+        { keys: 'Ctrl+B', action: 'Fork new session' },
+        { keys: 'Ctrl+W', action: 'Switch workspace' },
+      ],
+    },
+    {
+      title: 'Model & commands',
+      rows: [
+        { keys: 'Ctrl+X m', action: 'Pick model' },
+        { keys: 'Ctrl+P', action: 'Command list' },
+        { keys: 'Ctrl+X e', action: 'Compose in editor' },
+        { keys: 'Ctrl+X t', action: 'Theme preset' },
+        { keys: 'Ctrl+X c', action: 'Compact context' },
+        { keys: '/permission', action: 'Permission preset' },
+      ],
+    },
+    {
+      title: 'Messages & view',
+      rows: [
+        { keys: 'Ctrl+F', action: 'Search' },
+        { keys: 'Ctrl+X y', action: 'Copy reply' },
+        { keys: 'Ctrl+X h', action: 'Toggle thinking' },
+        { keys: 'Ctrl+Y', action: 'Rate reply' },
+        { keys: 'Ctrl+K', action: 'Fold old messages' },
+        { keys: 'Ctrl+O', action: 'Fold/expand jobs' },
+        { keys: 'PgUp/PgDn', action: 'Scroll' },
+        { keys: 'Tab · Esc', action: 'Focus cycle / cancel' },
+        { keys: 'Enter', action: 'Expand/collapse (thinking/tool/long message)' },
+      ],
+    },
+    {
+      title: 'Commands & quit',
+      rows: [
+        { keys: 'Ctrl+X', action: 'Leader key (press Ctrl+X, then a letter)' },
+        { keys: '/', action: 'Slash commands (e.g. /model, /permission, /config)' },
+        { keys: '! · !!', action: 'Run shell: send / silent' },
+        { keys: 'Esc', action: 'Interrupt the running turn' },
+        { keys: 'Ctrl+C', action: 'Quit (while idle)' },
+        { keys: 'Ctrl+D', action: 'Quit' },
+        { keys: 'Ctrl+X x', action: 'Export session log' },
+      ],
+    },
+  ],
   queued: (n: number): string => `${n} queued message${n === 1 ? '' : 's'}`,
   interrupted: 'Interrupted',
   stopped: 'Stopped',
@@ -601,6 +745,14 @@ const en: Strings = {
   keymapDescription: 'cc is the Claude Code layout, pi the pi coding-agent layout',
   keymapSwitched: (id: string): string => `Hotkey preset: ${id}`,
   keymapUnknown: (value: string, available: string): string => `Unknown hotkey preset: ${value} (available: ${available})`,
+  // /theme + /preset (visual theme preset + one-shot profile switch)
+  themePreset: 'Theme',
+  themePresetDescription: 'web is the dsh web design token palette; cc/pi/opencode mirror those products',
+  themeSwitched: (id: string): string => `Theme: ${id}`,
+  themeUnknown: (value: string, available: string): string => `Unknown theme: ${value} (available: ${available})`,
+  profileTitle: 'Preset',
+  profileSwitched: (id: string): string => `Preset: ${id} (keymap + theme)`,
+  profileUnknown: (value: string, available: string): string => `Unknown preset: ${value} (available: ${available})`,
 
   // TUI-native
   language: 'Language',

@@ -484,9 +484,31 @@ def scenario_surface() -> None:
             dump_failure("keymap back")
             raise AssertionError("keymap switch back failed")
         time.sleep(0.5)
+        # /theme：切 opencode 视觉主题再切回 web。
+        tui.type("/theme opencode\r")
+        if not tui.wait_for("视觉主题已切换：opencode", 30):
+            dump_failure("theme")
+            raise AssertionError("theme switch did not apply")
+        time.sleep(0.5)
+        tui.type("/theme web\r")
+        if not tui.wait_for("视觉主题已切换：web", 30):
+            dump_failure("theme back")
+            raise AssertionError("theme switch back failed")
+        time.sleep(0.5)
+        # /preset：一键切 pi（键位+主题）再切回 cc。
+        tui.type("/preset pi\r")
+        if not tui.wait_for("预设已切换：pi", 30):
+            dump_failure("preset")
+            raise AssertionError("preset switch did not apply")
+        time.sleep(0.5)
+        tui.type("/preset cc\r")
+        if not tui.wait_for("预设已切换：cc", 30):
+            dump_failure("preset back")
+            raise AssertionError("preset switch back failed")
+        time.sleep(0.5)
         tui.type("/quit\r")
         assert tui.wait_exit(30) == 0, "surface quit failed"
-        print("[e2e] surface: /hotkeys, Ctrl+P permission picker, /config, /keymap all worked")
+        print("[e2e] surface: /hotkeys, Ctrl+P, /config, /keymap, /theme, /preset all worked")
     finally:
         tui.kill()
         mock.terminate()

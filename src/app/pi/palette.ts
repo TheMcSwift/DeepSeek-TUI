@@ -134,8 +134,20 @@ const DARK_PALETTE_COLORS: Record<string, string> = {
 
 export let PALETTE_COLORS: Record<string, string> = DARK_PALETTE_COLORS
 
-/** Swap the process palette; call before any view is constructed. */
-export function applyPaletteVariant(variant: 'dark' | 'light'): void {
-  PALETTE_VARS = variant === 'light' ? LIGHT_PALETTE_VARS : DARK_VARS
-  PALETTE_COLORS = variant === 'light' ? { ...DARK_PALETTE_COLORS, ...LIGHT_PALETTE_COLORS } : DARK_PALETTE_COLORS
+/** 一组「变量 + 语义角色」的完整色板（web/cc/pi/opencode 四预设各持 dark/light 两版）。 */
+export interface PaletteSet {
+  vars: Record<string, string>
+  colors: Record<string, string>
+}
+
+/** web 预设（dsh web design token）：dark/light 两版。 */
+export const WEB_PALETTE: Record<'dark' | 'light', PaletteSet> = {
+  dark: { vars: DARK_VARS, colors: DARK_PALETTE_COLORS },
+  light: { vars: LIGHT_PALETTE_VARS, colors: { ...DARK_PALETTE_COLORS, ...LIGHT_PALETTE_COLORS } },
+}
+
+/** Swap the process palette; call before any view is constructed（或换肤时先换后重建视图）。 */
+export function applyPaletteSet(set: PaletteSet): void {
+  PALETTE_VARS = set.vars
+  PALETTE_COLORS = set.colors
 }

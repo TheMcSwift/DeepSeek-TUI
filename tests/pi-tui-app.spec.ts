@@ -1497,6 +1497,52 @@ describe('pi-tui surface', () => {
     }
   })
 
+  it('opencode 预设：Ctrl+X leader 和弦解析（会话/模型/重命名/清输入）', async () => {
+    const test = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, { keymap: 'opencode' })
+    await settle()
+    // Ctrl+X l → 会话列表。
+    test.terminal.feed('\x18')
+    test.terminal.feed('l')
+    await settle()
+    expect(test.calls.sessions).toBe(1)
+    // Ctrl+X m → 模型。
+    test.terminal.feed('\x18')
+    test.terminal.feed('m')
+    await settle()
+    expect(test.calls.models).toBe(1)
+    // Ctrl+R → 重命名（会话/工作区）。
+    test.terminal.feed('\x12')
+    await settle()
+    expect(test.calls.commandPicks).toContainEqual({ name: '__rename', raw: '' })
+    // busy Ctrl+C → 清空输入而非中断（opencode input_clear 语义）。
+    test.terminal.feed('draft text')
+    test.app.render({ entries: [], busy: true })
+    await settle()
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.app.composerText).toBe('')
+    expect(test.calls.interrupt).toBe(0)
+    // idle Ctrl+C → 退出。
+    test.app.render({ entries: [], busy: false })
+    await settle()
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(1)
+  })
+
+  it('refreshTheme 重建视图且保留消息内容（换肤冒烟）', async () => {
+    const test = mount()
+    await settle()
+    test.app.render(doc([
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: '换肤前的消息', thinking: [], state: 'committed' },
+    ]))
+    await settle()
+    expect(test.terminal.plain()).toContain('换肤前的消息')
+    test.app.refreshTheme()
+    await settle()
+    expect(test.terminal.plain()).toContain('换肤前的消息')
+  })
+
   it('renders error notices from failed turns', async () => {
     const test = mount()
     await settle()

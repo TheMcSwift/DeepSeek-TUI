@@ -35,9 +35,9 @@ web 的 `ui-settings-*` 是分区模态（General/Models/Plugins/Plugin inventor
 | 配置文件 | ✅ 路径 / 预览 / $EDITOR 编辑 / 复制路径 | `/config` |
 | 供应商管理 | ✅ 列表 + 添加向导（settings seam 写 `llm-pi-ai.providers`） | `/config` |
 | 语言 | ✅ zh/en 持久化（dsh 侧） | `/lang`、`DSH_TUI_LANG` |
-| 主题 | ✅ light/dark/auto（OSC11 探测） | `DSH_TUI_THEME` |
+| 主题 | ✅ 明暗（light/dark/auto，OSC11 探测）× **视觉主题四预设 web/cc/pi/opencode**（`/theme` 热切换 + sidecar；pi/opencode 取官方主题逐字值） | `DSH_TUI_THEME`、`DSH_TUI_THEME_PRESET`、`/theme` |
 | Enter 行为 | ✅ queue/steer | `DSH_TUI_ENTER` |
-| 快捷键预设 | ✅ **cc/pi 双预设（本轮新落地）** | `/keymap [cc|pi]`、`DSH_TUI_KEYMAP`、`$DSH_HOME/tui-keymap.txt` |
+| 快捷键预设 | ✅ **cc/pi/opencode 三预设（本轮新落地）**，opencode 含 Ctrl+X leader 和弦体系；`/preset` 一键同切键位+主题 | `/keymap [cc|pi|opencode]`、`DSH_TUI_KEYMAP`、sidecar |
 | 权限 | ✅ 预设切换 + 投影 chip 常显 | Ctrl+P、`/permission` |
 | 会话重命名 | ✅ | `/rename [标题]` |
 | 工作区重命名 | ✅ **本轮新落地（H11 半程）** | 裸 `/rename` → 目标选择 → 目录单段名校验 → `fs.rename` |
@@ -58,9 +58,9 @@ web 的 `ui-settings-*` 是分区模态（General/Models/Plugins/Plugin inventor
 | 行 | 现状值（数据源） | 操作 |
 |---|---|---|
 | 语言 | `strings()` 当前 locale（dsh 持久化） | Enter → `/lang` 枚举 |
-| 主题 | `DSH_TUI_THEME` 或默认 dark | Enter → light/dark/auto 枚举（写 settings seam 或提示 env） |
+| 主题 | `DSH_TUI_THEME` 明暗 × 当前视觉预设（web/cc/pi/opencode） | Enter → `/theme` 枚举 |
 | Enter 行为 | `DSH_TUI_ENTER` 默认 queue | Enter → queue/steer 枚举 |
-| 快捷键预设 | 当前 `cc`/`pi` | Enter → `/keymap` 枚举 |
+| 快捷键预设 | 当前 `cc`/`pi`/`opencode` | Enter → `/keymap` 枚举 |
 | 动画 | `DSH_TUI_ANIM` | Enter → on/off |
 | 配置文件 | settings.yaml 路径 | Enter → `/config` |
 

@@ -10,7 +10,7 @@ import { resolveLanguage, setStrings, strings } from '../../src/view/strings.ts'
 import { highlight, supportsLanguage } from '../../src/app/pi/highlight.ts'
 import { getMarkdownTheme } from '../../src/app/pi/theme.ts'
 
-afterEach(() => { applyPalette('dark') })
+afterEach(() => { applyPalette('web', 'dark') })
 
 describe('language (T9 i18n)', () => {
   it('resolves and switches between the zh/en dictionaries', () => {
@@ -51,11 +51,11 @@ describe('theme detection (T5③)', () => {
 
 describe('pi palette (dsh web design tokens)', () => {
   it('swaps to the light palette and re-resolves colors', () => {
-    applyPalette('light')
+    applyPalette('web', 'light')
     expect(resolveHex('text')).toBe('#0F1115') // neutral-bluish-1000
     expect(resolveHex('accent')).toBe('#4176E6') // deepseek-500
     expect(fg('text')('hi')).toContain('\x1b[38;2;15;17;21m')
-    applyPalette('dark')
+    applyPalette('web', 'dark')
     expect(resolveHex('text')).toBe('#F9FAFB') // neutral-bluish-50
   })
 

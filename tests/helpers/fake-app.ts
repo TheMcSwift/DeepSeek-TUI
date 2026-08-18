@@ -151,6 +151,11 @@ export class FakeApp implements TerminalApp {
     this.composes++
   }
 
+  themeRefreshes = 0
+  refreshTheme(): void {
+    this.themeRefreshes++
+  }
+
   /** The most recent rendered document (last render wins). */
   get last(): ViewDocument {
     return this.rendered[this.rendered.length - 1]

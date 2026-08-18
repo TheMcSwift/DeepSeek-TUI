@@ -416,6 +416,52 @@ describe('tui runner', () => {
     }
   })
 
+  it('switches the visual theme via /theme and persists it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-theme-home-'))
+    const previous = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const test = await bench({}, {})
+      await test.started
+      test.app.handlers?.onCommandPicked('__theme', 'opencode')
+      await settle()
+      expect(test.app.themeRefreshes).toBe(1)
+      expect(test.app.toasts.some(toast => toast.text.includes('视觉主题已切换：opencode'))).toBe(true)
+      expect(readFileSync(join(home, 'tui-theme-preset.txt'), 'utf8').trim()).toBe('opencode')
+      // 未知值报错。
+      test.app.handlers?.onCommandPicked('__theme', 'tokyonight')
+      await settle()
+      expect(test.app.toasts.some(toast => toast.tone === 'error' && toast.text.includes('未知视觉主题'))).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previous === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previous
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('switches keymap + theme together via /preset', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-preset-home-'))
+    const previous = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const test = await bench({}, {})
+      await test.started
+      test.app.handlers?.onCommandPicked('__preset', 'opencode')
+      await settle()
+      expect(test.app.keymaps).toEqual(['opencode'])
+      expect(test.app.themeRefreshes).toBe(1)
+      expect(test.app.toasts.some(toast => toast.text.includes('预设已切换：opencode'))).toBe(true)
+      expect(readFileSync(join(home, 'tui-keymap.txt'), 'utf8').trim()).toBe('opencode')
+      expect(readFileSync(join(home, 'tui-theme-preset.txt'), 'utf8').trim()).toBe('opencode')
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previous === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previous
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('routes /compose to the editor-compose flow (pi A3)', async () => {
     const test = await bench({}, {})
     await test.started
@@ -488,7 +534,7 @@ describe('tui runner', () => {
     await test.started
     test.app.handlers?.onCommandPickerRequest?.()
     await settle()
-    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__compose'])
+    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__compose'])
     expect(test.app.commands?.find(item => item.value === 'goal')?.label).toBe('/goal <objective>')
     expect(test.app.commands?.find(item => item.value === '__model')?.label).toBe('/model <provider/model>')
     expect(test.app.commands?.find(item => item.value === '__permission')?.label).toBe('/permission <preset>')

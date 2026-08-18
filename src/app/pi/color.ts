@@ -7,7 +7,9 @@
  */
 
 import chalk from 'chalk'
-import { PALETTE_COLORS, PALETTE_VARS, applyPaletteVariant } from './palette.ts'
+import { PALETTE_COLORS, PALETTE_VARS, applyPaletteSet } from './palette.ts'
+import { themePresetById } from './theme-presets.ts'
+import type { ThemePresetId } from './theme-presets.ts'
 
 // The surface only runs on a real terminal; force truecolor so tests and
 // pipes render the same palette (chalk's TTY detection would strip colors).
@@ -16,15 +18,20 @@ chalk.level = 3
 let fgCache = new Map<string, (text: string) => string>()
 let bgCache = new Map<string, (text: string) => string>()
 
-/** Drop baked formatters after a palette swap (light/dark). */
+/** Drop baked formatters after a palette swap (preset/variant). */
 function resetColorCaches(): void {
   fgCache = new Map()
   bgCache = new Map()
 }
 
-/** Swap the palette and drop baked color formatters; call before building views. */
-export function applyPalette(variant: 'dark' | 'light'): void {
-  applyPaletteVariant(variant)
+/**
+ * Swap the palette and drop baked color formatters; call before building
+ * views（或换肤时先换、再让视图层重建）。variant 沿用 DSH_TUI_THEME 的
+ * light/dark（/theme 只切预设，不动明暗）。
+ */
+export function applyPalette(preset: ThemePresetId, variant: 'dark' | 'light'): void {
+  const target = themePresetById(preset)
+  applyPaletteSet(variant === 'light' ? target.light : target.dark)
   resetColorCaches()
 }
 

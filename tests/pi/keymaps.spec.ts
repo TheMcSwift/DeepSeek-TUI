@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { CC_KEYMAP, PI_KEYMAP, isKeymapId, keymapById, resolveKeyAction } from '../../src/app/pi/keymaps.ts'
+import { CC_KEYMAP, OPENCODE_KEYMAP, PI_KEYMAP, isKeymapId, isLeaderKey, keymapById, resolveKeyAction, resolveLeaderChord } from '../../src/app/pi/keymaps.ts'
 
 describe('keymap presets', () => {
   it('resolves the cc preset: Esc interrupts, idle Ctrl+C quits, busy Ctrl+C is swallowed', () => {
@@ -32,8 +32,35 @@ describe('keymap presets', () => {
   it('validates and looks up ids', () => {
     expect(isKeymapId('cc')).toBe(true)
     expect(isKeymapId('pi')).toBe(true)
+    expect(isKeymapId('opencode')).toBe(true)
     expect(isKeymapId('vim')).toBe(false)
     expect(keymapById('pi').id).toBe('pi')
     expect(keymapById('cc').entries.some(entry => entry.action === 'swallow')).toBe(true)
+  })
+
+  it('resolves the opencode preset: Ctrl+P palette, Ctrl+R rename, busy Ctrl+C clears input', () => {
+    expect(resolveKeyAction(OPENCODE_KEYMAP, '\x10', false)).toBe('palette')
+    expect(resolveKeyAction(OPENCODE_KEYMAP, '\x12', false)).toBe('rename') // Ctrl+R
+    expect(resolveKeyAction(OPENCODE_KEYMAP, '\x03', true)).toBe('clearInput') // busy Ctrl+C
+    expect(resolveKeyAction(OPENCODE_KEYMAP, '\x03', false)).toBe('quit') // idle Ctrl+C
+    expect(resolveKeyAction(OPENCODE_KEYMAP, '\x1b', true)).toBe('interrupt')
+    // leader 和弦不进普通解析。
+    expect(resolveKeyAction(OPENCODE_KEYMAP, 'l', false)).toBeUndefined()
+  })
+
+  it('resolves opencode leader chords (Ctrl+X prefix)', () => {
+    expect(isLeaderKey(OPENCODE_KEYMAP, '\x18')).toBe(true) // Ctrl+X
+    expect(isLeaderKey(CC_KEYMAP, '\x18')).toBe(false) // cc 无 leader
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 'l', false)).toBe('sessions')
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 'n', false)).toBe('newSession')
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 'm', false)).toBe('model')
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 'g', false)).toBe('trajectory')
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 'e', false)).toBe('compose')
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 't', false)).toBe('theme')
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 'y', false)).toBe('copy')
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 'x', false)).toBe('export')
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 'h', false)).toBe('thinking')
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 'c', false)).toBe('compact')
+    expect(resolveLeaderChord(OPENCODE_KEYMAP, 'q', false)).toBeUndefined() // 退出走 ctrl+c/ctrl+d
   })
 })

@@ -40,6 +40,8 @@ import type { FeedbackRecord } from './session/feedback.ts'
 import { approvalContext, findToolCall, relTime, trajectorySummary } from './control/summaries.ts'
 import { isKeymapId, KEYMAPS } from './app/pi/keymaps.ts'
 import type { KeymapId } from './app/pi/keymaps.ts'
+import { isThemePresetId, THEME_PRESETS } from './app/pi/theme-presets.ts'
+import type { ThemePresetId } from './app/pi/theme-presets.ts'
 import type { ViewDocument } from './document/document.ts'
 
 /** 快捷键预设 sidecar（与反馈/历史同目录的 TUI 自有配置）。 */
@@ -62,6 +64,29 @@ function persistKeymap(id: KeymapId): void {
   try {
     mkdirSync(dirname(keymapFile()), { recursive: true })
     writeFileSync(keymapFile(), `${id}\n`)
+  } catch {
+    // A read-only home must not break the surface.
+  }
+}
+
+/** 视觉主题预设 sidecar。 */
+function themePresetFile(): string {
+  return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'tui-theme-preset.txt')
+}
+
+function loadPersistedThemePreset(): ThemePresetId | undefined {
+  try {
+    const value = readFileSync(themePresetFile(), 'utf8').trim()
+    return isThemePresetId(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function persistThemePreset(id: ThemePresetId): void {
+  try {
+    mkdirSync(dirname(themePresetFile()), { recursive: true })
+    writeFileSync(themePresetFile(), `${id}\n`)
   } catch {
     // A read-only home must not break the surface.
   }
@@ -142,7 +167,7 @@ export interface Config {
 
 /** Surface factory seam; tests replace it with a fake. */
 export const internals: {
-  createApp: () => TerminalApp
+  createApp: (themePreset: ThemePresetId, variant: 'dark' | 'light') => TerminalApp
   /** Whether stdin/stdout are a usable interactive terminal. */
   isTty: () => boolean
   /** Settle window between the two quit/swap flushes (tests shorten it). */
@@ -152,15 +177,13 @@ export const internals: {
 } = {
   flushSettleMs: 400,
   writeStdout: (text: string) => { process.stdout.write(text) },
-  createApp: () => {
+  createApp: (themePreset: ThemePresetId, variant: 'dark' | 'light') => {
     // Language resolves before any view is built: DSH_TUI_LANG=en picks the
     // English dictionary, default zh (T9 i18n).
     setStrings(resolveLanguage(process.env.DSH_TUI_LANG))
-    // DSH_TUI_THEME=light|dark wins; =auto probes the terminal background
-    // through OSC 11 (best-effort, dark fallback); the default stays dark —
-    // probing stdin before the TUI owns the terminal races the raw-mode
-    // handover (proven by an E2E hang), so it is an explicit opt-in (T5③).
-    applyPalette(resolveThemeVariant(process.env.DSH_TUI_THEME, detectThemeLive))
+    // 视觉主题预设（web/cc/pi/opencode）× 明暗变体：preset 经 env/sidecar，
+    // 变体沿用 DSH_TUI_THEME=light|dark|auto（OSC11 探测，默认 dark）。
+    applyPalette(themePreset, variant)
     return new PiTuiApp({
       historyFile: join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'tui-history.json'),
       // 快捷键预设：env 优先，其次 $DSH_HOME/tui-keymap.txt 持久化值，缺省 cc。
@@ -220,7 +243,19 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     exit(1)
     return
   }
-  const app = internals.createApp()
+  const themeVariant = resolveThemeVariant(process.env.DSH_TUI_THEME, detectThemeLive)
+  let activeThemePreset: ThemePresetId = isThemePresetId(process.env.DSH_TUI_THEME_PRESET ?? '')
+    ? process.env.DSH_TUI_THEME_PRESET as ThemePresetId
+    : loadPersistedThemePreset() ?? 'web'
+  const app = internals.createApp(activeThemePreset, themeVariant)
+  /** 应用视觉主题预设：palette 热切换 + 视图重建 + 持久化 + toast。 */
+  const applyThemePreset = (preset: ThemePresetId): void => {
+    activeThemePreset = preset
+    persistThemePreset(preset)
+    applyPalette(preset, themeVariant)
+    app.refreshTheme()
+    app.toast(strings().themeSwitched(preset), 'success')
+  }
   let doc = emptyDocument()
   let cmdSeq = 0
   let handle: AgentHandle | undefined
@@ -461,7 +496,9 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     push('__rename', '/rename · 重命名会话', '固定会话标题（替代自动生成）')
     push('__queue', '/queue · 查看队列', '列出排队消息：取回或删除（E1）')
     push('__trajectory', '/trajectory · 轨迹', '原始事件日志视图（Inspect，B11/H31）')
-    push('__keymap', '/keymap [cc|pi]', '切换快捷键预设：Claude Code 式 / pi 式键位')
+    push('__keymap', '/keymap [cc|pi|opencode]', '切换快捷键预设：Claude Code / pi / OpenCode 式键位')
+    push('__theme', '/theme [web|cc|pi|opencode]', '切换视觉主题预设')
+    push('__preset', '/preset [cc|pi|opencode]', '一键切换预设（快捷键 + 视觉主题）')
     push('__compose', '/compose · 编辑器撰写', '在 $EDITOR 中撰写长消息并发送（pi A3）')
     return items
   }
@@ -1163,17 +1200,67 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         }
         if (arg !== '') {
           if (isKeymapId(arg)) apply(arg)
-          else app.toast(strings().keymapUnknown(arg, 'cc, pi'), 'error')
+          else app.toast(strings().keymapUnknown(arg, 'cc, pi, opencode'), 'error')
           return
         }
         void (async () => {
           const answer = await app.askDialog({
             title: strings().keymap,
             detail: strings().keymapDescription,
-            options: [KEYMAPS[0].label, KEYMAPS[1].label],
+            options: KEYMAPS.map(keymap => keymap.label),
           })
           if (answer.reason !== 'picked' || answer.picked === undefined) return
-          apply(answer.picked === KEYMAPS[1].label ? 'pi' : 'cc')
+          const picked = KEYMAPS.find(keymap => keymap.label === answer.picked)
+          if (picked !== undefined) apply(picked.id)
+        })()
+        return
+      }
+      if (name === '__theme') {
+        const arg = rawInput?.trim() ?? ''
+        if (arg !== '') {
+          if (isThemePresetId(arg)) applyThemePreset(arg)
+          else app.toast(strings().themeUnknown(arg, 'web, cc, pi, opencode'), 'error')
+          return
+        }
+        void (async () => {
+          const answer = await app.askDialog({
+            title: strings().themePreset,
+            detail: strings().themePresetDescription,
+            options: THEME_PRESETS.map(preset => preset.label),
+          })
+          if (answer.reason !== 'picked' || answer.picked === undefined) return
+          const picked = THEME_PRESETS.find(preset => preset.label === answer.picked)
+          if (picked !== undefined) applyThemePreset(picked.id)
+        })()
+        return
+      }
+      if (name === '__preset') {
+        // 一键预设：键位 + 视觉主题同时切换（cc/pi/opencode 三档；web 主题
+        // 只在 /theme 单切，因为 web 没有对应键位风格）。
+        const arg = rawInput?.trim() ?? ''
+        const applyProfile = (id: KeymapId): void => {
+          app.setKeymap(id)
+          persistKeymap(id)
+          activeThemePreset = id
+          persistThemePreset(id)
+          applyPalette(id, themeVariant)
+          app.refreshTheme()
+          app.toast(strings().profileSwitched(id), 'success')
+        }
+        if (arg !== '') {
+          if (isKeymapId(arg)) applyProfile(arg)
+          else app.toast(strings().profileUnknown(arg, 'cc, pi, opencode'), 'error')
+          return
+        }
+        void (async () => {
+          const answer = await app.askDialog({
+            title: strings().profileTitle,
+            detail: strings().themePresetDescription,
+            options: KEYMAPS.map(keymap => keymap.label),
+          })
+          if (answer.reason !== 'picked' || answer.picked === undefined) return
+          const picked = KEYMAPS.find(keymap => keymap.label === answer.picked)
+          if (picked !== undefined) applyProfile(picked.id)
         })()
         return
       }
@@ -1340,6 +1427,19 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         summary: trajectorySummary(event),
       }))
       app.showTrajectory(rows)
+    },
+    // opencode 预设的 <leader>t：打开主题预设 picker。
+    onThemePickerRequest: (): void => {
+      void (async () => {
+        const answer = await app.askDialog({
+          title: strings().themePreset,
+          detail: strings().themePresetDescription,
+          options: THEME_PRESETS.map(preset => preset.label),
+        })
+        if (answer.reason !== 'picked' || answer.picked === undefined) return
+        const picked = THEME_PRESETS.find(preset => preset.label === answer.picked)
+        if (picked !== undefined) applyThemePreset(picked.id)
+      })()
     },
     onWorkspaceSwitchRequest: (): void => {
       if (quitting) return
