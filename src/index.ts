@@ -38,7 +38,7 @@ import { fold, replay } from './projection/fold.ts'
 import { feedbackSummary, readFeedback, writeFeedback } from './session/feedback.ts'
 import type { FeedbackRecord } from './session/feedback.ts'
 import { approvalContext, findToolCall, relTime, trajectorySummary } from './control/summaries.ts'
-import { isKeymapId, KEYMAPS } from './app/pi/keymaps.ts'
+import { isKeymapId, KEYMAPS, keymapById } from './app/pi/keymaps.ts'
 import type { KeymapId } from './app/pi/keymaps.ts'
 import { isThemePresetId, THEME_PRESETS } from './app/pi/theme-presets.ts'
 import type { ThemePresetId } from './app/pi/theme-presets.ts'
@@ -653,6 +653,30 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'settings.yaml')
   }
 
+  /** 应用语言切换（__lang 命令与 cc 语式的行内循环共用）。 */
+  const applyLanguage = (lang: 'zh' | 'en'): void => {
+    setStrings(lang)
+    app.toast(lang === 'en' ? 'Language: English' : '语言：中文', 'success')
+    app.render(doc)
+  }
+
+  /** 应用 Enter 行为（settings 面板与行内循环共用）。 */
+  const applyEnterBehavior = (steer: boolean): void => {
+    if (steer) process.env.DSH_TUI_ENTER = 'steer'
+    else delete process.env.DSH_TUI_ENTER
+    void settingsSeam()?.update?.('tui', { enterBehavior: steer ? 'steer' : 'queue' }).catch(() => {})
+    app.toast(strings().enterSwitched(steer ? strings().enterSteer : strings().enterQueue), 'success')
+  }
+
+  /** 应用动画开关（settings 面板与行内循环共用）。 */
+  const applyAnim = (off: boolean): void => {
+    piTuiInternals.animFrameMs = off ? 0 : 60
+    if (off) process.env.DSH_TUI_ANIM = '0'
+    else delete process.env.DSH_TUI_ANIM
+    void settingsSeam()?.update?.('tui', { anim: off ? 'off' : 'on' }).catch(() => {})
+    app.toast(strings().animSwitched(off ? strings().animOff : strings().animOn), 'success')
+  }
+
   /** 键位三选：应用 + 持久化 + toast；当前项带 ● 标记；取消返回 false。 */
   const pickKeymap = async (): Promise<boolean> => {
     const picked = await new Promise<string | null>((resolve) => {
@@ -692,17 +716,21 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     return strings().themeVariantDark
   }
 
-  /** /settings 面板行：现状值实时收集（面板是瞬态派生视图，不落文档）。 */
+  /** /settings 面板行：现状值实时收集（面板是瞬态派生视图，不落文档）。
+   * cc 语式下可循环行附带 cycle 数据（行内 ←/→ 切换而非弹选择器）。 */
   const settingsRows = async (): Promise<SettingsRow[]> => {
     const enter = process.env.DSH_TUI_ENTER === 'steer' ? strings().enterSteer : strings().enterQueue
     const anim = piTuiInternals.animFrameMs > 0 ? strings().animOn : strings().animOff
     const config = await settingsFilePath().catch(() => 'settings.yaml')
+    const inline = keymapById(activeKeymap).enumIdiom === 'inline-cycle'
+    const cycleOf = (options: string[], current: string): { options: string[]; current: string } | undefined =>
+      inline ? { options, current } : undefined
     return [
-      { key: strings().settingsLanguage, current: resolveLanguage(process.env.DSH_TUI_LANG), target: '→ /lang' },
-      { key: strings().settingsTheme, current: `${themeVariantLabel()} · ${activeThemePreset}`, tone: 'accent', target: '→ /theme' },
-      { key: strings().settingsEnter, current: enter, tone: 'info', target: '→ 切换' },
-      { key: strings().settingsKeymap, current: activeKeymap, tone: 'accent', target: '→ /keymap' },
-      { key: strings().settingsAnim, current: anim, target: '→ 切换' },
+      { key: strings().settingsLanguage, current: resolveLanguage(process.env.DSH_TUI_LANG), target: '→ /lang', cycle: cycleOf(['zh', 'en'], resolveLanguage(process.env.DSH_TUI_LANG)) },
+      { key: strings().settingsTheme, current: `${themeVariantLabel()} · ${activeThemePreset}`, tone: 'accent', target: '→ /theme', cycle: cycleOf(THEME_PRESETS.map(preset => preset.id), activeThemePreset) },
+      { key: strings().settingsEnter, current: enter, tone: 'info', target: '→ 切换', cycle: cycleOf(['queue', 'steer'], process.env.DSH_TUI_ENTER === 'steer' ? 'steer' : 'queue') },
+      { key: strings().settingsKeymap, current: activeKeymap, tone: 'accent', target: '→ /keymap', cycle: cycleOf(KEYMAPS.map(keymap => keymap.id), activeKeymap) },
+      { key: strings().settingsAnim, current: anim, target: '→ 切换', cycle: cycleOf(['on', 'off'], piTuiInternals.animFrameMs > 0 ? 'on' : 'off') },
       { key: strings().settingsConfig, current: config, tone: 'muted', target: '→ /config' },
     ]
   }
@@ -1169,12 +1197,15 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         return
       }
       if (name === '__lang') {
+        const arg = rawInput?.trim() ?? ''
+        if (arg === 'zh' || arg === 'en') {
+          applyLanguage(arg)
+          return
+        }
         void (async () => {
           const answer = await app.askDialog({ title: strings().chooseLanguage, options: ['中文', 'English'] })
           if (answer.reason !== 'picked' || answer.picked === undefined) return
-          setStrings(answer.picked === 'English' ? 'en' : 'zh')
-          app.toast(answer.picked === 'English' ? 'Language: English' : '语言：中文', 'success')
-          app.render(doc)
+          applyLanguage(answer.picked === 'English' ? 'en' : 'zh')
         })().catch((error: unknown) => { fail(exit, error) })
         return
       }
@@ -1620,11 +1651,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
               ], resolve, strings().settingsEnter)
             })
             if (picked === null) return
-            const steer = picked === 'steer'
-            if (steer) process.env.DSH_TUI_ENTER = 'steer'
-            else delete process.env.DSH_TUI_ENTER
-            void settingsSeam()?.update?.('tui', { enterBehavior: steer ? 'steer' : 'queue' }).catch(() => {})
-            app.toast(strings().enterSwitched(steer ? strings().enterSteer : strings().enterQueue), 'success')
+            applyEnterBehavior(picked === 'steer')
             await refresh()
             break
           }
@@ -1633,11 +1660,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             break
           case 4: { // 动画（运行时切 animFrameMs + 持久化 best-effort）
             const off = piTuiInternals.animFrameMs > 0
-            piTuiInternals.animFrameMs = off ? 0 : 60
-            if (off) process.env.DSH_TUI_ANIM = '0'
-            else delete process.env.DSH_TUI_ANIM
-            void settingsSeam()?.update?.('tui', { anim: off ? 'off' : 'on' }).catch(() => {})
-            app.toast(strings().animSwitched(off ? strings().animOff : strings().animOn), 'success')
+            applyAnim(off)
             await refresh()
             break
           }
@@ -1648,6 +1671,43 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             break
         }
       })()
+    },
+    // cc 语式：/settings 行上 ←/→ 直接循环切换值（广义交互层）。
+    onSettingsRowCycle: (index: number, direction: 1 | -1): void => {
+      void (async () => {
+        const rows = await settingsRows()
+        const cycle = rows[index]?.cycle
+        if (cycle === undefined) return
+        const pos = cycle.options.indexOf(cycle.current)
+        const next = cycle.options[(pos + direction + cycle.options.length) % cycle.options.length] ?? cycle.current
+        if (next === cycle.current) return
+        switch (index) {
+          case 0: // 语言
+            applyLanguage(next === 'en' ? 'en' : 'zh')
+            break
+          case 1: // 主题
+            if (isThemePresetId(next)) applyThemePreset(next)
+            break
+          case 2: // Enter 行为
+            applyEnterBehavior(next === 'steer')
+            break
+          case 3: { // 键位
+            if (isKeymapId(next)) {
+              activeKeymap = next
+              app.setKeymap(next)
+              persistKeymap(next)
+              app.toast(strings().keymapSwitched(next), 'success')
+            }
+            break
+          }
+          case 4: // 动画
+            applyAnim(next === 'off')
+            break
+          default:
+            break
+        }
+        app.showSettings(await settingsRows()) // 就地刷新行
+      })().catch((error: unknown) => { fail(exit, error) })
     },
     // /plugins 面板条目：命令执行 / 技能插入 composer / 投影打开枚举 picker。
     onPluginsRowPicked: (action: string): void => {
@@ -1676,6 +1736,17 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     onPermissionPickerRequest: (): void => {
       // K3: 通用投影优先 —— select 形态的插件投影直接给出枚举 picker。
       if (projections.length > 0) {
+        // cc 语式：permissions 投影存在时，Ctrl+P 行内循环到下一个预设
+        // （Claude Code 权限模式循环精神），不弹选择器。
+        const permissionsRow = projections.find(row => row.key === 'permissions')
+        if (keymapById(activeKeymap).enumIdiom === 'inline-cycle' && permissionsRow !== undefined) {
+          const pos = permissionsRow.options.findIndex(option => option.value === permissionsRow.currentValue)
+          const next = permissionsRow.options[(pos + 1) % Math.max(1, permissionsRow.options.length)]
+          if (next !== undefined && next.value !== permissionsRow.currentValue) {
+            void switchPreset(next.value).catch((error: unknown) => { fail(exit, error) })
+          }
+          return
+        }
         void openProjectionPicker(projections).catch((error: unknown) => { fail(exit, error) })
         return
       }

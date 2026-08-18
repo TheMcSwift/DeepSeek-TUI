@@ -293,6 +293,8 @@ diff 数据流：`tool/result.meta`（`FsDiffMeta{diffs:[{path,oldText,newText}]
 
 ## 10. 实施后的修订记录
 
+- **预设驱动的广义交互层（0.2.1，本轮）**：① 预设从「键位+配色」扩展到**交互语式**——`Keymap.enumIdiom`：cc = `inline-cycle`（行内 ←/→ 循环切换值，Claude Code 式），pi/opencode = `list`（单列选择菜单）；② `/settings` 面板五条可枚举行（语言/主题/Enter/键位/动画）在 cc 语式下携带 cycle 数据：行上 ←/→ 直接切换并即时生效 + toast + 就地刷新，提示行补「←/→ 切换值」；③ **Ctrl+P 在 cc 语式下循环权限预设**（permissions 投影存在时行内切下一个预设，full-access 确认保留，switchPreset 复用），pi/opencode 保持枚举 picker；④ 顺带修 `/lang` 支持内联参数直切（`/lang zh`），与其它枚举命令对齐；⑤ 枚举选择器（/theme、/keymap、/preset、Enter 行为）改为带 ● 当前标记的单列 picker；hotkeys 面板 cc 区同步「Ctrl+P 权限预设循环」；单测 304→307。
+
 - **/plugins + /workspace 批（0.2.1，本轮，M3/M4 收官）**：① `/plugins` 能力清单——`src/view/components/plugins-panel.ts`，命令/技能/投影三区代理视图（tui profile 无插件 registry，按来源分区；数据源诚实声明入组件注释与 SETTINGS 文档）；行级动作：命令 Enter 执行、技能 Enter 插入 composer（`__skill:` 前缀复用）、select 投影 Enter 开通用枚举 picker（H20 的终端等价设置路径）、结构化投影灰显；② `/workspace` 最近工作目录列表——sessionQuery cwd 去重 + 会话计数 + 最近优先 + 当前标记，选中经 `applyWorkspacePath`（与 Ctrl+W 共用：目录校验 → workspaceRef/meta/footer 同步 → 新会话）；③ FEATURE-CHECKLIST 的 ❌ 列**归零**（H20 转 🟡、H21 转 ✅，合计 99✅/39🟡/0❌/10⛔，不含 ⛔ 的可执行项 100% 覆盖）；单测 298→304。
 
 - **/settings 聚合面板批（0.2.1，本轮）**：① `src/view/components/settings-panel.ts`——六行聚合面板（语言/主题/Enter 行为/键位预设/动画/配置文件），窗口滚动 + 数字直选 + Enter 执行 + Esc 关闭，**纯语义色零硬编码 hex，随主题预设（web/cc/pi/opencode）自动换肤**；面板是瞬态派生视图（打开时实时收集现状值，不落文档），行操作全部跳转既有命令/闭包；② Enter 行为与动画开关补了**写路径与持久化**——settings seam 的 `tui` 命名空间（`tui.enterBehavior`/`tui.anim`，best-effort），启动时 env 未显式设置则回填（hydration）；动画运行时切 `piTuiInternals.animFrameMs`（shimmer/脉冲随开关即时冻结/恢复）；③ 面板内切换主题/键位后就地刷新行（重复 `showSettings` 调 `setRows`），换肤后颜色随新预设重绘；④ `/settings` 命令入目录，E2E surface 场景补面板打开断言；单测 290→298。

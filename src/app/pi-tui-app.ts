@@ -1059,7 +1059,8 @@ export class PiTuiApp implements TerminalApp {
       this.overlayOpen = false
       this.settingsPanel = undefined
       handle.hide()
-    }, (index) => { this.handlers?.onSettingsRowPicked?.(index) })
+    }, (index) => { this.handlers?.onSettingsRowPicked?.(index) },
+    (index, direction) => { this.handlers?.onSettingsRowCycle?.(index, direction) })
     this.settingsPanel = panel
     this.overlayOpen = true
     const handle = tui.showOverlay(panel, {

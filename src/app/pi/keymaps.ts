@@ -64,6 +64,12 @@ export interface Keymap {
   label: string
   /** leader 键（opencode：ctrl+x）；无 leader 的预设省略。 */
   leader?: string
+  /**
+   * 枚举选择的交互语式（广义交互层）：
+   * - `inline-cycle`：行内 ←/→ 循环切换值（Claude Code 式，不弹层）；
+   * - `list`：单列选择菜单（pi/opencode 的列表风格，现状）。
+   */
+  enumIdiom: 'inline-cycle' | 'list'
   entries: KeymapEntry[]
 }
 
@@ -71,6 +77,7 @@ export interface Keymap {
 export const CC_KEYMAP: Keymap = {
   id: 'cc',
   label: 'cc — Claude Code 风格',
+  enumIdiom: 'inline-cycle',
   entries: [
     { action: 'interrupt', keys: ['escape'], when: 'busy' },
     { action: 'quit', keys: ['ctrl+c'], when: 'idle' },
@@ -100,6 +107,7 @@ export const CC_KEYMAP: Keymap = {
 export const PI_KEYMAP: Keymap = {
   id: 'pi',
   label: 'pi — pi coding-agent 风格',
+  enumIdiom: 'list',
   entries: [
     { action: 'interrupt', keys: ['ctrl+c'], when: 'busy' },
     { action: 'quit', keys: ['ctrl+c'], when: 'idle' },
@@ -129,6 +137,7 @@ export const OPENCODE_KEYMAP: Keymap = {
   id: 'opencode',
   label: 'opencode — OpenCode 风格',
   leader: 'ctrl+x',
+  enumIdiom: 'list',
   entries: [
     { action: 'interrupt', keys: ['escape'], when: 'busy' },
     { action: 'quit', keys: ['ctrl+c'], when: 'idle' },

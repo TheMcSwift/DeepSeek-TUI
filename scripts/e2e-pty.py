@@ -515,6 +515,16 @@ def scenario_surface() -> None:
         if not tui.wait_for("数字直选", 30):
             dump_failure("settings")
             raise AssertionError("settings panel did not open")
+        # cc 语式（广义交互层）：主题行上 → 行内循环切换（此刻主题为 cc →
+        # pi），不弹选择器。断言面板行就地刷新为新值（toast 在面板背后的
+        # 状态槽，被覆盖层遮挡）。
+        tui.type("\x1b[B")  # ↓ 到主题行
+        time.sleep(0.3)
+        tui.type("\x1b[C")  # → 循环到下一档
+        if not tui.wait_for("暗色 · pi", 30):
+            dump_failure("settings cycle")
+            raise AssertionError("settings inline cycle did not apply")
+        time.sleep(0.5)
         tui.type("\x1b")
         time.sleep(0.5)
         # /plugins：能力清单（命令/技能/投影三区）；分区头 '命令 (' 仅面板有。

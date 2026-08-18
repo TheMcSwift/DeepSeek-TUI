@@ -81,6 +81,11 @@ export interface SettingsRow {
   tone?: 'text' | 'accent' | 'info' | 'success' | 'warning' | 'error' | 'muted' | 'dim'
   /** 操作提示（如 `→ /theme`）。 */
   target: string
+  /**
+   * 行内循环切换数据（广义交互层：cc 预设的行内 ←/→ 语式）。提供时该行
+   * 用 ←/→ 直接切换值而非弹选择器。
+   */
+  cycle?: { options: string[]; current: string }
 }
 
 /** /plugins 面板的一行（M3，H20/H21 代理视图）：分区头或可执行条目。 */
@@ -164,6 +169,8 @@ export interface TerminalAppHandlers {
   onThemePickerRequest?(): void
   /** /settings 面板里选中了某行（数字直选或 Enter）；index 为行序。 */
   onSettingsRowPicked?(index: number): void
+  /** cc 语式：/settings 行上 ←/→ 循环切换值；direction 为 +1/-1。 */
+  onSettingsRowCycle?(index: number, direction: 1 | -1): void
   /** /plugins 面板里选中了条目；action 为动作编码（command:/skill:/projection:）。 */
   onPluginsRowPicked?(action: string): void
 }

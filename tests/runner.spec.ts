@@ -16,6 +16,7 @@ import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
 import { apply, internals } from '../src/index.ts'
+import { setStrings } from '../src/view/strings.ts'
 import type { Config } from '../src/index.ts'
 import { emptyDocument } from '../src/document/document.ts'
 import { FakeApp } from './helpers/fake-app.ts'
@@ -623,6 +624,73 @@ describe('tui runner', () => {
       rmSync(tmp1, { recursive: true, force: true })
       rmSync(tmp2, { recursive: true, force: true })
     }
+  })
+
+  it('cycles settings values inline under the cc keymap idiom', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-cycle-home-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const test = await bench({}, {})
+      await test.started
+      test.app.handlers?.onCommandPicked('__settings', '')
+      await settle(150)
+      // cc 键位默认 → 可循环行携带 cycle 数据。
+      const rows = test.app.settingsShown[0]
+      expect(rows.find(row => row.key === '主题')?.cycle?.options).toEqual(['web', 'cc', 'pi', 'opencode'])
+      expect(rows.find(row => row.key === '配置文件')?.cycle).toBeUndefined()
+      // 主题行 →：web → cc。
+      test.app.handlers?.onSettingsRowCycle?.(1, 1)
+      await settle(150)
+      expect(test.app.themeRefreshes).toBe(1)
+      const after = test.app.settingsShown[test.app.settingsShown.length - 1]
+      expect(after.find(row => row.key === '主题')?.current).toContain('cc')
+      // 语言行 →：zh → en。
+      test.app.handlers?.onSettingsRowCycle?.(0, 1)
+      await settle(150)
+      expect(test.app.toasts.some(toast => toast.text.includes('Language: English'))).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      setStrings('zh') // 行内循环切了语言，恢复默认避免污染后续测试
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('cycles the permission preset inline on Ctrl+P under the cc idiom', async () => {
+    const picked: string[] = []
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('permissionPresets', {
+        names: ['workspace-write', 'danger-full-access'],
+        optionOf: (name: string) => ({ value: name, name, description: `description of ${name}` }),
+        current: () => 'workspace-write',
+        set: (_session: Session, name: string) => { picked.push(name) },
+      } as never)
+      ctx.provide('sessionProjections', {
+        snapshot: () => ({
+          asOfSeq: 0,
+          values: {
+            permissions: {
+              currentValue: 'workspace-write',
+              options: [
+                { value: 'workspace-write', name: 'workspace-write' },
+                { value: 'danger-full-access', name: 'danger-full-access' },
+              ],
+            },
+          },
+        }),
+      } as never)
+    })
+    await test.started
+    // cc 语式：Ctrl+P 行内循环 → 下一个是 full-access → 保留确认弹窗。
+    test.app.dialogAnswer = '我已了解风险，并愿意继续'
+    test.app.handlers?.onPermissionPickerRequest?.()
+    await settle(150)
+    expect(test.app.permissions).toBeUndefined() // 没弹 picker
+    expect(picked).toEqual(['danger-full-access'])
+    expect(test.app.toasts.some(toast => toast.text.includes('权限预设已切换：danger-full-access'))).toBe(true)
+    await test.ctx.fiber.dispose()
   })
 
   it('routes /compose to the editor-compose flow (pi A3)', async () => {
@@ -1399,7 +1467,11 @@ describe('tui runner', () => {
   })
 
   it('renders select-shaped plugin projections and picks them via Ctrl+P (K3)', async () => {
+    // list 语式（pi 键位）下测 picker 语义；cc 语式走行内循环（另有专测）。
+    const previousKeymap = process.env.DSH_TUI_KEYMAP
+    process.env.DSH_TUI_KEYMAP = 'pi'
     const set: string[] = []
+    try {
     const test = await bench({}, {}, (ctx) => {
       ctx.provide('permissionPresets', {
         names: ['workspace-write', 'danger-full-access'],
@@ -1441,6 +1513,10 @@ describe('tui runner', () => {
     await settle()
     expect(set).toEqual(['danger-full-access'])
     await test.ctx.fiber.dispose()
+    } finally {
+      if (previousKeymap === undefined) delete process.env.DSH_TUI_KEYMAP
+      else process.env.DSH_TUI_KEYMAP = previousKeymap
+    }
   })
 
   it('writes generic projection picks through the same-named command (K3)', async () => {
@@ -1476,7 +1552,11 @@ describe('tui runner', () => {
   })
 
   it('chooses between several select projections first, then offers the enum (K3)', async () => {
-    const test = await bench({}, {}, (ctx) => {
+    // list 语式（pi 键位）下测「先选投影再枚举」语义。
+    const previousKeymap = process.env.DSH_TUI_KEYMAP
+    process.env.DSH_TUI_KEYMAP = 'pi'
+    try {
+      const test = await bench({}, {}, (ctx) => {
       ctx.provide('permissionPresets', {
         names: ['workspace-write'],
         optionOf: (name: string) => ({ value: name, name }),
@@ -1505,6 +1585,10 @@ describe('tui runner', () => {
     await settle()
     expect(test.app.permissions?.map(item => item.value)).toEqual(['workspace-write'])
     await test.ctx.fiber.dispose()
+    } finally {
+      if (previousKeymap === undefined) delete process.env.DSH_TUI_KEYMAP
+      else process.env.DSH_TUI_KEYMAP = previousKeymap
+    }
   })
 
   it('reports a projection without a writable command (K3)', async () => {

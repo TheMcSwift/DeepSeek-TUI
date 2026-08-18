@@ -44,12 +44,18 @@ export class SettingsPanel implements Component, Focusable {
     private rows: readonly SettingsRow[],
     private readonly onClose: () => void,
     private readonly onPick: (index: number) => void,
+    private readonly onCycle: (index: number, direction: 1 | -1) => void,
   ) {}
 
   /** 行变化后就地刷新（如面板内切换主题后重新收集的现状值）。 */
   setRows(rows: readonly SettingsRow[]): void {
     this.rows = rows
     this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, rows.length - 1))
+  }
+
+  /** 是否有行支持行内循环（cc 语式）。 */
+  private get hasCycleRows(): boolean {
+    return this.rows.some(row => row.cycle !== undefined)
   }
 
   handleInput(data: string): void {
@@ -64,6 +70,15 @@ export class SettingsPanel implements Component, Focusable {
         this.selectedIndex = index
         this.onPick(index)
       }
+      return
+    }
+    // cc 语式：选中行带 cycle 数据时，←/→ 直接切换值。
+    if (matchesKey(data, 'left') && this.rows[this.selectedIndex]?.cycle !== undefined) {
+      this.onCycle(this.selectedIndex, -1)
+      return
+    }
+    if (matchesKey(data, 'right') && this.rows[this.selectedIndex]?.cycle !== undefined) {
+      this.onCycle(this.selectedIndex, 1)
       return
     }
     if (matchesKey(data, 'up')) {
@@ -115,7 +130,8 @@ export class SettingsPanel implements Component, Focusable {
       const index = start + i
       const valueWidth = Math.max(0, width - keyWidth - 18)
       const body = `${padTo(row.key, keyWidth)}  ${toneFormatter(row.tone)(truncateToWidth(row.current, valueWidth))}`
-      const target = truncateToWidth(row.target, 14)
+      // cc 语式：可循环行把操作提示换成 `←/→`。
+      const target = truncateToWidth(row.cycle !== undefined ? '←/→' : row.target, 14)
       const line = index === this.selectedIndex
         ? ` ${bg('selectedBg')(bold(fg('accent')(`❯ ${body}`)))}  ${fg('dim')(target)}`
         : `   ${body}  ${fg('dim')(target)}`
@@ -125,7 +141,10 @@ export class SettingsPanel implements Component, Focusable {
     if (remaining > 0) {
       lines.push(truncateToWidth(fg('dim')(`  ↓ 还有 ${remaining} 条`), width))
     }
-    lines.push(truncateToWidth(fg('dim')(strings().settingsHint), width))
+    // cc 语式下提示行补一行内切换说明。
+    lines.push(truncateToWidth(fg('dim')(this.hasCycleRows
+      ? `${strings().settingsHint} · ${strings().settingsCycleHint}`
+      : strings().settingsHint), width))
     return lines
   }
 }

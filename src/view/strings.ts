@@ -140,6 +140,7 @@ export interface Strings {
   // /settings 聚合面板（M2，行名/现状值/提示；全部经词典）
   settingsTitle: string
   settingsHint: string
+  settingsCycleHint: string
   settingsLanguage: string
   settingsTheme: string
   settingsEnter: string
@@ -232,7 +233,7 @@ const zh: Strings = {
       rows: [
         { keys: 'Ctrl+R', action: '会话列表' },
         { keys: 'Ctrl+G', action: '选择模型' },
-        { keys: 'Ctrl+P', action: '权限预设' },
+        { keys: 'Ctrl+P', action: '权限预设循环（行内切换）' },
         { keys: 'Ctrl+E', action: '退出 plan 模式' },
         { keys: 'Ctrl+W', action: '切换工作目录' },
         { keys: 'Ctrl+B', action: '分支新会话' },
@@ -480,6 +481,7 @@ const zh: Strings = {
   // /settings 聚合面板（M2）
   settingsTitle: '设置',
   settingsHint: '↑/↓ 选择 · 数字直选 · Enter 执行 · Esc 关闭',
+  settingsCycleHint: '←/→ 切换值',
   settingsLanguage: '语言',
   settingsTheme: '主题',
   settingsEnter: 'Enter 行为',
@@ -566,7 +568,7 @@ const en: Strings = {
       rows: [
         { keys: 'Ctrl+R', action: 'Session list' },
         { keys: 'Ctrl+G', action: 'Pick model' },
-        { keys: 'Ctrl+P', action: 'Permission preset' },
+        { keys: 'Ctrl+P', action: 'Cycle permission preset (inline)' },
         { keys: 'Ctrl+E', action: 'Exit plan mode' },
         { keys: 'Ctrl+W', action: 'Switch workspace' },
         { keys: 'Ctrl+B', action: 'Fork new session' },
@@ -814,6 +816,7 @@ const en: Strings = {
   // /settings panel (M2)
   settingsTitle: 'Settings',
   settingsHint: '↑/↓ select · number to jump · Enter run · Esc close',
+  settingsCycleHint: '←/→ cycle value',
   settingsLanguage: 'Language',
   settingsTheme: 'Theme',
   settingsEnter: 'Enter behavior',
