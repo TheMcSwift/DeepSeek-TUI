@@ -653,34 +653,34 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'settings.yaml')
   }
 
-  /** 键位三选：应用 + 持久化 + toast；取消返回 false。 */
+  /** 键位三选：应用 + 持久化 + toast；当前项带 ● 标记；取消返回 false。 */
   const pickKeymap = async (): Promise<boolean> => {
-    const answer = await app.askDialog({
-      title: strings().keymap,
-      detail: strings().keymapDescription,
-      options: KEYMAPS.map(keymap => keymap.label),
+    const picked = await new Promise<string | null>((resolve) => {
+      app.showQueuePicker(KEYMAPS.map(keymap => ({
+        value: keymap.id,
+        label: keymap.label,
+        current: keymap.id === activeKeymap,
+      })), resolve, strings().keymap)
     })
-    if (answer.reason !== 'picked' || answer.picked === undefined) return false
-    const picked = KEYMAPS.find(keymap => keymap.label === answer.picked)
-    if (picked === undefined) return false
-    activeKeymap = picked.id
-    app.setKeymap(picked.id)
-    persistKeymap(picked.id)
-    app.toast(strings().keymapSwitched(picked.id), 'success')
+    if (picked === null || !isKeymapId(picked)) return false
+    activeKeymap = picked
+    app.setKeymap(picked)
+    persistKeymap(picked)
+    app.toast(strings().keymapSwitched(picked), 'success')
     return true
   }
 
-  /** 主题四选：应用 + 持久化 + toast；取消返回 false。 */
+  /** 主题四选：应用 + 持久化 + toast；当前项带 ● 标记；取消返回 false。 */
   const pickTheme = async (): Promise<boolean> => {
-    const answer = await app.askDialog({
-      title: strings().themePreset,
-      detail: strings().themePresetDescription,
-      options: THEME_PRESETS.map(preset => preset.label),
+    const picked = await new Promise<string | null>((resolve) => {
+      app.showQueuePicker(THEME_PRESETS.map(preset => ({
+        value: preset.id,
+        label: preset.label,
+        current: preset.id === activeThemePreset,
+      })), resolve, strings().themePreset)
     })
-    if (answer.reason !== 'picked' || answer.picked === undefined) return false
-    const picked = THEME_PRESETS.find(preset => preset.label === answer.picked)
-    if (picked === undefined) return false
-    applyThemePreset(picked.id)
+    if (picked === null || !isThemePresetId(picked)) return false
+    applyThemePreset(picked)
     return true
   }
 
@@ -1420,14 +1420,15 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
           return
         }
         void (async () => {
-          const answer = await app.askDialog({
-            title: strings().profileTitle,
-            detail: strings().themePresetDescription,
-            options: KEYMAPS.map(keymap => keymap.label),
+          const picked = await new Promise<string | null>((resolve) => {
+            app.showQueuePicker(KEYMAPS.map(keymap => ({
+              value: keymap.id,
+              label: keymap.label,
+              current: keymap.id === activeKeymap,
+            })), resolve, strings().profileTitle)
           })
-          if (answer.reason !== 'picked' || answer.picked === undefined) return
-          const picked = KEYMAPS.find(keymap => keymap.label === answer.picked)
-          if (picked !== undefined) applyProfile(picked.id)
+          if (picked === null || !isKeymapId(picked)) return
+          applyProfile(picked)
         })()
         return
       }
@@ -1611,9 +1612,15 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             if (await pickTheme()) await refresh()
             break
           case 2: { // Enter 行为（queue/steer，settings seam 持久化 best-effort）
-            const answer = await app.askDialog({ title: strings().settingsEnter, options: [strings().enterQueue, strings().enterSteer] })
-            if (answer.reason !== 'picked' || answer.picked === undefined) return
-            const steer = answer.picked === strings().enterSteer
+            const steerNow = process.env.DSH_TUI_ENTER === 'steer'
+            const picked = await new Promise<string | null>((resolve) => {
+              app.showQueuePicker([
+                { value: 'queue', label: strings().enterQueue, current: !steerNow },
+                { value: 'steer', label: strings().enterSteer, current: steerNow },
+              ], resolve, strings().settingsEnter)
+            })
+            if (picked === null) return
+            const steer = picked === 'steer'
             if (steer) process.env.DSH_TUI_ENTER = 'steer'
             else delete process.env.DSH_TUI_ENTER
             void settingsSeam()?.update?.('tui', { enterBehavior: steer ? 'steer' : 'queue' }).catch(() => {})

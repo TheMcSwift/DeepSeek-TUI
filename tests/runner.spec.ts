@@ -463,21 +463,31 @@ describe('tui runner', () => {
   })
 
   it('opens the /settings panel with live values (M2)', async () => {
-    const test = await bench({}, {})
-    await test.started
-    test.app.handlers?.onCommandPicked('__settings', '')
-    await settle(150)
-    expect(test.app.settingsShown).toHaveLength(1)
-    const rows = test.app.settingsShown[0]
-    expect(rows.map(row => row.key)).toContain('语言')
-    expect(rows.map(row => row.key)).toContain('主题')
-    expect(rows.map(row => row.key)).toContain('Enter 行为')
-    expect(rows.map(row => row.key)).toContain('快捷键预设')
-    expect(rows.map(row => row.key)).toContain('动画')
-    expect(rows.map(row => row.key)).toContain('配置文件')
-    const themeRow = rows.find(row => row.key === '主题')
-    expect(themeRow?.current).toContain('web') // 默认主题预设
-    await test.ctx.fiber.dispose()
+    // 隔离 DSH_HOME：主题/键位 sidecar 的默认值不受开发者本机状态影响。
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-settings-live-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const test = await bench({}, {})
+      await test.started
+      test.app.handlers?.onCommandPicked('__settings', '')
+      await settle(150)
+      expect(test.app.settingsShown).toHaveLength(1)
+      const rows = test.app.settingsShown[0]
+      expect(rows.map(row => row.key)).toContain('语言')
+      expect(rows.map(row => row.key)).toContain('主题')
+      expect(rows.map(row => row.key)).toContain('Enter 行为')
+      expect(rows.map(row => row.key)).toContain('快捷键预设')
+      expect(rows.map(row => row.key)).toContain('动画')
+      expect(rows.map(row => row.key)).toContain('配置文件')
+      const themeRow = rows.find(row => row.key === '主题')
+      expect(themeRow?.current).toContain('web') // 默认主题预设
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('switches Enter behavior from the /settings panel and persists it', async () => {
@@ -490,8 +500,12 @@ describe('tui runner', () => {
       await test.started
       test.app.handlers?.onCommandPicked('__settings', '')
       await settle(150)
-      test.app.dialogAnswer = '并入当前轮（steer）'
       test.app.handlers?.onSettingsRowPicked?.(2)
+      await settle(50)
+      // Enter 行为行现在是带 ● 当前标记的单列 picker。
+      const rows = test.app.queueRows[test.app.queueRows.length - 1]
+      expect(rows[0].current).toBe(true) // 默认 queue 是当前项
+      test.app.queuePicked?.('steer')
       await settle(150)
       expect(process.env.DSH_TUI_ENTER).toBe('steer')
       expect(test.app.toasts.some(toast => toast.text.includes('Enter 行为'))).toBe(true)
@@ -514,8 +528,13 @@ describe('tui runner', () => {
       await test.started
       test.app.handlers?.onCommandPicked('__settings', '')
       await settle(150)
-      test.app.dialogAnswer = 'opencode — OpenCode 默认主题'
       test.app.handlers?.onSettingsRowPicked?.(1)
+      await settle(50)
+      // 主题四选带 ● 当前标记（默认 web）。
+      const rows = test.app.queueRows[test.app.queueRows.length - 1]
+      expect(rows[0].current).toBe(true)
+      expect(rows[0].value).toBe('web')
+      test.app.queuePicked?.('opencode')
       await settle(150)
       expect(test.app.themeRefreshes).toBe(1)
       // 行就地刷新：主题现状值已更新为 opencode。
