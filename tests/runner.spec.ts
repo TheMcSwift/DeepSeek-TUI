@@ -31,6 +31,7 @@ afterEach(() => {
   internals.writeStdout = originalInternals.writeStdout
   internals.forceExitMs = originalInternals.forceExitMs
   internals.forceExit = originalInternals.forceExit
+  internals.pickerTitleIdleMs = originalInternals.pickerTitleIdleMs
   capturedStdout = ''
 })
 // (Re-applied inside bench(): afterEach restores the real stdout writer.)
@@ -106,6 +107,8 @@ async function bench(
   options: { tty?: boolean } = {},
 ): Promise<Bench> {
   internals.flushSettleMs = 0
+  // picker 标题回填的空闲窗口在测试里收敛为 0：回填立即开始，无需等 600ms。
+  internals.pickerTitleIdleMs = 0
   internals.writeStdout = (text: string) => { capturedStdout += text }
   // quit 路径会 arm 一枚强制退出 timer；测试里必须收敛成 no-op，否则它会在
   // 2s 后把 vitest worker exit 掉（整套单测非 0 退出）。
@@ -325,25 +328,35 @@ describe('tui runner', () => {
   })
 
   it('opens the session picker with the persisted sessions from sessionQuery', async () => {
-    const test = await bench({}, {}, (ctx) => {
-      ctx.provide('sessionQuery', {
-        listSessions: async () => [
-          { header: { version: 1, id: 'session-old' as never, createdAt: 1_000, cwd: '/tmp' }, live: false, persisted: true },
-          { header: { version: 1, id: 'session-new' as never, createdAt: 2_000, cwd: '/tmp', parentSession: 'session-old' as never }, live: false, persisted: true },
-        ],
-        readTitle: async () => undefined,
+    // 隔离 DSH_HOME：标题缓存 sidecar 读写不碰开发者本机状态。
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-picker-home-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const test = await bench({}, {}, (ctx) => {
+        ctx.provide('sessionQuery', {
+          listSessions: async () => [
+            { header: { version: 1, id: 'session-old' as never, createdAt: 1_000, cwd: '/tmp' }, live: false, persisted: true },
+            { header: { version: 1, id: 'session-new' as never, createdAt: 2_000, cwd: '/tmp', parentSession: 'session-old' as never }, live: false, persisted: true },
+          ],
+          readTitle: async () => undefined,
+        })
       })
-    })
-    await test.started
-    test.app.handlers?.onSessionPickerRequest?.()
-    await settle()
-    expect(test.app.sessions?.map(item => item.value)).toEqual(['session-old', 'session-new'])
-    expect(test.app.sessions?.[0].label).toBe('session-old')
-    // Relative time replaces the raw ISO timestamp (T3⑤).
-    expect(test.app.sessions?.[0].description).toBe('persisted · 1970-01-01')
-    // Subagent child sessions indent under their parent (T1⑥).
-    expect(test.app.sessions?.[1].label).toBe('↳ session-new')
-    await test.ctx.fiber.dispose()
+      await test.started
+      test.app.handlers?.onSessionPickerRequest?.()
+      await settle()
+      expect(test.app.sessions?.map(item => item.value)).toEqual(['session-old', 'session-new'])
+      expect(test.app.sessions?.[0].label).toBe('session-old')
+      // Relative time replaces the raw ISO timestamp (T3⑤).
+      expect(test.app.sessions?.[0].description).toBe('persisted · 1970-01-01')
+      // Subagent child sessions indent under their parent (T1⑥).
+      expect(test.app.sessions?.[1].label).toBe('↳ session-new')
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('reports background jobs and refreshes on the change event', async () => {
@@ -715,27 +728,74 @@ describe('tui runner', () => {
     }
   })
 
-  it('opens the session picker from the /resume command', async () => {
-    const test = await bench({}, {}, (ctx) => {
-      ctx.provide('sessionQuery', {
-        listSessions: async () => [
-          { header: { version: 1, id: 's-resume' as never, createdAt: Date.now() - 30_000, cwd: '/tmp' }, live: false, persisted: true },
-        ],
-        readTitle: async () => ({ title: '上一轮对话' }),
+  it('opens the session picker from the /resume command and backfills titles into the cache', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-resume-home-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const reads: string[] = []
+      const mountQuery = (ctx: Context): void => {
+        ctx.provide('sessionQuery', {
+          listSessions: async () => [
+            { header: { version: 1, id: 's-resume' as never, createdAt: Date.now() - 30_000, cwd: '/tmp' }, live: false, persisted: true },
+          ],
+          readTitle: async (id: string) => { reads.push(id); return { title: '上一轮对话' } },
+        })
+      }
+      // 第一次运行：面板立即以短 id 占位打开（标题回填不阻塞面板——整读
+      // 大日志会卡住打开路径），空闲回填后标题落缓存并就地刷新。
+      const test = await bench({}, {}, mountQuery)
+      await test.started
+      test.app.handlers?.onCommandPicked('__resume', '')
+      await settle(150)
+      expect(test.app.sessions).toEqual([
+        { value: 's-resume', label: 's-resume', description: 'persisted · 刚刚' },
+      ])
+      await settle(50)
+      expect(test.app.sessionPickerRows.at(-1)?.[0]?.label).toBe('上一轮对话')
+      expect(reads).toEqual(['s-resume'])
+      expect(JSON.parse(readFileSync(join(home, 'tui-titles.json'), 'utf8'))).toMatchObject({
+        's-resume': { title: '上一轮对话' },
       })
-    })
-    await test.started
-    test.app.handlers?.onCommandPicked('__resume', '')
-    await settle(150)
-    // 面板立即以短 id 占位打开（标题回填不阻塞面板——几百个会话时逐个
-    // 读完整日志会卡住打开路径）。
-    expect(test.app.sessions).toEqual([
-      { value: 's-resume', label: 's-resume', description: 'persisted · 刚刚' },
-    ])
-    await settle(50)
-    // 标题限流回填后一次性就地刷新。
-    expect(test.app.sessionPickerRows.at(-1)?.[0]?.label).toBe('上一轮对话')
-    await test.ctx.fiber.dispose()
+      await test.ctx.fiber.dispose()
+
+      // 第二次运行：缓存命中，面板直接显示标题，不再触发整读。
+      const second = await bench({}, {}, mountQuery)
+      await second.started
+      second.app.handlers?.onCommandPicked('__resume', '')
+      await settle(150)
+      expect(second.app.sessions).toEqual([
+        { value: 's-resume', label: '上一轮对话', description: 'persisted · 刚刚' },
+      ])
+      expect(reads).toEqual(['s-resume']) // 无新读：缓存直接命中
+      await second.ctx.fiber.dispose()
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('writes the current session title into the cache when swapping sessions', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-title-cache-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const test = await bench({
+        before: (session) => { session.append('session/title', { title: '缓存我' } as never) },
+      }, {})
+      await test.started
+      expect(test.app.last.title).toBe('缓存我')
+      test.app.handlers?.onNewSessionRequest?.()
+      await settle(150)
+      const cache = JSON.parse(readFileSync(join(home, 'tui-titles.json'), 'utf8')) as Record<string, { title: string }>
+      expect(Object.values(cache).some(entry => entry.title === '缓存我')).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('cycles settings values inline under the cc keymap idiom', async () => {

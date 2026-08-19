@@ -826,6 +826,9 @@ export class PiTuiApp implements TerminalApp {
       this.sessionSearchTimer = setTimeout(() => {
         this.handlers?.onSessionSearchRequest?.(query)
       }, 250)
+    }, () => {
+      // 每次按键（含 ↑/↓）上报：runner 暂停空闲标题回填，导航优先。
+      this.handlers?.onSessionPickerActivity?.()
     })
   }
 
@@ -1143,6 +1146,7 @@ export class PiTuiApp implements TerminalApp {
     rows: readonly PickerRow[],
     onPicked: (value: string | null) => void,
     onFilter?: (query: string) => void,
+    onActivity?: () => void,
   ): FilterablePickerPanel | undefined {
     const tui = this.tui
     if (tui === undefined) return undefined
@@ -1154,7 +1158,7 @@ export class PiTuiApp implements TerminalApp {
       this.overlayOpen = false
       handle.hide()
       onPicked(value)
-    }, onFilter)
+    }, onFilter, onActivity)
     this.overlayOpen = true
     // Anchor above the composer (like the approval dialog), not mid-screen:
     // the menu reads next to where the user types.

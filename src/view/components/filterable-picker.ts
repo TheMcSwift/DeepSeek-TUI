@@ -32,6 +32,7 @@ export class FilterablePickerPanel implements Component, Focusable {
   private list: SelectList
   private readonly hint: Text
   private readonly onFilter: ((query: string) => void) | undefined
+  private readonly onActivity: (() => void) | undefined
 
   constructor(
     private readonly title: string,
@@ -40,9 +41,12 @@ export class FilterablePickerPanel implements Component, Focusable {
     private readonly onPick: (value: string | null) => void,
     /** Reports each filter change; the app feeds remote results back via setRows (H5). */
     onFilter?: (query: string) => void,
+    /** Reports every keystroke (arrows included); the runner pauses idle backfill. */
+    onActivity?: () => void,
   ) {
     this.rows = rows
     this.onFilter = onFilter
+    this.onActivity = onActivity
     this.list = this.buildList(rows)
     this.hint = new Text(fg('dim')('输入即过滤 · ↑/↓ 选择 · Enter 确认 · Esc 取消'), 0, 0)
   }
@@ -85,6 +89,7 @@ export class FilterablePickerPanel implements Component, Focusable {
   }
 
   handleInput(data: string): void {
+    this.onActivity?.()
     if (data === '\x1b') {
       this.onPick(null)
       return

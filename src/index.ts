@@ -71,6 +71,56 @@ function persistKeymap(id: KeymapId): void {
   }
 }
 
+// ---- 会话标题缓存（picker 列表的廉价标题源）。
+// 平台侧没有廉价的持久化标题读取：sessionQuery.readTitle 对每个已持久化
+// 会话整读日志（大日志一次 0.5s+ 的主线程解压解析，几百个会话直接卡死
+// 面板交互）。TUI 在会话切换/退出/重命名时把已知标题写进自家 sidecar，
+// picker 打开时直接命中；未命中的条目仅在空闲时逐个回填（见 fillTitles）。
+
+/** 标题缓存 sidecar（与 keymap/theme 同目录）。 */
+function titlesFile(): string {
+  return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'tui-titles.json')
+}
+
+/** 缓存条目：标题 + 最近记录时间（裁剪用）。 */
+interface TitleCacheEntry {
+  title: string
+  at: number
+}
+
+/** 缓存条数上限：超出按最近使用裁剪，避免无限增长。 */
+const TITLES_CACHE_LIMIT = 1000
+
+/** 读取标题缓存；缺失/损坏/脏条目回退空表（picker 显示短 id）。 */
+function loadTitleCache(): Record<string, TitleCacheEntry> {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(titlesFile(), 'utf8'))
+    if (typeof parsed !== 'object' || parsed === null) return {}
+    const cache: Record<string, TitleCacheEntry> = {}
+    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const title = (value as { title?: unknown } | undefined)?.title
+      const at = (value as { at?: unknown } | undefined)?.at
+      if (typeof title === 'string' && title !== '' && typeof at === 'number') cache[id] = { title, at }
+    }
+    return cache
+  } catch {
+    return {}
+  }
+}
+
+/** 写回标题缓存（裁剪到上限；只读 home 静默降级）。 */
+function persistTitleCache(cache: Record<string, TitleCacheEntry>): void {
+  try {
+    const pruned: Record<string, TitleCacheEntry> = {}
+    const entries = Object.entries(cache).sort((a, b) => b[1].at - a[1].at)
+    for (const [id, value] of entries.slice(0, TITLES_CACHE_LIMIT)) pruned[id] = value
+    mkdirSync(dirname(titlesFile()), { recursive: true })
+    writeFileSync(titlesFile(), JSON.stringify(pruned))
+  } catch {
+    // A read-only home must not break the surface.
+  }
+}
+
 /** 视觉主题预设 sidecar。 */
 function themePresetFile(): string {
   return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'tui-theme-preset.txt')
@@ -184,8 +234,11 @@ export const internals: {
    * vitest worker mid-run（`process.exit unexpectedly called with "0"`）。
    */
   forceExit: (code: number) => void
+  /** 会话 picker 标题回填的空闲等待窗口（用户停止按键后多久开始读下一个标题）。 */
+  pickerTitleIdleMs: number
 } = {
   flushSettleMs: 400,
+  pickerTitleIdleMs: 600,
   writeStdout: (text: string) => { process.stdout.write(text) },
   forceExitMs: 2_000,
   forceExit: (code: number) => { process.exit(code) },
@@ -293,6 +346,20 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   let quitting = false
   /** 会话 picker 打开期间用户是否已输入过滤（H5 搜索接管行后不再标题回填）。 */
   let pickerFiltered = false
+  /** 会话 picker 已关闭（选中/取消）：终止后台标题回填。 */
+  let pickerClosed = false
+  /** 会话 picker 内最近一次按键时刻：空闲窗口内才允许读下一个标题。 */
+  let pickerActivityAt = 0
+
+  /** 把当前会话的已知标题写入标题缓存（切换/退出/重命名时调用）。 */
+  const rememberCurrentTitle = (): void => {
+    if (currentSessionId === '' || doc.title === undefined || doc.title === '') return
+    const cache = loadTitleCache()
+    const existing = cache[currentSessionId]
+    if (existing !== undefined && existing.title === doc.title) return
+    cache[currentSessionId] = { title: doc.title, at: Date.now() }
+    persistTitleCache(cache)
+  }
   const meta: SurfaceMeta = {
     model: `${selection.provider}/${selection.model}`,
     session: '',
@@ -386,6 +453,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     const debug = (step: string): void => {
       if (process.env.DSH_TUI_DEBUG !== undefined) process.stderr.write(`dsh tui debug: ${step}\n`)
     }
+    rememberCurrentTitle()
     if (handle !== undefined) {
       debug('quit: awaiting idle')
       await handle.agent.whenIdle()
@@ -433,6 +501,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
 
   const swap = async (nextId: string | undefined): Promise<void> => {
     if (handle === undefined) return
+    rememberCurrentTitle()
     await handle.agent.whenIdle()
     await flushSettled(handle.agent.session)
     await handle.dispose()
@@ -1129,6 +1198,46 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     }).catch((error: unknown) => { fail(exit, error) })
   }
 
+  /**
+   * 空闲窗口内逐个回填未缓存会话的标题。readTitle 对已持久化会话整读
+   * 日志（主线程解压解析），串行 + 用户按键时暂停：面板打开立即响应，
+   * 上下切换不卡；标题解析一个就写回缓存并就地刷新一行。
+   */
+  const fillTitlesLazily = async (
+    query: { readTitle: (id: SessionId) => Promise<{ title?: string } | undefined> },
+    records: ReadonlyArray<{ header: { id: SessionId; parentSession?: SessionId } }>,
+    items: Array<{ value: string; label: string; description: string }>,
+    cache: Record<string, TitleCacheEntry>,
+  ): Promise<void> => {
+    const pending = records
+      .map((record, index) => ({ record, index }))
+      .filter(({ record }) => record.header.id !== currentSessionId && cache[record.header.id] === undefined)
+    while (pending.length > 0 && !quitting && !pickerClosed && !pickerFiltered) {
+      const idle = internals.pickerTitleIdleMs - (Date.now() - pickerActivityAt)
+      if (idle > 0) await new Promise(resolve => setTimeout(resolve, idle))
+      if (quitting || pickerClosed || pickerFiltered) return
+      // 用户仍在操作（上下键/输入）：再等一轮，按键渲染优先于整读。
+      if (Date.now() - pickerActivityAt < internals.pickerTitleIdleMs) continue
+      const head = pending.shift()
+      if (head === undefined) return
+      const { record, index } = head
+      const title = await query.readTitle(record.header.id).catch(() => undefined)
+      if (quitting || pickerClosed) return
+      const resolved = title?.title
+      if (resolved !== undefined && resolved !== '') {
+        items[index] = {
+          ...items[index],
+          label: `${record.header.parentSession === undefined ? '' : '↳ '}${resolved}`,
+        }
+        cache[record.header.id] = { title: resolved, at: Date.now() }
+        persistTitleCache(cache)
+        if (!pickerFiltered) app.setSessionPickerRows(items)
+      }
+      // 让出事件循环：按键/渲染先于下一次整读。
+      await new Promise(resolve => setTimeout(resolve, 0))
+    }
+  }
+
   const handlers: TerminalAppHandlers = {
     onInput: (text: string): void => {
       if (quitting || handle === undefined) return
@@ -1157,6 +1266,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       void quit().catch((error: unknown) => { fail(exit, error) })
     },
     onSessionPicked: (value: string | null): void => {
+      pickerClosed = true
       if (value === null || value === currentSessionId) return
       void swap(value).then(() => {
         // CC-09: 切换成功的即时反馈（picker 只标记当前行，切换后无 banner）。
@@ -1173,42 +1283,31 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       const query = ctx.get('sessionQuery')
       if (query === undefined) return
       pickerFiltered = false
+      pickerClosed = false
+      pickerActivityAt = Date.now()
       void query.listSessions().then(async (records) => {
-        // 面板立即可用：先用短 id 占位。标题要逐个读完整日志，几百个会话
-        // 会让面板卡几十秒（E2E 库 297 会话实测无上限并发 >15s 不返回），
-        // 故后台限流回填，解析完成后一次性就地刷新行。
+        // 面板立即可用：标题先查自家缓存（会话切换/退出/重命名时写入），
+        // 命中直接显示名称；未命中用短 id 占位，空闲时逐个回填。平台侧
+        // readTitle 对每个已持久化会话整读日志（大日志一次 0.5s+ 主线程
+        // 解压解析），几百个会话无上限并发直接卡死面板交互（E2E 库 297
+        // 会话实测 15s+ 不返回），故只允许空闲时串行读。
+        const cache = loadTitleCache()
         const shortId = (id: string): string => (id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id)
+        const labelOf = (record: { header: { id: string; parentSession?: string } }, title: string | undefined): string =>
+          `${record.header.parentSession === undefined ? '' : '↳ '}${title ?? shortId(record.header.id)}`
         const items = records.map(record => ({
           value: record.header.id,
-          label: `${record.header.parentSession === undefined ? '' : '↳ '}${shortId(record.header.id)}`,
+          label: labelOf(record, record.header.id === currentSessionId ? doc.title : cache[record.header.id]?.title),
           description: `${record.persisted ? 'persisted' : 'live'} · ${relTime(record.header.createdAt)}`,
         }))
         if (!quitting) app.showSessionPicker(items)
-        const workers = 6
-        let cursor = 0
-        const fill = async (): Promise<void> => {
-          while (cursor < records.length) {
-            const index = cursor++
-            const record = records[index]
-            if (record === undefined || quitting) return
-            const title = await query.readTitle(record.header.id).catch(() => undefined)
-            if (quitting) return
-            const resolved = title?.title
-            if (resolved !== undefined) {
-              items[index] = {
-                ...items[index],
-                label: `${record.header.parentSession === undefined ? '' : '↳ '}${resolved}`,
-              }
-            }
-          }
-        }
-        void Promise.all(Array.from({ length: workers }, () => fill())).then(() => {
-          // 用户已在过滤（H5 搜索结果接管行）时不再回填，避免冲掉结果行。
-          if (!quitting && !pickerFiltered) app.setSessionPickerRows(items)
-        })
+        void fillTitlesLazily(query, records, items, cache)
       }).catch((error: unknown) => {
         process.stderr.write(`dsh tui: session listing failed: ${error instanceof Error ? error.message : String(error)}\n`)
       })
+    },
+    onSessionPickerActivity: (): void => {
+      pickerActivityAt = Date.now()
     },
     onSessionSearchRequest: (filter: string): void => {
       // H5: backend full-text session search merged into the open picker.
@@ -1439,6 +1538,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             const snapshot = (titleService as { rename: (session: unknown, title: string) => { title: string } })
               .rename(handle.agent.session, finalTitle)
             doc = { ...doc, title: snapshot.title }
+            rememberCurrentTitle()
             app.render(doc)
             app.toast(`会话标题：${snapshot.title}`, 'success')
           } catch (error: unknown) {
