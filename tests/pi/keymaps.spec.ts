@@ -41,7 +41,7 @@ describe('keymap presets', () => {
   it('ships per-preset interaction profiles (广义交互层)', () => {
     expect(keymapById('cc').interaction).toEqual({ enum: 'inline-cycle', card: 'plain', slash: 'spacious' })
     expect(keymapById('pi').interaction).toEqual({ enum: 'list', card: 'boxed', slash: 'compact' })
-    expect(keymapById('opencode').interaction).toEqual({ enum: 'list', card: 'centered', slash: 'panel' })
+    expect(keymapById('opencode').interaction).toEqual({ enum: 'list', card: 'centered', slash: 'popup' })
   })
 
   it('resolves the opencode preset: Ctrl+P palette, Ctrl+R rename, busy Ctrl+C clears input', () => {

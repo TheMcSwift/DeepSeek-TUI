@@ -55,7 +55,7 @@ import { FocusableRetryRow } from '../view/components/retry-row.ts'
 import { CollapsibleMessage, maybeCollapse } from '../view/components/collapsible-message.ts'
 import { FocusableFrame } from '../view/components/focus-frame.ts'
 import { SlashMenu } from '../view/components/slash-menu.ts'
-import type { SlashMenuItem } from '../view/components/slash-menu.ts'
+import type { SlashMenuItem, SlashMenuStyle } from '../view/components/slash-menu.ts'
 import { HotkeysPanel } from '../view/components/hotkeys-panel.ts'
 import { PluginsPanel } from '../view/components/plugins-panel.ts'
 import { SettingsPanel } from '../view/components/settings-panel.ts'
@@ -849,9 +849,10 @@ export class PiTuiApp implements TerminalApp {
 
   /** Open/refresh the non-capturing slash menu above the composer. */
   private updateSlashMenu(text: string): void {
-    // opencode 语式（slash: 'panel'）：不弹内联菜单，命令走 Ctrl+P 面板；
-    // Enter 提交的 `/xxx` 行仍按目录解析执行。
-    if (keymapById(this.keymap).interaction.slash === 'panel') {
+    const idiom = keymapById(this.keymap).interaction.slash
+    // `panel` 语式：不弹内联菜单，命令只走 Ctrl+P 面板；Enter 提交的 `/xxx`
+    // 行仍按目录解析执行。（opencode 用 popup 语式：弹层与面板并存。）
+    if (idiom === 'panel') {
       this.closeSlashMenu()
       return
     }
@@ -861,8 +862,9 @@ export class PiTuiApp implements TerminalApp {
       return
     }
     const query = token[1].toLowerCase()
-    // pi 语式（slash: 'compact'）：仅名称与提示；cc（spacious）含描述。
-    const compact = keymapById(this.keymap).interaction.slash === 'compact'
+    // pi 语式（slash: 'compact'）：仅名称与提示；cc（spacious）与 opencode
+    // （popup）含描述列。
+    const compact = idiom === 'compact'
     const items: SlashMenuItem[] = this.matchingCommands(query)
       .map((item) => {
         // The display word comes from the label (`/new · 新会话` → `new`);
@@ -876,8 +878,10 @@ export class PiTuiApp implements TerminalApp {
         }
       })
     if (!this.slashMenuOpen) {
-      // 广义交互层：pi 预设圆角框（pi SelectList 视觉），cc 无边框行。
-      const menuStyle = keymapById(this.keymap).interaction.card === 'boxed' ? 'boxed' as const : 'plain' as const
+      // 广义交互层：opencode 方角弹层，pi 圆角框（pi SelectList 视觉），cc 无边框行。
+      const menuStyle: SlashMenuStyle = idiom === 'popup'
+        ? 'popup'
+        : keymapById(this.keymap).interaction.card === 'boxed' ? 'boxed' : 'plain'
       const menu = new SlashMenu(items, menuStyle)
       this.slashMenu = menu
       this.slashMenuOpen = true

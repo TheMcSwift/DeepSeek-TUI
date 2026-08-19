@@ -75,12 +75,16 @@ export interface InteractionProfile {
   card: 'plain' | 'boxed' | 'centered'
   /**
    * 斜杠菜单语式：
-   * - `spacious`：内联菜单 + 名称/提示/描述全量（cc 式，现状）；
+   * - `spacious`：内联菜单 + 名称/提示/描述全量（cc 式）；
    * - `compact`：内联菜单仅名称与提示（pi 式）；
-   * - `panel`：不弹内联菜单，命令走 Ctrl+P 面板（opencode 式；Enter 提交
-   *   的 `/xxx` 行仍按目录解析执行）。
+   * - `popup`：opencode 式弹层——方角边框（区别于 pi 圆角）+ 标题计数行 +
+   *   整行选中态 + 描述列，底栏点出 Ctrl+P 命令面板。上游 OpenCode 的 `/`
+   *   suggestions popup 与 `ctrl+p` command_list 是并存的两条入口
+   *   （opencode#38043、opencode#38086），故本预设两者都给；
+   * - `panel`：不弹内联菜单，命令只走 Ctrl+P 面板（Enter 提交的 `/xxx` 行
+   *   仍按目录解析执行）。当前无预设选用，保留给「只要面板」的键位方案。
    */
-  slash: 'spacious' | 'compact' | 'panel'
+  slash: 'spacious' | 'compact' | 'popup' | 'panel'
 }
 
 export interface Keymap {
@@ -158,7 +162,7 @@ export const OPENCODE_KEYMAP: Keymap = {
   id: 'opencode',
   label: 'opencode — OpenCode 风格',
   leader: 'ctrl+x',
-  interaction: { enum: 'list', card: 'centered', slash: 'panel' },
+  interaction: { enum: 'list', card: 'centered', slash: 'popup' },
   entries: [
     { action: 'interrupt', keys: ['escape'], when: 'busy' },
     { action: 'quit', keys: ['ctrl+c'], when: 'idle' },

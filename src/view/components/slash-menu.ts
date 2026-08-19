@@ -1,12 +1,15 @@
 /**
- * The inline slash-command menu (cc/pi style): a non-focus-stealing overlay
- * anchored above the composer. The typed `/query` STAYS in the editor; this
- * component only renders the filtered command list — the editor keeps every
- * keystroke, and the app's global listener routes Up/Down/Esc/Tab.
+ * The inline slash-command menu (cc/pi/opencode style): a non-focus-stealing
+ * overlay anchored above the composer. The typed `/query` STAYS in the editor;
+ * this component only renders the filtered command list — the editor keeps
+ * every keystroke, and the app's global listener routes Up/Down/Esc/Tab.
  *
- * 广义交互层（slash 语式的样式维度）：`plain`（cc：无边框行，名称/提示/描述
- * 宽松内联）与 `boxed`（pi：圆角框 + 紧凑行，pi SelectList 视觉）。
- * opencode 预设不渲染本组件（slash: panel，命令走 Ctrl+P）。
+ * 广义交互层（slash 语式的样式维度）：
+ * - `plain`（cc）：无边框行，名称/提示/描述宽松内联；
+ * - `boxed`（pi）：圆角框 + 紧凑行（pi SelectList 视觉）；
+ * - `popup`（opencode）：方角框 + 标题计数行 + 整行选中态 + 描述列，底栏点出
+ *   Ctrl+P 命令面板（上游 `/` suggestions popup 与 `ctrl+p` command_list 并存）。
+ * `panel` 语式（只走命令面板）根本不构造本组件。
  *
  * The menu scrolls: Up/Down move the selection and the 8-row window follows
  * it, and while the menu is open the mouse wheel scrolls the MENU (the app
@@ -14,7 +17,7 @@
  * @module dsh-tui-app/view/components/slash-menu
  */
 
-import { truncateToWidth } from '@earendil-works/pi-tui'
+import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
 import type { Component } from '@earendil-works/pi-tui'
 import { bg, bold, fg } from '../../app/pi/color.ts'
 import { strings } from '../strings.ts'
@@ -27,14 +30,21 @@ export interface SlashMenuItem {
   description?: string
 }
 
+/** 广义交互层样式：cc 无边框 / pi 圆角框 / opencode 方角弹层。 */
+export type SlashMenuStyle = 'plain' | 'boxed' | 'popup'
+
 /** Rows visible in the menu window at once. */
 const MENU_ROWS = 8
 
+/** 补齐到目标显示宽度（与 settings/hotkeys 面板同一约定）。 */
+function padTo(text: string, target: number): string {
+  return text + ' '.repeat(Math.max(0, target - visibleWidth(text)))
+}
+
 export class SlashMenu implements Component {
-  /** 广义交互层样式：plain = cc 无边框，boxed = pi 圆角框。 */
   constructor(
     private items: readonly SlashMenuItem[],
-    private readonly style: 'plain' | 'boxed' = 'plain',
+    private readonly style: SlashMenuStyle = 'plain',
   ) {}
 
   /** Zero-based selected row (clamped at render). */
@@ -58,17 +68,24 @@ export class SlashMenu implements Component {
   }
 
   render(width: number): string[] {
-    const boxed = this.style === 'boxed'
+    // boxed/popup 都带边框，只有边角字符与标题行不同。
+    const framed = this.style !== 'plain'
+    const popup = this.style === 'popup'
     const frame = fg('borderAccent')
     const inner = Math.max(8, width - 2)
     const lines: string[] = []
     const push = (text: string): void => {
-      lines.push(boxed ? `${frame('│')} ${truncateToWidth(text, inner - 1)}${frame('│')}` : truncateToWidth(text, width))
+      if (!framed) {
+        lines.push(truncateToWidth(text, width))
+        return
+      }
+      // 边框语式一律把行补满内宽，右边框才对齐（popup 方角框与 pi 圆角框同规）。
+      lines.push(`${frame('│')} ${truncateToWidth(text, inner - 1, '...', true)}${frame('│')}`)
     }
-    if (boxed) lines.push(`${frame('╭')}${'─'.repeat(inner)}${frame('╮')}`)
+    if (framed) lines.push(this.topBorder(inner, popup))
     if (this.items.length === 0) {
       push(fg('muted')(strings().slashNoMatch))
-      if (boxed) lines.push(`${frame('╰')}${'─'.repeat(inner)}${frame('╯')}`)
+      if (framed) lines.push(this.bottomBorder(inner, popup))
       return lines
     }
     // The window follows the selection (Up/Down or wheel), so the selected
@@ -83,18 +100,40 @@ export class SlashMenu implements Component {
       const item = visible[i]
       const selected = start + i === this.selectedIndex
       const label = ` /${item.name}${item.hint === undefined ? '' : ` ${item.hint}`}`
+      const tail = item.description === undefined ? '' : `  ${item.description}`
+      if (popup) {
+        // opencode 语式：选中行整行铺满内宽（先补齐再上色，避免高亮只包住文字）。
+        push(selected
+          ? bg('selectedBg')(bold(fg('accent')(padTo(`❯${label}${tail}`, inner - 1))))
+          : `  ${fg('text')(label)}${fg('dim')(tail)}`)
+        continue
+      }
       const head = selected
         ? bg('selectedBg')(bold(fg('accent')(`❯${label}`)))
         : `  ${fg('text')(label)}`
-      const tail = item.description === undefined ? '' : `  ${fg('dim')(item.description)}`
-      push(`${head}${tail}`)
+      push(`${head}${item.description === undefined ? '' : fg('dim')(tail)}`)
     }
     const remaining = this.items.length - (start + visible.length)
     if (remaining > 0) {
       push(fg('dim')(strings().slashMore(remaining)))
     }
-    push(fg('dim')(strings().slashHint))
-    if (boxed) lines.push(`${frame('╰')}${'─'.repeat(inner)}${frame('╯')}`)
+    // popup 语式的底栏点出命令面板入口（opencode 两条入口并存）。
+    push(fg('dim')(popup ? strings().slashPopupHint : strings().slashHint))
+    if (framed) lines.push(this.bottomBorder(inner, popup))
     return lines
+  }
+
+  /** 顶边：popup 把标题计数行嵌进方角边框，boxed 是纯圆角横线。 */
+  private topBorder(inner: number, popup: boolean): string {
+    const frame = fg('borderAccent')
+    if (!popup) return `${frame('╭')}${'─'.repeat(inner)}${frame('╮')}`
+    const title = strings().slashPopupTitle(this.items.length)
+    const fill = Math.max(0, inner - visibleWidth(title) - 3)
+    return `${frame('┌─')} ${bold(fg('text')(title))} ${frame(`${'─'.repeat(fill)}┐`)}`
+  }
+
+  private bottomBorder(inner: number, popup: boolean): string {
+    const frame = fg('borderAccent')
+    return `${frame(popup ? '└' : '╰')}${'─'.repeat(inner)}${frame(popup ? '┘' : '╯')}`
   }
 }

@@ -1577,14 +1577,24 @@ describe('pi-tui surface', () => {
     expect(plain).toContain('permissions')
   })
 
-  it('opencode 语式：/ 不弹内联菜单（slash: panel），但 /quit 仍执行', async () => {
+  it('opencode 语式：/ 弹方角 popup（描述列 + 面板入口），且 /quit 仍执行', async () => {
     const test = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, { keymap: 'opencode' })
+    await settle()
+    test.terminal.feed('/new')
+    await settle()
+    const menu = test.terminal.plain()
+    expect(menu).toContain('/new')
+    expect(menu).toContain('test') // 描述列（与 cc spacious 同，pi compact 无）
+    expect(menu).toContain('┌') // opencode 方角边框（pi 是圆角 ╭）
+    expect(menu).not.toContain('╭')
+    expect(menu).toContain('命令 · ') // 标题计数行
+    expect(menu).toContain('Ctrl+P 面板') // 弹层与命令面板并存
+    // 整行提交仍按命令目录解析执行。
+    test.terminal.feed('\x7f'.repeat(4)) // 退格清掉 /new
     await settle()
     test.terminal.feed('/quit\r')
     await settle()
     expect(test.calls.quit).toBe(1)
-    // 内联菜单从未打开（无菜单提示行）。
-    expect(test.terminal.plain()).not.toContain('Tab 补全')
   })
 
   it('pi 语式：斜杠菜单紧凑 + 圆角框布局（无描述列）', async () => {

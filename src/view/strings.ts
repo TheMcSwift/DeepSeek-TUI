@@ -168,6 +168,9 @@ export interface Strings {
   slashNoMatch: string
   slashMore: (n: number) => string
   slashHint: string
+  // opencode popup 语式专属：标题计数行 + 含面板入口的底栏提示
+  slashPopupTitle: (n: number) => string
+  slashPopupHint: string
   workspaceTitle: string
   workspaceCurrent: string
   workspaceSessions: (n: number) => string
@@ -513,6 +516,9 @@ const zh: Strings = {
   slashNoMatch: '无匹配命令',
   slashMore: (n: number): string => `↓ 还有 ${n} 条 · 继续输入缩小范围`,
   slashHint: '↑/↓ 选择 · Tab 补全 · Enter 执行 · Esc 取消',
+  slashPopupTitle: (n: number): string => `命令 · ${n} 项`,
+  // 窄终端也要留住面板入口（Esc 取消是通用语义，见 /hotkeys），故不进本行。
+  slashPopupHint: '↑/↓ 选择 · Tab 补全 · Enter 执行 · Ctrl+P 面板',
   workspaceTitle: '工作区',
   workspaceCurrent: '当前',
   workspaceSessions: (n: number): string => `${n} 个会话`,
@@ -852,6 +858,8 @@ const en: Strings = {
   slashNoMatch: 'No matching commands',
   slashMore: (n: number): string => `↓${n} more · keep typing to narrow`,
   slashHint: '↑/↓ select · Tab complete · Enter run · Esc cancel',
+  slashPopupTitle: (n: number): string => `Commands · ${n}`,
+  slashPopupHint: '↑/↓ select · Tab complete · Enter run · Ctrl+P palette',
   workspaceTitle: 'Workspace',
   workspaceCurrent: 'current',
   workspaceSessions: (n: number): string => `${n} sessions`,

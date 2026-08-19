@@ -11,11 +11,11 @@ whenToUse: 当用户询问本 TUI 界面的操作方法（斜杠命令、快捷�
 ## 基本操作
 
 - 输入框直接键入消息，`Enter` 发送；`Shift+Enter` 换行；`↑/↓` 历史；`Ctrl+Z`/`Ctrl+Shift+Z` 撤销重做。
-- **中断当前轮**：cc 预设用 `Esc`；pi/opencode 预设用 `Ctrl+C`（pi 语义，`Esc` 亦可）。
+- **中断当前轮**：cc/opencode 预设用 `Esc`；pi 预设用 `Ctrl+C`（`Esc` 亦可）。opencode 运行中按 `Ctrl+C` 是**清空输入**（上游 input_clear 语义），不是中断。
 - **退出**：`Ctrl+C`（空闲时，cc/opencode）、`Ctrl+D`、或 `/quit`。
 - 运行中再输入消息会**排队**（上限 10 条）；`Alt+Enter` 并入当前轮（steer）；`Alt+Up` 取回排队消息；`/queue` 查看队列。
 
-## 斜杠命令（`/` 输入过滤，cc/pi 预设显示内联菜单）
+## 斜杠命令（`/` 输入过滤，三个预设都弹层：cc/pi 内联菜单、opencode 方角 popup）
 
 | 命令 | 作用 |
 |---|---|
@@ -43,7 +43,7 @@ whenToUse: 当用户询问本 TUI 界面的操作方法（斜杠命令、快捷�
 
 - **cc（默认，Claude Code 式）**：`Esc` 中断；`Ctrl+C` 空闲退出；`Ctrl+R` 会话、`Ctrl+G` 模型、`Ctrl+P` **行内循环权限预设**、`Ctrl+B` 分支、`Ctrl+F` 搜索、`Ctrl+Y` 评分、`Ctrl+X` 复制回复、`Ctrl+W` 工作目录、`Ctrl+K` 折叠、`Ctrl+T` thinking、`Ctrl+O` jobs、`Ctrl+L` 轨迹、`Ctrl+E` 退出 plan、`Ctrl+/` 命令面板；`/settings` 可枚举行用 **`←/→` 行内循环切换**；审批卡**无边框纯文本**。
 - **pi（pi coding-agent 式）**：`Ctrl+C` 中断；`Ctrl+G` $EDITOR 撰写；`Ctrl+P` 模型；权限走 `/permission`；审批卡**圆角卡**；斜杠菜单紧凑。
-- **opencode（OpenCode 式）**：`Ctrl+C` 运行中清空输入/空闲退出；`Ctrl+P` 命令面板；`Ctrl+R` 重命名；**leader 键 `Ctrl+X` + 字母和弦**：`l` 会话、`n` 新会话、`m` 模型、`g` 轨迹、`e` 撰写、`t` 主题、`y` 复制、`x` 导出、`h` thinking、`c` 压缩；`/` 不弹内联菜单（命令走 `Ctrl+P`）；审批卡**居中弹窗**。
+- **opencode（OpenCode 式）**：`Ctrl+C` 运行中清空输入/空闲退出；`Ctrl+P` 命令面板；`Ctrl+R` 重命名；**leader 键 `Ctrl+X` + 字母和弦**：`l` 会话、`n` 新会话、`m` 模型、`g` 轨迹、`e` 撰写、`t` 主题、`y` 复制、`x` 导出、`h` thinking、`c` 压缩；`/` 弹**方角 popup**（`命令 · N 项` 标题 + 整行选中 + 描述列，底栏点出 `Ctrl+P 面板`；与命令面板并存）；审批卡**居中弹窗**。
 
 ## 视觉主题预设（`/theme`，只改配色）
 

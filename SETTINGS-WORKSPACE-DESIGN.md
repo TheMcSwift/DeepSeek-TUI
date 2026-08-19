@@ -77,9 +77,10 @@ web 的 `ui-settings-*` 是分区模态（General/Models/Plugins/Plugin inventor
 **广义交互层（预设驱动的交互画像）**：同一功能在不同预设下呈现与操作方式不同——
 `Keymap.interaction` 三个维度：`enum`（枚举语式：cc 行内 ←/→ 循环、pi/opencode 列表
 菜单）、`card`（审批/提问卡形态：cc 无边框纯文本、pi 圆角卡、opencode 居中弹窗）、
-`slash`（斜杠菜单语式：cc 全量内联、pi 紧凑内联、opencode 面板化——不弹内联菜单，
-命令走 Ctrl+P）。配色由主题预设承担，键位与操作语式由键位预设承担，经 `/preset`
-一键同切。
+`slash`（斜杠菜单语式：cc 全量内联、pi 紧凑内联、opencode `popup` 方角弹层——标题
+计数行 + 整行选中 + 描述列 + 底栏 `Ctrl+P 面板` 入口，与命令面板**并存**；另留
+`panel` 语式=只走面板不弹弹层，当前无预设选用）。配色由主题预设承担，键位与操作语式
+由键位预设承担，经 `/preset` 一键同切。
 
 ### 3.2 `/plugins` — 插件清单与设置（H20 + H21 收口）✅ 已落地（M3）
 
