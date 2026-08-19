@@ -14,6 +14,7 @@ whenToUse: 当用户询问本 TUI 界面的操作方法（斜杠命令、快捷�
 - **中断当前轮**：cc/opencode 预设用 `Esc`；pi 预设用 `Ctrl+C`（`Esc` 亦可）。opencode 运行中按 `Ctrl+C` 是**清空输入**（上游 input_clear 语义），不是中断。
 - **退出**：`Ctrl+C`（空闲时，cc/opencode）、`Ctrl+D`、或 `/quit`。
 - 运行中再输入消息会**排队**（上限 10 条）；`Alt+Enter` 并入当前轮（steer）；`Alt+Up` 取回排队消息；`/queue` 查看队列。
+- **忙时 Enter 默认排队 → 想改成引导（steer）**：`/settings` → 「Enter 行为」行 → 选 steer（重启后仍生效，持久化在 `settings.yaml` 的 `tui:` 段）；或每次启动用 `DSH_TUI_ENTER=steer dsh --profile tui`（env 优先，覆盖持久化值）。`Alt+Enter` 无论设置为何都恒为 steer。
 
 ## 斜杠命令（`/` 输入过滤，三个预设都弹层：cc/pi 内联菜单、opencode 方角 popup）
 

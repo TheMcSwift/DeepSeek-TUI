@@ -16,6 +16,7 @@ import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
 import { apply, internals } from '../src/index.ts'
+import { piTuiInternals } from '../src/app/pi-tui-app.ts'
 import { setStrings } from '../src/view/strings.ts'
 import type { Config } from '../src/index.ts'
 import { emptyDocument } from '../src/document/document.ts'
@@ -41,6 +42,28 @@ interface Script {
   afterPrompt?(session: Session, message: UserMessage): Promise<void> | void
   /** Seed the resumed session's log before publication (called inside the factory). */
   seedResumed?(session: Session): void
+}
+
+/**
+ * 仿真 settings 服务：支持 tui 命名空间注册（M2 持久化路径）与内存持久化。
+ * register 返回注册 scope 的最小面（get/watch），installSettingsSection 即用即走。
+ */
+function fakeSettingsService(
+  section: Record<string, unknown> = {},
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    documentPath: '/home/u/.dsh/settings.yaml',
+    get: (ns: string) => (ns === 'tui' ? { ...section } : undefined),
+    update: async (ns: string, patch: Record<string, unknown>) => {
+      if (ns === 'tui') Object.assign(section, patch)
+    },
+    register: (_ns: string, _schema: unknown, options?: { base?: Record<string, unknown> }) => ({
+      get: () => ({ ...(options?.base ?? {}), ...section }),
+      watch: () => {},
+    }),
+    ...overrides,
+  }
 }
 
 /** Append one scripted assistant turn: user message, chunk, assembled message, close. */
@@ -523,6 +546,65 @@ describe('tui runner', () => {
       else process.env.DSH_HOME = previousHome
       if (previousEnter === undefined) delete process.env.DSH_TUI_ENTER
       else process.env.DSH_TUI_ENTER = previousEnter
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('writes Enter 行为/动画 into the registered tui namespace and hydrates them on boot (M2)', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-settings-persist-'))
+    const previousHome = process.env.DSH_HOME
+    const previousEnter = process.env.DSH_TUI_ENTER
+    const previousAnim = process.env.DSH_TUI_ANIM
+    const previousFrameMs = piTuiInternals.animFrameMs
+    process.env.DSH_HOME = home
+    try {
+      const section: Record<string, unknown> = {}
+      const patches: Array<[string, Record<string, unknown>]> = []
+      // 第一次运行：切换必须落到 settings 服务的 tui 命名空间（注册后写入不再被拒）。
+      const test = await bench({}, {}, (ctx) => {
+        ctx.provide('settings', fakeSettingsService(section, {
+          update: async (ns: string, patch: Record<string, unknown>) => {
+            patches.push([ns, patch])
+            Object.assign(section, patch)
+          },
+        }))
+      })
+      await test.started
+      expect(patches).toEqual([]) // 启动只读不写
+      test.app.handlers?.onCommandPicked('__settings', '')
+      await settle(150)
+      test.app.handlers?.onSettingsRowPicked?.(2)
+      await settle(50)
+      test.app.queuePicked?.('steer')
+      await settle(150)
+      expect(patches).toEqual([['tui', { enterBehavior: 'steer' }]])
+      test.app.handlers?.onSettingsRowPicked?.(4)
+      await settle(50)
+      test.app.queuePicked?.('off')
+      await settle(150)
+      expect(patches).toEqual([['tui', { enterBehavior: 'steer' }], ['tui', { anim: 'off' }]])
+      expect(section).toEqual({ enterBehavior: 'steer', anim: 'off' })
+      await test.ctx.fiber.dispose()
+      piTuiInternals.animFrameMs = 60 // 复位：第二次运行的 0 只能来自 settings 回填
+
+      // 第二次运行：settings.yaml 里的 tui 段回填 env/internals（重启恢复）。
+      delete process.env.DSH_TUI_ENTER
+      delete process.env.DSH_TUI_ANIM
+      const second = await bench({}, {}, (ctx) => {
+        ctx.provide('settings', fakeSettingsService(section))
+      })
+      await second.started
+      expect(process.env.DSH_TUI_ENTER).toBe('steer')
+      expect(piTuiInternals.animFrameMs).toBe(0) // anim off 回填：动画关闭
+      await second.ctx.fiber.dispose()
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      if (previousEnter === undefined) delete process.env.DSH_TUI_ENTER
+      else process.env.DSH_TUI_ENTER = previousEnter
+      if (previousAnim === undefined) delete process.env.DSH_TUI_ANIM
+      else process.env.DSH_TUI_ANIM = previousAnim
+      piTuiInternals.animFrameMs = previousFrameMs
       rmSync(home, { recursive: true, force: true })
     }
   })
@@ -1396,6 +1478,7 @@ describe('tui runner', () => {
         documentPath: '/home/u/.dsh/settings.yaml',
         get: (ns: string) => ({ 'llm-pi-ai': { providers: { 'pi-ai': { displayName: 'Pi AI' } } } }[ns]),
         update: async () => {},
+        register: () => ({ get: () => ({}), watch: () => {} }),
       } as never)
       ctx.provide('llm', {
         listProviders: () => [],
@@ -1427,6 +1510,7 @@ describe('tui runner', () => {
       ctx.provide('settings', {
         documentPath: '/home/u/.dsh/settings.yaml',
         update: async (ns: string, patch: Record<string, unknown>) => { patches.push([ns, patch]) },
+        register: () => ({ get: () => ({}), watch: () => {} }),
       } as never)
       ctx.provide('llm', {
         listProviders: () => [],
@@ -1454,7 +1538,7 @@ describe('tui runner', () => {
 
   it('opens the settings file in an editor and copies its path (K2)', async () => {
     const test = await bench({}, {}, (ctx) => {
-      ctx.provide('settings', { documentPath: '/home/u/.dsh/settings.yaml', update: async () => {} } as never)
+      ctx.provide('settings', { documentPath: '/home/u/.dsh/settings.yaml', update: async () => {}, register: () => ({ get: () => ({}), watch: () => {} }) } as never)
     })
     await test.started
     test.app.dialogQueue.push('在编辑器中打开')

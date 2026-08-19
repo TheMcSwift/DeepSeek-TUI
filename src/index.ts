@@ -28,6 +28,8 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-jobs'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import z from '@deepseek-ai/schemastery'
 import { PiTuiApp, piTuiInternals } from './app/pi-tui-app.ts'
 import { applyPalette } from './app/pi/color.ts'
 import { detectThemeLive, resolveThemeVariant } from './app/pi/theme-detect.ts'
@@ -219,6 +221,15 @@ function fail(exit: (code: number) => void, error: unknown): void {
   exit(1)
 }
 
+/** tui 命名空间的组合默认（settings.yaml `tui:` 段的 base 层）。 */
+const TUI_SETTINGS_DEFAULTS = { enterBehavior: 'queue', anim: 'on' } as const
+
+/** tui 命名空间 schema：写入即校验；手改非法值在注册/写入点失败（平台惯例）。 */
+const TuiSettingsSchema = z.object({
+  enterBehavior: z.union([z.const('queue'), z.const('steer')]),
+  anim: z.union([z.const('on'), z.const('off')]),
+})
+
 /**
  * Mount the interactive terminal runner.
  * @param ctx - plugin context carrying core services and the launcher-provided exit request.
@@ -231,6 +242,13 @@ export function apply(ctx: Context, config: Config): void {
   if (exit === undefined) {
     throw new Error('tui-runner: the launcher must provide ctx.appExit before the tree mounts')
   }
+  // 注册 tui 设置命名空间：settings.yaml 的 `tui:` 段随 settings 服务挂载而可读写。
+  // 服务缺席的最小组合里注入回调永不触发，TUI 退回组合默认照常可用（可选服务语义）。
+  installSettingsSection(ctx, settingsNamespace('tui'), TuiSettingsSchema, TUI_SETTINGS_DEFAULTS, {
+    // TUI 只在启动时与写入后读取，无需响应式联动；注册本身即持久化能力。
+    setSource: () => {},
+    onChange: () => {},
+  })
   void run(ctx, config, exit).catch((error: unknown) => { fail(exit, error) })
 }
 
@@ -631,9 +649,9 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   const settingsSeam = (): SettingsSeam | undefined =>
     (ctx as { get: (key: string) => unknown }).get('settings') as SettingsSeam | undefined
 
-  // ---- M2：TUI 自有设置的 settings.yaml hydration（tui 命名空间，best-effort）。
-  // Enter 行为与动画开关在运行时改 env/internals；持久化经 settings seam，
-  // 启动时若 env 未显式设置则回填。
+  // ---- M2：TUI 自有设置的 settings.yaml hydration（tui 命名空间，apply() 已注册）。
+  // Enter 行为与动画开关在运行时改 env/internals；持久化经 settings seam（注册后
+  // 写入真正落盘），启动时若 env 未显式设置则从 settings.yaml 回填。
 
   /** tui 命名空间的持久化段（结构化只读）。 */
   const tuiSettingsSection = (): { enterBehavior?: string; anim?: string } | undefined => {
@@ -1656,7 +1674,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
           case 1: // 主题（四选；切换后面板就地重绘新预设风格）
             if (await pickTheme()) await refresh()
             break
-          case 2: { // Enter 行为（queue/steer，settings seam 持久化 best-effort）
+          case 2: { // Enter 行为（queue/steer，settings seam 持久化到 settings.yaml）
             const steerNow = process.env.DSH_TUI_ENTER === 'steer'
             const picked = await new Promise<string | null>((resolve) => {
               app.showQueuePicker([
@@ -1672,7 +1690,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
           case 3: // 键位（三选）
             if (await pickKeymap()) await refresh()
             break
-          case 4: { // 动画（运行时切 animFrameMs + 持久化 best-effort）
+          case 4: { // 动画（运行时切 animFrameMs + 持久化到 settings.yaml）
             const off = piTuiInternals.animFrameMs > 0
             applyAnim(off)
             await refresh()

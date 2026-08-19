@@ -61,9 +61,9 @@ web 的 `ui-settings-*` 是分区模态（General/Models/Plugins/Plugin inventor
 |---|---|---|
 | 语言 | `resolveLanguage(DSH_TUI_LANG)` | → `/lang` 枚举 |
 | 主题 | 明暗变体（暗色/亮色/跟随终端）× 当前预设（web/cc/pi/opencode） | → 主题四选（切换后面板就地重绘新预设风格） |
-| Enter 行为 | `DSH_TUI_ENTER`（排队/steer） | → 两选；写 settings seam `tui.enterBehavior`（best-effort） |
+| Enter 行为 | `DSH_TUI_ENTER`（排队/steer） | → 两选；写 settings seam `tui.enterBehavior`（命名空间已注册，重启后生效） |
 | 快捷键预设 | 当前 `cc`/`pi`/`opencode` | → 键位三选（sidecar 持久化） |
-| 动画 | `piTuiInternals.animFrameMs`（开/关） | → 运行时切换 + settings seam `tui.anim`（best-effort） |
+| 动画 | `piTuiInternals.animFrameMs`（开/关） | → 运行时切换 + settings seam `tui.anim`（命名空间已注册，重启后生效） |
 | 配置文件 | settings.yaml 路径 | → `/config` |
 
 **视觉**：面板只用语义色名（accent/muted/dim/borderMuted/selectedBg），零硬编码 hex——
@@ -72,7 +72,10 @@ web 的 `ui-settings-*` 是分区模态（General/Models/Plugins/Plugin inventor
 （窗口滚动 + 数字直选 + Enter 执行 + Esc 关闭，HotkeysPanel 同形态）。
 
 持久化策略：语言在 dsh 侧；keymap/theme 走 sidecar；Enter/动画经 settings seam 的
-`tui` 命名空间（out-of-tree 只写自己占用的键），启动时若 env 未显式设置则回填。
+`tui` 命名空间——`apply()` 用 `installSettingsSection` 注册（schema：`enterBehavior:
+queue|steer`、`anim: on|off`），写入真正落盘到 `settings.yaml` 的 `tui:` 段；启动时
+若 env 未显式设置则回填（`DSH_TUI_ENTER`/`DSH_TUI_ANIM` 显式优先）。settings 服务
+缺席的最小组合里注册回调不触发，TUI 退回组合默认照常可用。
 
 **广义交互层（预设驱动的交互画像）**：同一功能在不同预设下呈现与操作方式不同——
 `Keymap.interaction` 三个维度：`enum`（枚举语式：cc 行内 ←/→ 循环、pi/opencode 列表

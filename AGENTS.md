@@ -12,7 +12,7 @@ Terminal client for DeepSeek Harness (`dsh`): an out-of-tree profile bundle.
 
 ```bash
 pnpm typecheck   # 严格类型检查（含 tests）
-pnpm test        # vitest 单测（312 项）
+pnpm test        # vitest 单测（321 项）
 pnpm build       # tsc 构建到 lib/（profile 的加载入口）
 python3 scripts/e2e-pty.py              # 8 场景 PTY E2E（依赖本地 harness checkout + mock server）
 python3 scripts/e2e-pty.py --only-questions
@@ -23,6 +23,7 @@ python3 scripts/e2e-pty.py --only-questions
 - **单向数据流**：`SessionEvent → fold() → ViewDocument → app.render()`。fold 必须是**纯函数**（禁止 cordis/pi/IO 依赖），每个新事件类型都要在 `tests/projection.spec.ts` 补回归。
 - **文档即真相源**：跨组件共享状态一律进 `ViewDocument`；视图层不允许自造第二份状态。
 - **cordis 服务访问**：只允许 `ctx.get(...)` 结构读取 host 组合（`commands`/`skills`/`sessionQuery`/`sessionTitle`/`jobs`/`userQuestions`）；不 import 未在 profile 依赖树中的 dsh 包（会破坏 out-of-tree 约束）。
+- **settings 命名空间**：TUI 持久化设置占用 `tui` 命名空间，`apply()` 内用 `installSettingsSection` 注册（schema 与默认值在 `src/index.ts`）；`update('tui', …)` 依赖该注册，删除会让 `/settings` 的 Enter 行为/动画写入静默失效。
 - **pi 私有 API**：TuiAltScreen 的实例级 hook（`routeWheel`/`handleViewportInput`）是刻意为之；改动前先看 `hookAltScreen()` 的注释。
 
 ## 硬性禁忌 / Hard rules

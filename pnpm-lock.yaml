@@ -84,6 +84,9 @@ importers:
       '@deepseek-ai/dsh-session-query':
         specifier: link:../deepseek-harness/packages/session-query/session-query
         version: link:../deepseek-harness/packages/session-query/session-query
+      '@deepseek-ai/dsh-settings':
+        specifier: link:../deepseek-harness/packages/settings/settings
+        version: link:../deepseek-harness/packages/settings/settings
       '@deepseek-ai/dsh-subagent':
         specifier: link:../deepseek-harness/packages/subagent/subagent
         version: link:../deepseek-harness/packages/subagent/subagent
@@ -93,6 +96,9 @@ importers:
       '@deepseek-ai/dsh-user-questions':
         specifier: link:../deepseek-harness/packages/interaction/user-questions
         version: link:../deepseek-harness/packages/interaction/user-questions
+      '@deepseek-ai/schemastery':
+        specifier: link:../deepseek-harness/vendor/schemastery
+        version: link:../deepseek-harness/vendor/schemastery
       '@earendil-works/pi-ai':
         specifier: 0.84.2
         version: 0.84.2(ws@8.21.3)(zod@4.4.3)
