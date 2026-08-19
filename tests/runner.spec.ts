@@ -715,6 +715,29 @@ describe('tui runner', () => {
     }
   })
 
+  it('opens the session picker from the /resume command', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('sessionQuery', {
+        listSessions: async () => [
+          { header: { version: 1, id: 's-resume' as never, createdAt: Date.now() - 30_000, cwd: '/tmp' }, live: false, persisted: true },
+        ],
+        readTitle: async () => ({ title: '上一轮对话' }),
+      })
+    })
+    await test.started
+    test.app.handlers?.onCommandPicked('__resume', '')
+    await settle(150)
+    // 面板立即以短 id 占位打开（标题回填不阻塞面板——几百个会话时逐个
+    // 读完整日志会卡住打开路径）。
+    expect(test.app.sessions).toEqual([
+      { value: 's-resume', label: 's-resume', description: 'persisted · 刚刚' },
+    ])
+    await settle(50)
+    // 标题限流回填后一次性就地刷新。
+    expect(test.app.sessionPickerRows.at(-1)?.[0]?.label).toBe('上一轮对话')
+    await test.ctx.fiber.dispose()
+  })
+
   it('cycles settings values inline under the cc keymap idiom', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-tui-cycle-home-'))
     const previousHome = process.env.DSH_HOME
@@ -864,7 +887,7 @@ describe('tui runner', () => {
     await test.started
     test.app.handlers?.onCommandPickerRequest?.()
     await settle()
-    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__settings', '__plugins', '__workspace', '__compose'])
+    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__resume', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__settings', '__plugins', '__workspace', '__compose'])
     expect(test.app.commands?.find(item => item.value === 'goal')?.label).toBe('/goal <objective>')
     expect(test.app.commands?.find(item => item.value === '__model')?.label).toBe('/model <provider/model>')
     expect(test.app.commands?.find(item => item.value === '__permission')?.label).toBe('/permission <preset>')

@@ -291,6 +291,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   let handle: AgentHandle | undefined
   let currentSessionId = ''
   let quitting = false
+  /** 会话 picker 打开期间用户是否已输入过滤（H5 搜索接管行后不再标题回填）。 */
+  let pickerFiltered = false
   const meta: SurfaceMeta = {
     model: `${selection.provider}/${selection.model}`,
     session: '',
@@ -522,6 +524,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     push('__quit', '/quit · 退出 TUI', 'flush 会话并退出', ['exit'])
     push('__help', '/hotkeys · 快捷键', '全部快捷键一览', ['?'])
     push('__clone', '/clone · 复制当前会话', '以最后完成的轮次为种子开新会话')
+    push('__resume', '/resume · 恢复会话', '列出历史会话并切换（会话选择器，Ctrl+R 同功能）')
     push('__effort', '/effort · 推理强度', '单独选择当前模型的 reasoning effort')
     push('__model', '/model <provider/model>', '切换模型：枚举选择，或直接指定 provider/model', ['m'])
     push('__permission', '/permission <preset>', '切换权限预设：枚举选择，或直接指定预设名', ['perm'])
@@ -1169,24 +1172,47 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     onSessionPickerRequest: (): void => {
       const query = ctx.get('sessionQuery')
       if (query === undefined) return
+      pickerFiltered = false
       void query.listSessions().then(async (records) => {
-        const items = await Promise.all(records.map(async (record) => {
-          const title = await query.readTitle(record.header.id).catch(() => undefined)
-          // Subagent child sessions indent under their parent (T1⑥).
-          const label = `${record.header.parentSession === undefined ? '' : '↳ '}${title?.title ?? record.header.id}`
-          return {
-            value: record.header.id,
-            label,
-            description: `${record.persisted ? 'persisted' : 'live'} · ${relTime(record.header.createdAt)}`,
-          }
+        // 面板立即可用：先用短 id 占位。标题要逐个读完整日志，几百个会话
+        // 会让面板卡几十秒（E2E 库 297 会话实测无上限并发 >15s 不返回），
+        // 故后台限流回填，解析完成后一次性就地刷新行。
+        const shortId = (id: string): string => (id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id)
+        const items = records.map(record => ({
+          value: record.header.id,
+          label: `${record.header.parentSession === undefined ? '' : '↳ '}${shortId(record.header.id)}`,
+          description: `${record.persisted ? 'persisted' : 'live'} · ${relTime(record.header.createdAt)}`,
         }))
         if (!quitting) app.showSessionPicker(items)
+        const workers = 6
+        let cursor = 0
+        const fill = async (): Promise<void> => {
+          while (cursor < records.length) {
+            const index = cursor++
+            const record = records[index]
+            if (record === undefined || quitting) return
+            const title = await query.readTitle(record.header.id).catch(() => undefined)
+            if (quitting) return
+            const resolved = title?.title
+            if (resolved !== undefined) {
+              items[index] = {
+                ...items[index],
+                label: `${record.header.parentSession === undefined ? '' : '↳ '}${resolved}`,
+              }
+            }
+          }
+        }
+        void Promise.all(Array.from({ length: workers }, () => fill())).then(() => {
+          // 用户已在过滤（H5 搜索结果接管行）时不再回填，避免冲掉结果行。
+          if (!quitting && !pickerFiltered) app.setSessionPickerRows(items)
+        })
       }).catch((error: unknown) => {
         process.stderr.write(`dsh tui: session listing failed: ${error instanceof Error ? error.message : String(error)}\n`)
       })
     },
     onSessionSearchRequest: (filter: string): void => {
       // H5: backend full-text session search merged into the open picker.
+      pickerFiltered = true
       const query = ctx.get('sessionQuery')
       if (query === undefined || handle === undefined) return
       const trimmed = filter.trim()
@@ -1461,6 +1487,11 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       }
       if (name === '__workspace') {
         openWorkspace()
+        return
+      }
+      if (name === '__resume') {
+        // 会话选择器（启动 browse 与 Ctrl+R 同源入口）：列表 → 选中 → swap。
+        handlers.onSessionPickerRequest?.()
         return
       }
       if (name === '__preset') {

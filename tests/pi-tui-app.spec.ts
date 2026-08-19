@@ -1235,6 +1235,20 @@ describe('pi-tui surface', () => {
     expect(test.app.composerText).toBe('')
   })
 
+  it('sorts the slash menu alphabetically by display name', async () => {
+    const test = mount()
+    await settle()
+    // mount 的目录是 [new, quit, help, model]（非字母序）；输入 / 后应
+    // 按显示名 hotkeys → model → new → quit 展示，首行（选中态）即字母序第一。
+    test.terminal.feed('/')
+    await settle()
+    const frame = test.terminal.plain()
+    const positions = ['/hotkeys', '/model', '/new', '/quit'].map(name => frame.indexOf(name))
+    expect(positions.every(pos => pos >= 0)).toBe(true)
+    expect(positions).toEqual([...positions].sort((a, b) => a - b))
+    expect(frame).toContain('❯ /hotkeys')
+  })
+
   it('completes the selected command with Tab and passes inline args (cc style)', async () => {
     const test = mount()
     await settle()

@@ -1,7 +1,7 @@
 /**
  * 斜杠命令匹配与权限徽标着色（CC-01/CC-03）：从 pi-tui-app.ts 拆出的纯函数，
- * 无组件依赖。子序列打分容忍拼写省略（Claude Code 式模糊补全），权限值按
- * 危险等级分色。
+ * 无组件依赖。子序列打分容忍拼写省略（Claude Code 式模糊补全），空查询与
+ * 同分均按显示名字母序稳定排列；权限值按危险等级分色。
  * @module dsh-tui-app/app/pi/command-match
  */
 
@@ -40,9 +40,19 @@ export function permissionTone(value: string): (text: string) => string {
   return (text: string) => fg('text')(text)
 }
 
-/** 目录行匹配：空查询返回全量；否则按前缀加权 + 子序列打分排序（稳定）。 */
+/** 目录显示名（去斜杠取首个词）：`/model <provider/model>` → `model`。 */
+const displayName = (item: CommandChoice): string => {
+  const rest = item.label.startsWith('/') ? item.label.slice(1) : item.label
+  return rest.split(' ')[0]?.toLowerCase() ?? item.value
+}
+
+/** 目录行字母序：显示名为主键，同名回退 value，保证斜杠菜单稳定排序。 */
+const byDisplayName = (a: CommandChoice, b: CommandChoice): number =>
+  displayName(a).localeCompare(displayName(b)) || a.value.localeCompare(b.value)
+
+/** 目录行匹配：空查询返回字母序全量；否则按前缀加权 + 子序列打分排序（同分按字母序）。 */
 export function matchCommands(catalog: readonly CommandChoice[], query: string): CommandChoice[] {
-  if (query === '') return [...catalog]
+  if (query === '') return [...catalog].sort(byDisplayName)
   const scored: Array<{ item: CommandChoice; score: number }> = []
   for (const item of catalog) {
     const label = item.label.startsWith('/') ? item.label.slice(1).toLowerCase() : item.label.toLowerCase()
@@ -55,6 +65,6 @@ export function matchCommands(catalog: readonly CommandChoice[], query: string):
     }
     if (best >= 0) scored.push({ item, score: best })
   }
-  // 稳定排序：同分保持目录原序。
-  return scored.sort((a, b) => b.score - a.score).map(entry => entry.item)
+  // 分数优先、同分字母序：前缀命中在前，其余按目录名稳定排列。
+  return scored.sort((a, b) => (b.score - a.score) || byDisplayName(a.item, b.item)).map(entry => entry.item)
 }

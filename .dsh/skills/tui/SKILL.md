@@ -21,6 +21,7 @@ whenToUse: 当用户询问本 TUI 界面的操作方法（斜杠命令、快捷�
 | 命令 | 作用 |
 |---|---|
 | `/new` `/clone` | 新会话 / 复制当前会话 |
+| `/resume` | 历史会话列表（切换/恢复；快捷键同功能：cc/pi `Ctrl+R`、opencode `<leader>l`） |
 | `/quit` `/exit` | 退出（flush 会话） |
 | `/model [provider/model]` | 切换模型（裸命令开选择器；`/m` 别名） |
 | `/effort` | 选择 reasoning effort |

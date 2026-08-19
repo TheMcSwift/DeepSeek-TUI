@@ -542,13 +542,21 @@ def scenario_surface() -> None:
         time.sleep(0.5)  # 等 picker 的过滤输入获得焦点，Esc 才能被其消费
         tui.type("\x1b")
         time.sleep(0.5)
+        # /resume：历史会话选择器（会话切换面板，标题 '会话切换' 仅面板有）。
+        tui.type("/resume\r")
+        if not tui.wait_for("会话切换", 30):
+            dump_failure("resume")
+            raise AssertionError("session picker did not open")
+        time.sleep(0.5)
+        tui.type("\x1b")
+        time.sleep(0.5)
         tui.type("/quit\r")
         try:
             assert tui.wait_exit(30) == 0, "surface quit failed"
         except TimeoutError:
             dump_failure("quit")
             raise
-        print("[e2e] surface: /hotkeys, Ctrl+P, /config, /keymap, /theme, /preset, /settings, /plugins, /workspace all worked")
+        print("[e2e] surface: /hotkeys, Ctrl+P, /config, /keymap, /theme, /preset, /settings, /plugins, /workspace, /resume all worked")
     finally:
         tui.kill()
         mock.terminate()
