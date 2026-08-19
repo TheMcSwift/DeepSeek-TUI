@@ -131,6 +131,7 @@ export function presentApprovalDialog(
   timeoutMs = 120_000,
   width = 72,
   icon = '？',
+  style: 'boxed' | 'plain' | 'centered' = 'boxed',
 ): Promise<ApprovalAnswer> {
   return new Promise((resolve) => {
     const title = question.title
@@ -180,10 +181,12 @@ export function presentApprovalDialog(
         footerEntries,
         question.commandText,
         question.impactLines,
+        style === 'plain' ? 'plain' : 'boxed',
       )
-      // cc-style: the card hugs the left margin above the composer.
+      // cc-style: the card hugs the left margin above the composer; opencode
+      // centers it (广义交互层——卡形态随键位预设)。
       handle = tui.showOverlay(card, {
-        anchor: 'bottom-left', offsetY: -6, width, maxHeight: '40%',
+        anchor: style === 'centered' ? 'center' : 'bottom-left', offsetY: style === 'centered' ? 0 : -6, width, maxHeight: '40%',
         nonCapturing: true,
       })
       const optionCount = question.options.length

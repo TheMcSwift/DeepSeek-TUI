@@ -722,7 +722,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     const enter = process.env.DSH_TUI_ENTER === 'steer' ? strings().enterSteer : strings().enterQueue
     const anim = piTuiInternals.animFrameMs > 0 ? strings().animOn : strings().animOff
     const config = await settingsFilePath().catch(() => 'settings.yaml')
-    const inline = keymapById(activeKeymap).enumIdiom === 'inline-cycle'
+    const inline = keymapById(activeKeymap).interaction.enum === 'inline-cycle'
     const cycleOf = (options: string[], current: string): { options: string[]; current: string } | undefined =>
       inline ? { options, current } : undefined
     return [
@@ -1739,7 +1739,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         // cc 语式：permissions 投影存在时，Ctrl+P 行内循环到下一个预设
         // （Claude Code 权限模式循环精神），不弹选择器。
         const permissionsRow = projections.find(row => row.key === 'permissions')
-        if (keymapById(activeKeymap).enumIdiom === 'inline-cycle' && permissionsRow !== undefined) {
+        if (keymapById(activeKeymap).interaction.enum === 'inline-cycle' && permissionsRow !== undefined) {
           const pos = permissionsRow.options.findIndex(option => option.value === permissionsRow.currentValue)
           const next = permissionsRow.options[(pos + 1) % Math.max(1, permissionsRow.options.length)]
           if (next !== undefined && next.value !== permissionsRow.currentValue) {

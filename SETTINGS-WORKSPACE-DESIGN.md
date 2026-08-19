@@ -74,11 +74,12 @@ web 的 `ui-settings-*` 是分区模态（General/Models/Plugins/Plugin inventor
 持久化策略：语言在 dsh 侧；keymap/theme 走 sidecar；Enter/动画经 settings seam 的
 `tui` 命名空间（out-of-tree 只写自己占用的键），启动时若 env 未显式设置则回填。
 
-**广义交互层（预设驱动的交互语式）**：同一功能在不同预设下呈现与操作方式不同——
-`Keymap.enumIdiom` 声明枚举选择的语式：cc = `inline-cycle`（/settings 可枚举行上
-←/→ 直接循环切换、Ctrl+P 行内循环权限预设，Claude Code 式）；pi/opencode = `list`
-（单列选择菜单，带 ● 当前标记）。布局/样式由主题预设承担，操作语式由键位预设承担，
-两者经 `/preset` 一键同切。
+**广义交互层（预设驱动的交互画像）**：同一功能在不同预设下呈现与操作方式不同——
+`Keymap.interaction` 三个维度：`enum`（枚举语式：cc 行内 ←/→ 循环、pi/opencode 列表
+菜单）、`card`（审批/提问卡形态：cc 无边框纯文本、pi 圆角卡、opencode 居中弹窗）、
+`slash`（斜杠菜单语式：cc 全量内联、pi 紧凑内联、opencode 面板化——不弹内联菜单，
+命令走 Ctrl+P）。配色由主题预设承担，键位与操作语式由键位预设承担，经 `/preset`
+一键同切。
 
 ### 3.2 `/plugins` — 插件清单与设置（H20 + H21 收口）✅ 已落地（M3）
 

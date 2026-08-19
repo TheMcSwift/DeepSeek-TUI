@@ -1577,6 +1577,50 @@ describe('pi-tui surface', () => {
     expect(plain).toContain('permissions')
   })
 
+  it('opencode 语式：/ 不弹内联菜单（slash: panel），但 /quit 仍执行', async () => {
+    const test = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, { keymap: 'opencode' })
+    await settle()
+    test.terminal.feed('/quit\r')
+    await settle()
+    expect(test.calls.quit).toBe(1)
+    // 内联菜单从未打开（无菜单提示行）。
+    expect(test.terminal.plain()).not.toContain('Tab 补全')
+  })
+
+  it('pi 语式：斜杠菜单紧凑（无描述列）', async () => {
+    const compact = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, { keymap: 'pi' })
+    await settle()
+    compact.terminal.feed('/new')
+    await settle()
+    expect(compact.terminal.plain()).toContain('/new')
+    expect(compact.terminal.plain()).not.toContain('test') // 描述列被省略（cc spacious 下会显示）
+    const spacious = mount()
+    await settle()
+    spacious.terminal.feed('/new')
+    await settle()
+    expect(spacious.terminal.plain()).toContain('test')
+  })
+
+  it('审批卡形态随预设：cc 无边框、pi 圆角卡（广义交互层）', async () => {
+    const cc = mount()
+    await settle()
+    const ccPending = cc.app.askDialog({ title: 'approve?', options: ['yes', 'no'], icon: '⚠' })
+    await settle()
+    expect(cc.terminal.plain()).toContain('approve?')
+    expect(cc.terminal.plain()).not.toContain('╭')
+    cc.terminal.feed('\x1b') // 取消，清理 pending
+    await settle()
+    await ccPending
+    const pi = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, { keymap: 'pi' })
+    await settle()
+    const piPending = pi.app.askDialog({ title: 'approve?', options: ['yes', 'no'], icon: '⚠' })
+    await settle()
+    expect(pi.terminal.plain()).toContain('╭')
+    pi.terminal.feed('\x1b')
+    await settle()
+    await piPending
+  })
+
   it('renders error notices from failed turns', async () => {
     const test = mount()
     await settle()

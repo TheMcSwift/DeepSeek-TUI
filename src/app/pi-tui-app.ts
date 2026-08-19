@@ -849,12 +849,20 @@ export class PiTuiApp implements TerminalApp {
 
   /** Open/refresh the non-capturing slash menu above the composer. */
   private updateSlashMenu(text: string): void {
+    // opencode 语式（slash: 'panel'）：不弹内联菜单，命令走 Ctrl+P 面板；
+    // Enter 提交的 `/xxx` 行仍按目录解析执行。
+    if (keymapById(this.keymap).interaction.slash === 'panel') {
+      this.closeSlashMenu()
+      return
+    }
     const token = /^\/(\S*)$/.exec(text)
     if (token === null || this.tui === undefined) {
       this.closeSlashMenu()
       return
     }
     const query = token[1].toLowerCase()
+    // pi 语式（slash: 'compact'）：仅名称与提示；cc（spacious）含描述。
+    const compact = keymapById(this.keymap).interaction.slash === 'compact'
     const items: SlashMenuItem[] = this.matchingCommands(query)
       .map((item) => {
         // The display word comes from the label (`/new · 新会话` → `new`);
@@ -864,7 +872,7 @@ export class PiTuiApp implements TerminalApp {
         return {
           name,
           ...tail.length > 0 ? { hint: tail.join(' ') } : {},
-          description: item.description,
+          ...compact ? {} : { description: item.description },
         }
       })
     if (!this.slashMenuOpen) {
@@ -1789,7 +1797,9 @@ export class PiTuiApp implements TerminalApp {
     if (this.tui === undefined) return { reason: 'cancelled' }
     this.overlayOpen = true
     try {
-      return await presentApprovalDialog(this.tui, question, undefined, 120_000, this.overlayWidth, question.icon ?? '？')
+      // 广义交互层：审批/提问卡形态随键位预设（cc 无边框 / pi 圆角卡 /
+      // opencode 居中）。
+      return await presentApprovalDialog(this.tui, question, undefined, 120_000, this.overlayWidth, question.icon ?? '？', keymapById(this.keymap).interaction.card)
     } finally {
       this.overlayOpen = false
     }

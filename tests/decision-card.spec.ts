@@ -37,4 +37,34 @@ describe('DecisionCard command block', () => {
     expect(joined).not.toContain('命令')
     expect(joined).toContain('1. yes')
   })
+
+  it('renders the plain (cc) form: borderless, numbered options, ▸ title (广义交互层)', () => {
+    const card = new DecisionCard(
+      'Approve tool call: bash?',
+      ['runs rm'],
+      ['Allow once', 'Reject'],
+      undefined,
+      undefined,
+      '⚠',
+      false,
+      undefined,
+      undefined,
+      [],
+      'rm -rf /tmp/x',
+      undefined,
+      'plain',
+    )
+    const joined = card.render(60).join('\n')
+    for (const borderChar of ['╭', '│', '╮', '╰', '╯']) {
+      expect(joined).not.toContain(borderChar)
+    }
+    const plain = joined.replace(/\x1b\[[0-9;]*m/g, '')
+    expect(plain).toContain('▸ ⚠ Approve tool call: bash?')
+    expect(plain).toContain('1. Allow once')
+    expect(plain).toContain('2. Reject')
+    // 命令块与提示在 plain 形态下同样渲染。
+    expect(plain).toContain('命令')
+    expect(plain).toContain('rm -rf /tmp/x')
+    expect(plain).toContain('Esc 取消')
+  })
 })

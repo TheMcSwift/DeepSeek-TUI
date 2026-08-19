@@ -58,18 +58,39 @@ export interface KeymapEntry {
   when?: 'busy' | 'idle'
 }
 
+/** 预设驱动的交互画像（广义交互层：同一功能在不同预设下的呈现与操作方式）。 */
+export interface InteractionProfile {
+  /**
+   * 枚举选择的语式：
+   * - `inline-cycle`：行内 ←/→ 循环切换值（Claude Code 式，不弹层）；
+   * - `list`：单列选择菜单（pi/opencode 的列表风格）。
+   */
+  enum: 'inline-cycle' | 'list'
+  /**
+   * 审批/提问卡形态：
+   * - `plain`：无边框纯文本 + 数字选择（Claude Code 式）；
+   * - `boxed`：圆角卡（pi 风格，现状）；
+   * - `centered`：居中弹窗（opencode 风格）。
+   */
+  card: 'plain' | 'boxed' | 'centered'
+  /**
+   * 斜杠菜单语式：
+   * - `spacious`：内联菜单 + 名称/提示/描述全量（cc 式，现状）；
+   * - `compact`：内联菜单仅名称与提示（pi 式）；
+   * - `panel`：不弹内联菜单，命令走 Ctrl+P 面板（opencode 式；Enter 提交
+   *   的 `/xxx` 行仍按目录解析执行）。
+   */
+  slash: 'spacious' | 'compact' | 'panel'
+}
+
 export interface Keymap {
   id: KeymapId
   /** /keymap 选项里的显示名。 */
   label: string
   /** leader 键（opencode：ctrl+x）；无 leader 的预设省略。 */
   leader?: string
-  /**
-   * 枚举选择的交互语式（广义交互层）：
-   * - `inline-cycle`：行内 ←/→ 循环切换值（Claude Code 式，不弹层）；
-   * - `list`：单列选择菜单（pi/opencode 的列表风格，现状）。
-   */
-  enumIdiom: 'inline-cycle' | 'list'
+  /** 交互画像（广义交互层，见 InteractionProfile）。 */
+  interaction: InteractionProfile
   entries: KeymapEntry[]
 }
 
@@ -77,7 +98,7 @@ export interface Keymap {
 export const CC_KEYMAP: Keymap = {
   id: 'cc',
   label: 'cc — Claude Code 风格',
-  enumIdiom: 'inline-cycle',
+  interaction: { enum: 'inline-cycle', card: 'plain', slash: 'spacious' },
   entries: [
     { action: 'interrupt', keys: ['escape'], when: 'busy' },
     { action: 'quit', keys: ['ctrl+c'], when: 'idle' },
@@ -107,7 +128,7 @@ export const CC_KEYMAP: Keymap = {
 export const PI_KEYMAP: Keymap = {
   id: 'pi',
   label: 'pi — pi coding-agent 风格',
-  enumIdiom: 'list',
+  interaction: { enum: 'list', card: 'boxed', slash: 'compact' },
   entries: [
     { action: 'interrupt', keys: ['ctrl+c'], when: 'busy' },
     { action: 'quit', keys: ['ctrl+c'], when: 'idle' },
@@ -137,7 +158,7 @@ export const OPENCODE_KEYMAP: Keymap = {
   id: 'opencode',
   label: 'opencode — OpenCode 风格',
   leader: 'ctrl+x',
-  enumIdiom: 'list',
+  interaction: { enum: 'list', card: 'centered', slash: 'panel' },
   entries: [
     { action: 'interrupt', keys: ['escape'], when: 'busy' },
     { action: 'quit', keys: ['ctrl+c'], when: 'idle' },
