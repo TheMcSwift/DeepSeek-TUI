@@ -445,6 +445,19 @@ export class PiTuiApp implements TerminalApp {
     this.statusSlot = statusSlot
 
     const editor = new Editor(tui, getEditorTheme())
+    // @/# 补全弹层打开时按 Enter 会应用补全并吞掉提交（pi 编辑器内部行为：
+    // 仅 slash 前缀落回 submit，@/# 前缀直接 return）。包装 handleInput——
+    // Enter 前先收起弹层再走原路径，Enter 保持「发送正文」语义；Tab 补全
+    // 与 ↑/↓ 选择不受影响。与 hookAltScreen 同一实例级 hook 纪律（结构
+    // 读取运行时私有字段，不改 node_modules）。
+    const rawEditorInput = editor.handleInput.bind(editor)
+    editor.handleInput = (data: string) => {
+      const autocomplete = (editor as unknown as { autocompleteState?: unknown }).autocompleteState
+      if (autocomplete !== undefined && autocomplete !== null && matchesKey(data, 'enter')) {
+        (editor as unknown as { cancelAutocomplete?: () => void }).cancelAutocomplete?.()
+      }
+      rawEditorInput(data)
+    }
     this.loadHistory(editor)
     const submit = (text: string): void => {
       if (text === '/quit') handlers.onQuit()
@@ -980,6 +993,11 @@ export class PiTuiApp implements TerminalApp {
         this.tui?.requestRender()
         return
       }
+      // 输入区不吃滚轮：滚轮落在编辑器行内时不滚动转录（pi 在光标下方没有
+      // 滚动视图时会回退到主滚动视图，把输入框上的滚轮卷到转录上）。
+      const editorLines = this.editor === undefined ? 1 : Math.max(1, this.editor.getText().split('\n').length)
+      const rows = this.terminal?.rows ?? 0
+      if (rows > 0 && event.y >= rows - editorLines) return
       routeWheel(event)
       this.syncBackToBottomHint()
     }

@@ -11,7 +11,7 @@ import type { Terminal } from '@earendil-works/pi-tui'
 import { PiTuiApp, piTuiInternals } from '../src/app/pi-tui-app.ts'
 import type { PiTuiAppOptions } from '../src/app/pi-tui-app.ts'
 import { fg } from '../src/app/pi/color.ts'
-import { readFileSync, rmSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { SurfaceMeta, TerminalAppHandlers } from '../src/app/terminal-app.ts'
@@ -1085,6 +1085,45 @@ describe('pi-tui surface', () => {
     test.terminal.feed('\x1b[F') // End
     await settle(60)
     expect(test.app.scrollTop).toBe(atEnd)
+  })
+
+  it('输入区不吃滚轮：编辑器行内的滚轮不滚动转录', async () => {
+    const test = mount()
+    await settle()
+    const longText = Array.from({ length: 20 }, (_, i) => `line ${i} of a deliberately long message`).join('\n')
+    test.app.render(doc(Array.from({ length: 8 }, (_, i) => ({
+      kind: 'assistant' as const, id: `a${i}`, turn: 1, step: i + 1, text: longText, thinking: [], state: 'committed' as const,
+    }))))
+    await settle(60)
+    const atEnd = test.app.scrollTop
+    expect(atEnd).toBeGreaterThan(0)
+    // 滚轮向上（button 64）落在编辑器行（30 行终端的最后一行，SGR 坐标
+    // 1 基 → y=30）→ 忽略，视口不动。
+    test.terminal.feed('\x1b[<64;5;30M')
+    await settle(60)
+    expect(test.app.scrollTop).toBe(atEnd)
+    // 滚轮落在转录区（y=2）→ 视口滚动。
+    test.terminal.feed('\x1b[<64;5;2M')
+    await settle(60)
+    expect(test.app.scrollTop).toBeLessThan(atEnd)
+  })
+
+  it('输入 @ 触发补全弹层后 Enter 仍提交正文（特殊字符修复）', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'dsh-tui-at-'))
+    writeFileSync(join(workspace, 'hello.txt'), 'x')
+    const test = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace })
+    try {
+      await settle()
+      test.terminal.feed('@')
+      await settle(200) // 等 @/# 补全请求返回建议
+      test.terminal.feed('\r')
+      await waitFor(() => test.calls.input.length === 1)
+      // pi 编辑器对非 slash 前缀的补全在 Enter 时会应用建议并吞掉提交——
+      // 包装后 Enter 收起弹层并提交正文。
+      expect(test.calls.input[0]).toBe('@')
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+    }
   })
 
   it('renders the goal, todo, and approval records from the document', async () => {
