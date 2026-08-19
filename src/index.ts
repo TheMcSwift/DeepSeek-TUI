@@ -174,9 +174,19 @@ export const internals: {
   flushSettleMs: number
   /** Sink for the transcript dump printed on quit (tests capture it). */
   writeStdout: (text: string) => void
+  /** Grace window before the hard exit backstop fires (tests shorten it). */
+  forceExitMs: number
+  /**
+   * Hard-exit backstop armed after the launcher's exit request. Production
+   * kills the process; tests stub it, otherwise the armed timer would exit the
+   * vitest worker mid-run（`process.exit unexpectedly called with "0"`）。
+   */
+  forceExit: (code: number) => void
 } = {
   flushSettleMs: 400,
   writeStdout: (text: string) => { process.stdout.write(text) },
+  forceExitMs: 2_000,
+  forceExit: (code: number) => { process.exit(code) },
   createApp: (themePreset: ThemePresetId, variant: 'dark' | 'light') => {
     // Language resolves before any view is built: DSH_TUI_LANG=en picks the
     // English dictionary, default zh (T9 i18n).
@@ -383,7 +393,11 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     // on the event loop draining. Some spawn chains (pnpm's sh wrapper) leave
     // a parent-watch handle behind that never drains, so force the exit after
     // a short grace — the session was already flushed and the agent disposed.
-    setTimeout(() => { process.exit(0) }, 2_000).unref()
+    // 走 internals 缝隙：测试把它替成 no-op，否则这枚 timer 会在 2s 后把
+    // vitest worker 直接 exit 掉（整套单测以非 0 退出码结束）。arm 时就取定
+    // 实现，免得 afterEach 恢复生产实现后这枚 timer 又去杀进程。
+    const forceExit = internals.forceExit
+    setTimeout(() => { forceExit(0) }, internals.forceExitMs).unref()
   }
 
   /**

@@ -28,6 +28,8 @@ afterEach(() => {
   internals.isTty = originalInternals.isTty
   internals.flushSettleMs = originalInternals.flushSettleMs
   internals.writeStdout = originalInternals.writeStdout
+  internals.forceExitMs = originalInternals.forceExitMs
+  internals.forceExit = originalInternals.forceExit
   capturedStdout = ''
 })
 // (Re-applied inside bench(): afterEach restores the real stdout writer.)
@@ -82,6 +84,9 @@ async function bench(
 ): Promise<Bench> {
   internals.flushSettleMs = 0
   internals.writeStdout = (text: string) => { capturedStdout += text }
+  // quit 路径会 arm 一枚强制退出 timer；测试里必须收敛成 no-op，否则它会在
+  // 2s 后把 vitest worker exit 掉（整套单测非 0 退出）。
+  internals.forceExit = () => {}
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
