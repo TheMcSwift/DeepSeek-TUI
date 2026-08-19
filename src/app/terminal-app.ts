@@ -204,8 +204,8 @@ export interface TerminalApp {
   showHotkeys(): void
   /** Ask the human one question through an overlay dialog. */
   askDialog(question: ApprovalQuestion): Promise<ApprovalAnswer>
-  /** Show the pending message queue length while a turn runs (T1⑤). */
-  notifyQueue(count: number): void
+  /** Show the pending message queue length + 队首预览 while a turn runs (T1⑤). */
+  notifyQueue(count: number, messages?: readonly string[]): void
   /** Show the session's background jobs (T1⑥). */
   showJobs(rows: readonly JobRow[]): void
   /** The document entry id holding focus, or null (T3④). */

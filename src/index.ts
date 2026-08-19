@@ -353,7 +353,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     if (!quitting && !doc.busy && queue.length > 0 && handle !== undefined) {
       const next = queue.shift()
       if (next !== undefined) {
-        app.notifyQueue(queue.length)
+        app.notifyQueue(queue.length, queue)
         handle.agent.followup(createUserMessage({
           content: [{ type: 'text', text: next }],
           source: { kind: 'user' },
@@ -1120,7 +1120,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       if (doc.busy || queue.length > 0) {
         if (queue.length < MAX_QUEUE) {
           queue.push(text)
-          app.notifyQueue(queue.length)
+          app.notifyQueue(queue.length, queue)
         }
         return
       }
@@ -1502,7 +1502,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             if (answer.reason !== 'picked' || answer.picked === undefined) return
             const item = queue.splice(index, 1)[0]
             if (item === undefined) return
-            app.notifyQueue(queue.length)
+            app.notifyQueue(queue.length, queue)
             if (answer.picked === '删除') {
               app.toast('已删除队列项', 'success')
             } else {
@@ -1593,7 +1593,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     onQueueRetrieveRequest: (): void => {
       const text = queue.pop()
       if (text === undefined) return
-      app.notifyQueue(queue.length)
+      app.notifyQueue(queue.length, queue)
       app.restoreToEditor(text)
     },
     onRateRequest: (): void => {

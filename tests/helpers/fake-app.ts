@@ -82,9 +82,12 @@ export class FakeApp implements TerminalApp {
     this.hotkeysShown++
   }
 
-  notifyQueue(count: number): void {
+  notifyQueue(count: number, messages?: readonly string[]): void {
     this.queues.push(count)
+    this.queuedMessages.push(messages === undefined ? [] : [...messages])
   }
+
+  queuedMessages: string[][] = []
 
   showJobs(rows: readonly JobRow[]): void {
     this.jobs.push([...rows])

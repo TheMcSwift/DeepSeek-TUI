@@ -55,7 +55,7 @@ export interface Strings {
   hotkeysSections: readonly HotkeySection[]
   /** 面板底部提示行。 */
   hotkeysHint: string
-  queued: (n: number) => string
+  queueFirst: (count: number, preview: string) => string
   interrupted: string
   stopped: string
   compaction: string
@@ -389,7 +389,7 @@ const zh: Strings = {
       ],
     },
   ],
-  queued: (n: number): string => `${n} 条排队消息`,
+  queueFirst: (count: number, preview: string): string => `${count} 条排队 · ${preview}`,
   interrupted: '已中断',
   stopped: '已停止',
   compaction: '上下文已压缩',
@@ -731,7 +731,7 @@ const en: Strings = {
       ],
     },
   ],
-  queued: (n: number): string => `${n} queued message${n === 1 ? '' : 's'}`,
+  queueFirst: (count: number, preview: string): string => `${count} queued · ${preview}`,
   interrupted: 'Interrupted',
   stopped: 'Stopped',
   compaction: 'Context compacted',

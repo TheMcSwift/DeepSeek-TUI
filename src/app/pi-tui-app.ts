@@ -205,6 +205,14 @@ const FOLD_KEEP = 30
  * 此处保留模块级引用。
  */
 
+/** 排队消息的队首预览：折叠空白 + 截断（busy 状态行展示，T1⑤）。 */
+function queuePreview(messages: readonly string[]): string {
+  const first = messages[0] ?? ''
+  const flat = first.replace(/\s+/g, ' ').trim()
+  if (flat === '') return '…'
+  return flat.length > 24 ? `${flat.slice(0, 23)}…` : flat
+}
+
 /** Searchable text for one entry (T2②). */
 function entrySearchText(entry: ViewEntry): string {
   switch (entry.kind) {
@@ -369,6 +377,8 @@ export class PiTuiApp implements TerminalApp {
   private hideThinking = false
   /** Messages queued upstream while a turn runs (T1⑤). */
   private queueCount = 0
+  /** 排队消息内容（队首预览显示在 busy 状态行）。 */
+  private queueMessages: string[] = []
   /** Live plugin session projections (K3): idle chips + the Ctrl+P picker. */
   private projections: readonly ProjectionRow[] = []
   /** The command catalog for the inline slash menu (cc/pi style). */
@@ -755,6 +765,7 @@ export class PiTuiApp implements TerminalApp {
     this.current = emptyDocument()
     this.wasBusy = false
     this.queueCount = 0
+    this.queueMessages = []
     this.editor?.setText('')
     this.applyState(this.current)
   }
@@ -1447,7 +1458,8 @@ export class PiTuiApp implements TerminalApp {
           : strings().durationSeconds(seconds)
         : ''
       const diving = clock === '' ? strings().diving : `${strings().diving} ${clock}`
-      const queued = this.queueCount > 0 ? ` · ${strings().queued(this.queueCount)}` : ''
+      // 排队不只给数量：队首消息预览让用户知道自己排了什么（/queue dock 看全量）。
+      const queued = this.queueCount > 0 ? ` · ${strings().queueFirst(this.queueCount, queuePreview(this.queueMessages))}` : ''
       slot.setMessage(`${diving}${queued}${endHint}`)
     } else {
       slot.setMessage(strings().diving)
@@ -1497,9 +1509,10 @@ export class PiTuiApp implements TerminalApp {
     this.tui?.requestRender()
   }
 
-  /** The runner reports the pending message queue length (T1⑤). */
-  notifyQueue(count: number): void {
+  /** The runner reports the pending message queue length + 内容（T1⑤）。 */
+  notifyQueue(count: number, messages?: readonly string[]): void {
     this.queueCount = count
+    this.queueMessages = messages === undefined ? [] : [...messages]
     if (this.tui === undefined) return
     this.applyState(this.current)
     this.tui.requestRender()

@@ -261,6 +261,8 @@ describe('tui runner', () => {
     await settle()
     expect(test.followups).toHaveLength(1) // busy: both queued
     expect(test.app.queues).toEqual([1, 2])
+    // 排队内容随通知下传：busy 状态行显示队首预览。
+    expect(test.app.queuedMessages.at(-1)).toEqual(['second', 'third'])
     const session = test.ctx.sessions.list()[0]
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     await settle()

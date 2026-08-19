@@ -162,13 +162,17 @@ describe('pi-tui surface', () => {
     expect(test.calls.input).toEqual([])
   })
 
-  it('shows the pending queue length in the busy slot', async () => {
+  it('shows the pending queue length and the first message preview in the busy slot', async () => {
     const test = mount()
     await settle()
-    test.app.notifyQueue(2)
+    test.app.notifyQueue(2, ['finish later', 'another queued one'])
     test.app.render({ entries: [], busy: true })
     await settle()
-    expect(test.terminal.plain()).toContain('2 条排队消息')
+    // 数量 + 队首预览（多行消息折叠为单行并截断）。
+    expect(test.terminal.plain()).toContain('2 条排队 · finish later')
+    test.app.notifyQueue(1, ['multi\nline message'])
+    await settle()
+    expect(test.terminal.plain()).toContain('1 条排队 · multi line message')
     test.app.notifyQueue(0)
     await settle()
     expect(test.terminal.plain()).toContain('Deep diving...')
