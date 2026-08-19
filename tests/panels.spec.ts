@@ -81,4 +81,26 @@ describe('capability panel', () => {
     expect(doneRow).toContain('✓')
     expect(doneRow).not.toMatch(/[▐▓░]{4}/)
   })
+
+  it('hides the todo block once every item is completed（完成即撤场）', () => {
+    const panel = new CapabilityPanel()
+    panel.set(undefined, {
+      kind: 'todo', id: 'todo', items: [
+        { content: 'done a', status: 'completed' },
+        { content: 'done b', status: 'completed' },
+      ],
+    })
+    const lines = panel.render(100).map(stripAnsi)
+    expect(lines.some(line => line.includes('◆ todo'))).toBe(false)
+    // 仍有未完成项时照常显示。
+    panel.set(undefined, {
+      kind: 'todo', id: 'todo', items: [
+        { content: 'done a', status: 'completed' },
+        { content: 'doing b', status: 'in_progress' },
+      ],
+    })
+    const partial = panel.render(100).map(stripAnsi)
+    expect(partial.some(line => line.includes('◆ todo'))).toBe(true)
+    expect(partial.some(line => line.includes('doing b'))).toBe(true)
+  })
 })

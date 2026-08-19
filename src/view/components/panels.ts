@@ -84,21 +84,26 @@ export class CapabilityPanel implements Component {
       const completed = items.filter(item => item.status === 'completed').length
       const inProgress = items.filter(item => item.status === 'in_progress').length
       const pending = items.length - completed - inProgress
-      lines.push(truncateToWidth(
-        `${fg('accent')('◆ todo')} ${fg('success')(`✓${completed}`)} ${fg('accent')(`▶${inProgress}`)} ${fg('muted')(`○${pending}`)}`,
-        width,
-      ))
-      // Long lists fold to the first six items (web TodoPanel folds too).
-      const shown = items.length <= 6 ? items : items.slice(0, 6)
-      for (const item of shown) {
-        const mark = item.status === 'completed'
-          ? fg('success')('✓')
-          : item.status === 'in_progress' ? fg('accent')('▶') : fg('muted')('○')
-        const text = item.status === 'completed' ? fg('muted')(item.content) : fg('text')(item.content)
-        lines.push(truncateToWidth(`${mark} ${text}`, width))
-      }
-      if (items.length > 6) {
-        lines.push(truncateToWidth(fg('dim')(`  … 还有 ${items.length - 6} 项`), width))
+      // 全部完成：面板不再钉在顶部（记录保留在文档的 todo/write 日志里，
+      // 视图只隐藏——「完成即撤场」；新会话自然无此条目）。
+      const allDone = pending === 0 && inProgress === 0
+      if (!allDone) {
+        lines.push(truncateToWidth(
+          `${fg('accent')('◆ todo')} ${fg('success')(`✓${completed}`)} ${fg('accent')(`▶${inProgress}`)} ${fg('muted')(`○${pending}`)}`,
+          width,
+        ))
+        // Long lists fold to the first six items (web TodoPanel folds too).
+        const shown = items.length <= 6 ? items : items.slice(0, 6)
+        for (const item of shown) {
+          const mark = item.status === 'completed'
+            ? fg('success')('✓')
+            : item.status === 'in_progress' ? fg('accent')('▶') : fg('muted')('○')
+          const text = item.status === 'completed' ? fg('muted')(item.content) : fg('text')(item.content)
+          lines.push(truncateToWidth(`${mark} ${text}`, width))
+        }
+        if (items.length > 6) {
+          lines.push(truncateToWidth(fg('dim')(`  … 还有 ${items.length - 6} 项`), width))
+        }
       }
     }
     if (this.jobs.length > 1 && !this.jobsExpanded) {

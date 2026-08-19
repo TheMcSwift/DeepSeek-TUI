@@ -1062,6 +1062,27 @@ describe('pi-tui surface', () => {
     expect(test.terminal.plain()).toContain('(End)')
   })
 
+  it('Home/End 聚焦输入框时走行首/行尾（光标），不动视口', async () => {
+    const test = mount()
+    await settle()
+    const longText = Array.from({ length: 20 }, (_, i) => `line ${i} of a deliberately long message`).join('\n')
+    test.app.render(doc(Array.from({ length: 8 }, (_, i) => ({
+      kind: 'assistant' as const, id: `a${i}`, turn: 1, step: i + 1, text: longText, thinking: [], state: 'committed' as const,
+    }))))
+    await settle(60)
+    const atEnd = test.app.scrollTop
+    expect(atEnd).toBeGreaterThan(0)
+    // pi 的键表把 Home/End 同时绑在 altScreen.top/bottom（视口滚动）与
+    // editor.cursorLineStart/End（光标），alt-screen 监听器先消费——修复后
+    // 输入框聚焦时转发给编辑器：视口滚动位置应保持不变。
+    test.terminal.feed('\x1b[H') // Home
+    await settle(60)
+    expect(test.app.scrollTop).toBe(atEnd)
+    test.terminal.feed('\x1b[F') // End
+    await settle(60)
+    expect(test.app.scrollTop).toBe(atEnd)
+  })
+
   it('renders the goal, todo, and approval records from the document', async () => {
     const test = mount()
     await settle()

@@ -77,7 +77,7 @@
 | E4 | 会话头 | 父→子面包屑 + 视图 Tab 切换 | header：会话 id + `↳ 父会话` 面包屑 + 标题 + plan 徽标；无视图 Tab | ✅ |
 | E5 | Plan 模式徽标 | `Plan ×` chip 点击执行 /plan off | `◐ plan` 徽标 + Ctrl+E 退出 | ✅ |
 | E6 | Goal 面板 | 阶段标签 + 暂停/恢复/编辑/清除 + 内联编辑 + blocked tooltip | goal 行（阶段/目标/轮次/blocked 原因）；操作经 /goal 命令 | 🟡 |
-| E7 | Todo 面板 | 完成/进行中/待处理计数、折叠展开、状态字形 | 计数头 `◆ todo ✓N ▶N ○N` + 状态字形 + >6 项折叠 | ✅ |
+| E7 | Todo 面板 | 完成/进行中/待处理计数、折叠展开、状态字形 | 计数头 `◆ todo ✓N ▶N ○N` + 状态字形 + >6 项折叠；**全部完成后面板撤场**（记录保留在 todo/write 日志，新会话自然无条目） | ✅ |
 | E8 | Jobs 面板 | 状态点 + 类型 + 标签 + 实时耗时 | ◆ job 行（状态点 + 运行期 ▐▓░ 呼吸条 + 标签 + 实时/结算耗时，500ms ticker）；>1 收敛 Ctrl+O 展开 | ✅ |
 | E9 | 子代理徽标/树 | 头操作展开树（计数、运行点、惰性子孙、token/时长） | ◆ subagent 徽标行；无树/指标 | 🟡 |
 | E10 | 只读子代理 composer | one-shot / 父离线只读说明 | one-shot 子代理会话（`subagent/descriptor` mode）只读：🔒 提示行 + 提交拦截（/quit 等命令仍可用） | ✅ |

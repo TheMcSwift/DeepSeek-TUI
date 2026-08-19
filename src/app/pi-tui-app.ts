@@ -977,6 +977,16 @@ export class PiTuiApp implements TerminalApp {
     // 处理完同步 ↓ End 提示与 ticker 状态（F2）。
     const handleViewportInput = alt.handleViewportInput.bind(altScreen)
     alt.handleViewportInput = (data: string) => {
+      // Home/End 在 pi 键表里同时是 altScreen.top/bottom（视口滚动）与
+      // editor.cursorLineStart/End（光标行首行尾），而 alt-screen 的监听器
+      // 先于编辑器消费——聚焦输入框时把 Home/End 转发给编辑器，行首/行尾
+      // 才是正确语义（焦点环聚焦消息时仍保留视口滚动行为）。
+      if (!this.overlayOpen && this.focusIndex === -1 && (matchesKey(data, 'home') || matchesKey(data, 'end'))) {
+        this.editor?.handleInput(data)
+        this.syncBackToBottomHint()
+        this.syncIdleTicker()
+        return { consume: true }
+      }
       const result = handleViewportInput(data)
       this.syncBackToBottomHint()
       this.syncIdleTicker()
