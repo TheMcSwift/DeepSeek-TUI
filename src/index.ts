@@ -524,7 +524,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     push('__quit', '/quit · 退出 TUI', 'flush 会话并退出', ['exit'])
     push('__help', '/hotkeys · 快捷键', '全部快捷键一览', ['?'])
     push('__clone', '/clone · 复制当前会话', '以最后完成的轮次为种子开新会话')
-    push('__resume', '/resume · 恢复会话', '列出历史会话并切换（会话选择器，Ctrl+R 同功能）')
+    push('__resume', '/resume · 恢复会话', '列出历史会话并切换（会话选择器，Ctrl+R 同功能）', ['r'])
     push('__effort', '/effort · 推理强度', '单独选择当前模型的 reasoning effort')
     push('__model', '/model <provider/model>', '切换模型：枚举选择，或直接指定 provider/model', ['m'])
     push('__permission', '/permission <preset>', '切换权限预设：枚举选择，或直接指定预设名', ['perm'])

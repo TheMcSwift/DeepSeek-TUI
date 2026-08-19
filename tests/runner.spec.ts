@@ -897,6 +897,7 @@ describe('tui runner', () => {
     expect(test.app.commands?.find(item => item.value === '__help')?.aliases).toEqual(['?'])
     expect(test.app.commands?.find(item => item.value === '__model')?.aliases).toEqual(['m'])
     expect(test.app.commands?.find(item => item.value === '__permission')?.aliases).toEqual(['perm'])
+    expect(test.app.commands?.find(item => item.value === '__resume')?.aliases).toEqual(['r'])
     await test.ctx.fiber.dispose()
   })
 

@@ -1302,6 +1302,17 @@ describe('pi-tui surface', () => {
     expect(test.calls.commandPicks).toContainEqual({ name: '__help', raw: '' })
   })
 
+  it('resolves the /r alias to the resume command', async () => {
+    const test = mount()
+    await settle()
+    test.app.setCommands([
+      { value: '__resume', label: '/resume · 恢复会话', description: 'switch session', aliases: ['r'] },
+    ])
+    test.terminal.feed('/r\r')
+    await settle()
+    expect(test.calls.commandPicks).toContainEqual({ name: '__resume', raw: '' })
+  })
+
   it('filters the slash menu by alias names while typing', async () => {
     const test = mount()
     await settle()
