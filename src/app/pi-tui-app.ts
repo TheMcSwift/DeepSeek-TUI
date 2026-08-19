@@ -876,7 +876,9 @@ export class PiTuiApp implements TerminalApp {
         }
       })
     if (!this.slashMenuOpen) {
-      const menu = new SlashMenu(items)
+      // 广义交互层：pi 预设圆角框（pi SelectList 视觉），cc 无边框行。
+      const menuStyle = keymapById(this.keymap).interaction.card === 'boxed' ? 'boxed' as const : 'plain' as const
+      const menu = new SlashMenu(items, menuStyle)
       this.slashMenu = menu
       this.slashMenuOpen = true
       this.slashMenuIndex = 0

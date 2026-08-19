@@ -659,7 +659,12 @@ describe('tui runner', () => {
   })
 
   it('cycles the permission preset inline on Ctrl+P under the cc idiom', async () => {
+    // 隔离 DSH_HOME：键位 sidecar 的默认值不受开发者本机状态影响（cc 语式）。
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-perm-cycle-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
     const picked: string[] = []
+    try {
     const test = await bench({}, {}, (ctx) => {
       ctx.provide('permissionPresets', {
         names: ['workspace-write', 'danger-full-access'],
@@ -691,6 +696,11 @@ describe('tui runner', () => {
     expect(picked).toEqual(['danger-full-access'])
     expect(test.app.toasts.some(toast => toast.text.includes('权限预设已切换：danger-full-access'))).toBe(true)
     await test.ctx.fiber.dispose()
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('routes /compose to the editor-compose flow (pi A3)', async () => {

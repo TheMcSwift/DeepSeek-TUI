@@ -164,6 +164,10 @@ export interface Strings {
   pluginsProjections: (n: number) => string
   pluginsSkillHint: string
   pluginsStructured: string
+  // 斜杠菜单（广义交互层样式维度；替换原组件内硬编码/语言判断）
+  slashNoMatch: string
+  slashMore: (n: number) => string
+  slashHint: string
   workspaceTitle: string
   workspaceCurrent: string
   workspaceSessions: (n: number) => string
@@ -505,6 +509,10 @@ const zh: Strings = {
   pluginsProjections: (n: number): string => `投影 (${n})`,
   pluginsSkillHint: '选中插入输入框',
   pluginsStructured: '结构化投影（无枚举）',
+  // 斜杠菜单
+  slashNoMatch: '无匹配命令',
+  slashMore: (n: number): string => `↓ 还有 ${n} 条 · 继续输入缩小范围`,
+  slashHint: '↑/↓ 选择 · Tab 补全 · Enter 执行 · Esc 取消',
   workspaceTitle: '工作区',
   workspaceCurrent: '当前',
   workspaceSessions: (n: number): string => `${n} 个会话`,
@@ -840,6 +848,10 @@ const en: Strings = {
   pluginsProjections: (n: number): string => `Projections (${n})`,
   pluginsSkillHint: 'selected skills go into the composer',
   pluginsStructured: 'structured projection (no enum)',
+  // Slash menu
+  slashNoMatch: 'No matching commands',
+  slashMore: (n: number): string => `↓${n} more · keep typing to narrow`,
+  slashHint: '↑/↓ select · Tab complete · Enter run · Esc cancel',
   workspaceTitle: 'Workspace',
   workspaceCurrent: 'current',
   workspaceSessions: (n: number): string => `${n} sessions`,

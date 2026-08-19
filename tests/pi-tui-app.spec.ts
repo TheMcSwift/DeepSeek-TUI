@@ -1587,18 +1587,20 @@ describe('pi-tui surface', () => {
     expect(test.terminal.plain()).not.toContain('Tab 补全')
   })
 
-  it('pi 语式：斜杠菜单紧凑（无描述列）', async () => {
+  it('pi 语式：斜杠菜单紧凑 + 圆角框布局（无描述列）', async () => {
     const compact = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, { keymap: 'pi' })
     await settle()
     compact.terminal.feed('/new')
     await settle()
     expect(compact.terminal.plain()).toContain('/new')
     expect(compact.terminal.plain()).not.toContain('test') // 描述列被省略（cc spacious 下会显示）
+    expect(compact.terminal.plain()).toContain('╭') // pi 式圆角框布局
     const spacious = mount()
     await settle()
     spacious.terminal.feed('/new')
     await settle()
     expect(spacious.terminal.plain()).toContain('test')
+    expect(spacious.terminal.plain()).not.toContain('╭') // cc 无边框行
   })
 
   it('审批卡形态随预设：cc 无边框、pi 圆角卡（广义交互层）', async () => {
