@@ -156,6 +156,8 @@ export interface Strings {
   animOn: string
   animOff: string
   animSwitched: (state: string) => string
+  /** 启动时后台标题回填完成（跨版本恢复标题缓存）。 */
+  titlesBackfilled: (n: number) => string
   // /plugins（H20/H21 代理视图）与 /workspace（M3/M4）
   pluginsTitle: string
   pluginsHint: string
@@ -504,6 +506,7 @@ const zh: Strings = {
   animOn: '开',
   animOff: '关',
   animSwitched: (state: string): string => `动画：${state}`,
+  titlesBackfilled: (n: number): string => `已为 ${n} 个历史会话补全标题`,
   // /plugins（H20/H21 代理视图）与 /workspace（M3/M4）
   pluginsTitle: '插件与能力',
   pluginsHint: '↑/↓ 选择 · Enter 执行/查看 · PgUp/PgDn 翻页 · Esc 关闭',
@@ -846,6 +849,7 @@ const en: Strings = {
   animOn: 'On',
   animOff: 'Off',
   animSwitched: (state: string): string => `Animations: ${state}`,
+  titlesBackfilled: (n: number): string => `Backfilled titles for ${n} past sessions`,
   // /plugins (H20/H21 proxy inventory) & /workspace (M3/M4)
   pluginsTitle: 'Plugins & capabilities',
   pluginsHint: '↑/↓ select · Enter run/inspect · PgUp/PgDn page · Esc close',

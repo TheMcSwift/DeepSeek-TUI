@@ -547,6 +547,8 @@ export class PiTuiApp implements TerminalApp {
 
   /** The app's global key handling (raw input no focused view consumed). */
   private handleGlobalKey(data: string): { consume: boolean } | undefined {
+    // 每个键击上报：runner 据此暂停启动期标题回填（按键渲染优先）。
+    this.handlers?.onUserActivity?.()
     if (this.handleSlashMenuKey(data)) return { consume: true }
     // 通用交互不进预设：Tab 焦点环与 Esc 焦点复位。
     if (matchesKey(data, 'tab') && !this.overlayOpen && this.focusableItems.length > 0) {

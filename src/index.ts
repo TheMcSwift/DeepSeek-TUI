@@ -236,9 +236,15 @@ export const internals: {
   forceExit: (code: number) => void
   /** 会话 picker 标题回填的空闲等待窗口（用户停止按键后多久开始读下一个标题）。 */
   pickerTitleIdleMs: number
+  /** 启动时后台标题回填（跨版本恢复标题缓存）；测试关闭。 */
+  titleBackfillEnabled: boolean
+  /** 每次启动标题回填的读取上限（大日志整读会占用主线程，限制单次启动的负担）。 */
+  titleBackfillCap: number
 } = {
   flushSettleMs: 400,
   pickerTitleIdleMs: 600,
+  titleBackfillEnabled: true,
+  titleBackfillCap: 50,
   writeStdout: (text: string) => { process.stdout.write(text) },
   forceExitMs: 2_000,
   forceExit: (code: number) => { process.exit(code) },
@@ -350,6 +356,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   let pickerClosed = false
   /** 会话 picker 内最近一次按键时刻：空闲窗口内才允许读下一个标题。 */
   let pickerActivityAt = 0
+  /** 全局最近一次按键时刻：启动期标题回填只在全局空闲时读取。 */
+  let lastUserActivityAt = Date.now()
 
   /** 把当前会话的已知标题写入标题缓存（切换/退出/重命名时调用）。 */
   const rememberCurrentTitle = (): void => {
@@ -1238,6 +1246,50 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     }
   }
 
+  /**
+   * 启动时后台标题回填（跨版本恢复标题缓存）：升级后首次运行缓存为空，
+   * 老会话在 picker 里只能等空闲补名；这里在全局空闲（无按键、非 busy）
+   * 时串行逐个 readTitle 写缓存，每次启动限量（titleBackfillCap）避免
+   * 大日志整读占用过多主线程；读满后 toast 汇报，quit 立即终止。
+   */
+  const backfillTitleCache = async (
+    query: {
+      listSessions: (signal?: AbortSignal) => Promise<ReadonlyArray<{ header: { id: SessionId } }>>
+      readTitle: (id: SessionId) => Promise<{ title?: string } | undefined>
+    },
+  ): Promise<void> => {
+    const records = await query.listSessions().catch(() => undefined)
+    if (records === undefined || quitting) return
+    const cache = loadTitleCache()
+    const pending = records
+      .map(record => record.header.id)
+      .filter(id => id !== currentSessionId && cache[id] === undefined)
+    let filled = 0
+    while (pending.length > 0 && filled < internals.titleBackfillCap && !quitting) {
+      if (doc.busy) {
+        await new Promise(resolve => setTimeout(resolve, internals.pickerTitleIdleMs))
+        continue
+      }
+      const idle = internals.pickerTitleIdleMs - (Date.now() - lastUserActivityAt)
+      if (idle > 0) await new Promise(resolve => setTimeout(resolve, idle))
+      if (quitting) return
+      if (Date.now() - lastUserActivityAt < internals.pickerTitleIdleMs || doc.busy) continue
+      const id = pending.shift()
+      if (id === undefined) return
+      const title = await query.readTitle(id).catch(() => undefined)
+      if (quitting) return
+      const resolved = title?.title
+      if (resolved !== undefined && resolved !== '') {
+        cache[id] = { title: resolved, at: Date.now() }
+        persistTitleCache(cache)
+        filled++
+      }
+      // 让出事件循环：按键/渲染先于下一次整读。
+      await new Promise(resolve => setTimeout(resolve, 0))
+    }
+    if (filled > 0 && !quitting) app.toast(strings().titlesBackfilled(filled), 'info')
+  }
+
   const handlers: TerminalAppHandlers = {
     onInput: (text: string): void => {
       if (quitting || handle === undefined) return
@@ -1308,6 +1360,9 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     },
     onSessionPickerActivity: (): void => {
       pickerActivityAt = Date.now()
+    },
+    onUserActivity: (): void => {
+      lastUserActivityAt = Date.now()
     },
     onSessionSearchRequest: (filter: string): void => {
       // H5: backend full-text session search merged into the open picker.
@@ -1942,6 +1997,11 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
 
   await boot(config.resume)
   app.start(handlers, meta)
+  // 启动期后台标题回填（跨版本恢复缓存）：全局空闲时串行补名，不阻塞交互。
+  if (internals.titleBackfillEnabled) {
+    const query = ctx.get('sessionQuery')
+    if (query !== undefined) void backfillTitleCache(query).catch(() => {})
+  }
   const dbg = (msg: string): void => { process.stderr.write(`dsh tui: ${msg}\n`) }
   // The inline slash menu filters a live catalog (Ctrl+/ refreshes it too);
   // skills/change events re-sync it when providers load later.

@@ -134,6 +134,9 @@ export interface TerminalAppHandlers {
   /** Any keystroke inside the session picker (arrows included): the runner
    *  pauses idle title backfill so navigation stays responsive. */
   onSessionPickerActivity?(): void
+  /** Any keystroke anywhere (composer typing, global keys): the runner
+   *  pauses the boot-time title-cache backfill. */
+  onUserActivity?(): void
   /** Ctrl+G was pressed: the runner should gather models and open the picker. */
   onModelPickerRequest?(): void
   /** A session was chosen from the picker, or `null` on cancel. */

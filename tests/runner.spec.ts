@@ -32,6 +32,8 @@ afterEach(() => {
   internals.forceExitMs = originalInternals.forceExitMs
   internals.forceExit = originalInternals.forceExit
   internals.pickerTitleIdleMs = originalInternals.pickerTitleIdleMs
+  internals.titleBackfillEnabled = originalInternals.titleBackfillEnabled
+  internals.titleBackfillCap = originalInternals.titleBackfillCap
   capturedStdout = ''
 })
 // (Re-applied inside bench(): afterEach restores the real stdout writer.)
@@ -109,6 +111,8 @@ async function bench(
   internals.flushSettleMs = 0
   // picker 标题回填的空闲窗口在测试里收敛为 0：回填立即开始，无需等 600ms。
   internals.pickerTitleIdleMs = 0
+  // 启动期标题回填默认关闭：测试各自显式开启（bench 多数不关心缓存预热）。
+  internals.titleBackfillEnabled = false
   internals.writeStdout = (text: string) => { capturedStdout += text }
   // quit 路径会 arm 一枚强制退出 timer；测试里必须收敛成 no-op，否则它会在
   // 2s 后把 vitest worker exit 掉（整套单测非 0 退出）。
@@ -790,6 +794,72 @@ describe('tui runner', () => {
       await settle(150)
       const cache = JSON.parse(readFileSync(join(home, 'tui-titles.json'), 'utf8')) as Record<string, { title: string }>
       expect(Object.values(cache).some(entry => entry.title === '缓存我')).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('backfills the title cache at boot (cross-version init task)', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-init-cache-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const reads: string[] = []
+      const test = await bench({}, {}, (ctx) => {
+        ctx.provide('sessionQuery', {
+          listSessions: async () => [
+            { header: { version: 1, id: 's1' as never, createdAt: 1_000, cwd: '/tmp' }, live: false, persisted: true },
+            { header: { version: 1, id: 's2' as never, createdAt: 2_000, cwd: '/tmp' }, live: false, persisted: true },
+            { header: { version: 1, id: 's3' as never, createdAt: 3_000, cwd: '/tmp' }, live: false, persisted: true },
+          ],
+          readTitle: async (id: string) => { reads.push(id); return { title: `标题 ${id}` } },
+        })
+      })
+      // bench() 会先关掉回填开关；run() 在 app.start 后才读 internals，这里
+      // 重新打开仍赶在 spawn 之前。
+      internals.titleBackfillEnabled = true
+      await test.started
+      await settle(100)
+      const cache = JSON.parse(readFileSync(join(home, 'tui-titles.json'), 'utf8')) as Record<string, { title: string }>
+      expect(Object.keys(cache)).toHaveLength(3)
+      expect(cache['s1']).toMatchObject({ title: '标题 s1' })
+      expect(cache['s3']).toMatchObject({ title: '标题 s3' })
+      expect(reads).toEqual(['s1', 's2', 's3'])
+      expect(test.app.toasts.some(toast => toast.text.includes('补全标题'))).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('caps the boot backfill per launch to bound main-thread load', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-init-cap-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      const reads: string[] = []
+      const test = await bench({}, {}, (ctx) => {
+        ctx.provide('sessionQuery', {
+          listSessions: async () => [
+            { header: { version: 1, id: 's1' as never, createdAt: 1_000, cwd: '/tmp' }, live: false, persisted: true },
+            { header: { version: 1, id: 's2' as never, createdAt: 2_000, cwd: '/tmp' }, live: false, persisted: true },
+            { header: { version: 1, id: 's3' as never, createdAt: 3_000, cwd: '/tmp' }, live: false, persisted: true },
+          ],
+          readTitle: async (id: string) => { reads.push(id); return { title: `标题 ${id}` } },
+        })
+      })
+      internals.titleBackfillEnabled = true
+      internals.titleBackfillCap = 2
+      await test.started
+      await settle(100)
+      expect(reads).toEqual(['s1', 's2']) // 第三会话留待下一次启动
+      const cache = JSON.parse(readFileSync(join(home, 'tui-titles.json'), 'utf8')) as Record<string, unknown>
+      expect(Object.keys(cache)).toHaveLength(2)
       await test.ctx.fiber.dispose()
     } finally {
       if (previousHome === undefined) delete process.env.DSH_HOME
