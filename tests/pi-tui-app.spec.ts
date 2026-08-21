@@ -6,12 +6,12 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { TuiAltScreen, setCapabilities } from '@earendil-works/pi-tui'
+import { TuiAltScreen, TuiMainScreen, setCapabilities } from '@earendil-works/pi-tui'
 import type { Terminal } from '@earendil-works/pi-tui'
 import { PiTuiApp, piTuiInternals } from '../src/app/pi-tui-app.ts'
 import type { PiTuiAppOptions } from '../src/app/pi-tui-app.ts'
 import { fg } from '../src/app/pi/color.ts'
-import { readFileSync, rmSync, writeFileSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { SurfaceMeta, TerminalAppHandlers } from '../src/app/terminal-app.ts'
@@ -27,7 +27,7 @@ interface Mounted {
   app: PiTuiApp
   terminal: FakeTerminal
   handlers: TerminalAppHandlers
-  calls: { input: string[]; interrupt: number; quit: number; sessions: number; models: number; permissions: number; newSession: number; commands: number; exitPlan: number; workspace: number; forks: number; rates: number; shell: Array<{ text: string; hidden: boolean }>; steers: string[]; retrieves: number; commandPicks: Array<{ name: string; raw?: string }>; sessionSearch: string[] }
+  calls: { input: string[]; interrupt: number; quit: number; sessions: number; models: number; permissions: number; newSession: number; commands: number; exitPlan: number; workspace: number; forks: number; rates: number; shell: Array<{ text: string; hidden: boolean }>; steers: string[]; retrieves: number; interruptSend: string[]; cycleMode: number; rewind: number; commandPicks: Array<{ name: string; raw?: string }>; sessionSearch: string[] }
 }
 
 const originalInternals = { ...piTuiInternals }
@@ -46,14 +46,21 @@ function mount(meta: SurfaceMeta = { model: 'pi-ai/deepseek-v4', session: 'sessi
   setCapabilities({ images: 'kitty', trueColor: true, hyperlinks: true })
   const terminal = new FakeTerminal()
   piTuiInternals.createTerminal = () => terminal
-  piTuiInternals.createTui = (t: Terminal) => new TuiAltScreen(t)
+  piTuiInternals.createTui = (t: Terminal, mouse?: boolean, regular?: boolean) =>
+    regular === true ? new TuiMainScreen(t, true, undefined) : new TuiAltScreen(t, true, undefined, { mouse: mouse ?? true })
   // Deterministic frames: brand/status shimmer is unit-tested in brand.spec.
   piTuiInternals.animFrameMs = 0
-  const calls = { input: [] as string[], interrupt: 0, quit: 0, sessions: 0, models: 0, permissions: 0, newSession: 0, commands: 0, exitPlan: 0, workspace: 0, forks: 0, rates: 0, shell: [] as Array<{ text: string; hidden: boolean }>, steers: [] as string[], retrieves: 0, commandPicks: [] as Array<{ name: string; raw?: string }>, sessionSearch: [] as string[] }
-  const app = new PiTuiApp(options)
+  const calls = { input: [] as string[], interrupt: 0, quit: 0, sessions: 0, models: 0, permissions: 0, newSession: 0, commands: 0, exitPlan: 0, workspace: 0, forks: 0, rates: 0, shell: [] as Array<{ text: string; hidden: boolean }>, steers: [] as string[], retrieves: 0, interruptSend: [] as string[], cycleMode: 0, rewind: 0, commandPicks: [] as Array<{ name: string; raw?: string }>, sessionSearch: [] as string[] }
+  // 产品默认已是 regular（2026-08-20）；既有测试保持 alt-screen 语义，
+  // 默认注入 fullscreen，regular 测试显式传 { regular: true }。
+  const app = new PiTuiApp({ regular: false, ...options })
   const handlers: TerminalAppHandlers = {
     onInput: (text) => { calls.input.push(text) },
     onInterrupt: () => { calls.interrupt++ },
+    onInterruptSend: (text) => { calls.interruptSend.push(text) },
+    onCycleModeRequest: () => { calls.cycleMode++ },
+    onRewindRequest: () => { calls.rewind++ },
+    onRewindPicked: () => {},
     onQuit: () => { calls.quit++ },
     onSessionPickerRequest: () => { calls.sessions++ },
     onSessionSearchRequest: (query) => { calls.sessionSearch.push(query) },
@@ -140,7 +147,8 @@ describe('pi-tui surface', () => {
   })
 
   it('submits composer text while busy straight to the upstream queue', async () => {
-    const test = mount()
+    // busy Enter 的 queue 语义保留在 pi 预设（web 语义；cc 预设默认 steer，B1）。
+    const test = mount(undefined, { keymap: 'pi' })
     await settle()
     test.app.render({ entries: [], busy: true })
     await settle()
@@ -175,7 +183,20 @@ describe('pi-tui surface', () => {
     expect(test.terminal.plain()).toContain('1 条排队 · multi line message')
     test.app.notifyQueue(0)
     await settle()
-    expect(test.terminal.plain()).toContain('Deep diving...')
+    // web 文案保留在 pi 预设（cc 预设 busy 显示随机动词，B14）。
+    expect(test.terminal.plain()).toMatch(/Deep diving|Working…|Thinking…|Reading files…|Editing files…|Searching…|Running tools…/)
+  })
+
+  it('cc preset shows an always-on parenthesized busy clock (CC `✻ Deep diving… (m s)`)', async () => {
+    // V5: cc 预设对齐 Claude Code 的恒常耗时（从 0s 起就显示、括号包裹）；
+    // 2026-08-21 用户决策：文本用回 dsh 的 Deep diving...，仅保留 CC 括号时钟。
+    // 其他预设保留 web parity（15s 后才加时钟，见上文 Deep diving... 测试）。
+    const test = mount(undefined, { keymap: 'cc' })
+    await settle()
+    test.app.render({ entries: [], busy: true })
+    await settle()
+    const busyLine = test.terminal.plain()
+    expect(busyLine).toMatch(/Deep diving\.\.\. \(\d+[分秒sm]/)
   })
 
   it('routes /new to the new-session request', async () => {
@@ -294,7 +315,8 @@ describe('pi-tui surface', () => {
   })
 
   it('copies the latest reply to the clipboard on Ctrl+X (T5⑤)', async () => {
-    const test = mount()
+    // cc 预设 Ctrl+X 已改绑 $EDITOR 编辑输入（B18）；复制回复保留在 pi 预设。
+    const test = mount(undefined, { keymap: 'pi' })
     await settle()
     test.app.render(doc([
       { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'copy me please', thinking: [], state: 'committed' },
@@ -459,7 +481,7 @@ describe('pi-tui surface', () => {
   })
 
   it('swaps the working loader in while busy and out when idle', async () => {
-    const test = mount()
+    const test = mount(undefined, { keymap: 'pi' }) // web 文案固定于 pi 预设（B14）
     await settle()
     test.app.render(doc([], true))
     await settle()
@@ -470,7 +492,8 @@ describe('pi-tui surface', () => {
   })
 
   it('keeps the composer enabled while busy (queue upstream)', async () => {
-    const test = mount()
+    // busy Enter 的 queue 语义保留在 pi 预设（web 语义；cc 预设默认 steer，B1）。
+    const test = mount(undefined, { keymap: 'pi' })
     await settle()
     test.app.render(doc([], true))
     await settle()
@@ -479,7 +502,7 @@ describe('pi-tui surface', () => {
     expect(test.calls.input).toEqual(['queued while busy'])
   })
 
-  it('maps Esc to interrupt while busy and Ctrl+C to quit while idle', async () => {
+  it('maps Esc to interrupt while busy and Ctrl+C to quit while idle (double press)', async () => {
     const test = mount()
     await settle()
     test.app.render(doc([], true))
@@ -489,8 +512,12 @@ describe('pi-tui surface', () => {
     expect(test.calls.interrupt).toBe(1)
     expect(test.calls.quit).toBe(0)
 
+    // cc 预设 idle Ctrl+C 是双按退出（B3/B20）：第一次进入待命，第二次退出。
     test.app.render(doc([], false))
     await settle()
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(0)
     test.terminal.feed('\x03')
     await settle()
     expect(test.calls.quit).toBe(1)
@@ -555,6 +582,355 @@ describe('pi-tui surface', () => {
     } finally {
       if (previous === undefined) delete process.env.DSH_TUI_ENTER
       else process.env.DSH_TUI_ENTER = previous
+    }
+  })
+
+  it('steers busy Enter by default under the cc preset (B1, CC semantics)', async () => {
+    const previous = process.env.DSH_TUI_ENTER
+    delete process.env.DSH_TUI_ENTER
+    try {
+      const test = mount() // 默认 cc 预设
+      await settle()
+      test.app.render(doc([], true)) // busy
+      await settle()
+      test.terminal.feed('steer by default\r')
+      await settle()
+      expect(test.calls.steers).toEqual(['steer by default'])
+      expect(test.calls.input).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env.DSH_TUI_ENTER
+      else process.env.DSH_TUI_ENTER = previous
+    }
+  })
+
+  it('queues busy Enter under pi preset and honors an explicit queue override (B1)', async () => {
+    const previous = process.env.DSH_TUI_ENTER
+    try {
+      // pi 预设默认 queue（web 语义）。
+      delete process.env.DSH_TUI_ENTER
+      const pi = mount(undefined, { keymap: 'pi' })
+      await settle()
+      pi.app.render(doc([], true))
+      await settle()
+      pi.terminal.feed('queued under pi\r')
+      await settle()
+      expect(pi.calls.input).toEqual(['queued under pi'])
+      expect(pi.calls.steers).toEqual([])
+      // cc 预设 + 显式 DSH_TUI_ENTER=queue 覆盖 → queue。
+      process.env.DSH_TUI_ENTER = 'queue'
+      const cc = mount()
+      await settle()
+      cc.app.render(doc([], true))
+      await settle()
+      cc.terminal.feed('explicit queue\r')
+      await settle()
+      expect(cc.calls.input).toEqual(['explicit queue'])
+      expect(cc.calls.steers).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env.DSH_TUI_ENTER
+      else process.env.DSH_TUI_ENTER = previous
+    }
+  })
+
+  it('interrupts and sends with Ctrl+Enter under cc (B5)', async () => {
+    const test = mount()
+    await settle()
+    test.app.render(doc([], true)) // busy
+    await settle()
+    test.terminal.feed('final answer')
+    // kitty CSI u：ctrl+enter（普通终端的 Ctrl+Enter 与 Enter 同字节，无法区分）。
+    test.terminal.feed('\x1b[13;5u')
+    await settle()
+    expect(test.calls.interruptSend).toEqual(['final answer'])
+    expect(test.calls.interrupt).toBe(0)
+    expect(test.app.composerText).toBe('')
+    // 空输入退化为纯中断。
+    test.terminal.feed('\x1b[13;5u')
+    await settle()
+    expect(test.calls.interrupt).toBe(1)
+    expect(test.calls.interruptSend).toEqual(['final answer'])
+  })
+
+  it('queues a follow-up with Tab while busy under cc (B4)', async () => {
+    const test = mount()
+    await settle()
+    test.app.render(doc([], true)) // busy
+    await settle()
+    test.terminal.feed('later task')
+    test.terminal.feed('\t')
+    await settle()
+    expect(test.calls.input).toEqual(['later task'])
+    expect(test.app.composerText).toBe('')
+    // idle 时 Tab 不吞：无焦点条目时落到编辑器（不进 onInput）。
+    test.terminal.feed('\t')
+    await settle()
+    expect(test.calls.input).toEqual(['later task'])
+  })
+
+  it('exits only after two idle Ctrl+C presses under cc (B3/B20)', async () => {
+    const test = mount()
+    await settle()
+    // 有输入：第一次 Ctrl+C 清空输入、不退出。
+    test.terminal.feed('draft text')
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(0)
+    expect(test.app.composerText).toBe('')
+    // 空输入：第一次进入 3s 待命（不退出），第二次退出。
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(0)
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(1)
+  })
+
+  it('clears the armed exit state when typing then pressing Ctrl+C again (B3)', async () => {
+    const test = mount()
+    await settle()
+    // 进入待命。
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(0)
+    // 输入非空时按下：清空并解除待命（不退出）。
+    test.terminal.feed('oops')
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(0)
+    expect(test.app.composerText).toBe('')
+    // 待命已解除：再按两次才退出。
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(0)
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(1)
+  })
+
+  it('still quits on a single idle Ctrl+C outside cc (B3 guard)', async () => {
+    const test = mount(undefined, { keymap: 'pi' })
+    await settle()
+    test.terminal.feed('\x03')
+    await settle()
+    expect(test.calls.quit).toBe(1)
+  })
+
+  it('copies a drag selection via OSC 52 on release (B8, pi-native mouse)', async () => {
+    const test = mount(undefined, { mouse: true }) // 上报开启时才可用（默认关闭，右键归 Warp）
+    await settle()
+    const line = 'select this sentence for copying please'
+    test.app.render(doc([
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: line, thinking: [], state: 'committed' },
+    ]))
+    await settle(60)
+    // 用 pi 维护的 previousScreen（最近一次渲染的完整屏幕）定位消息坐标——
+    // FakeTerminal.output 是差分累积流，无法重建屏幕；previousScreen 是引擎真源。
+    const tui = (test.app as unknown as { tui: unknown }).tui as unknown as { previousScreen?: string[] }
+    const screen = tui.previousScreen ?? []
+    const rowIndex = screen.findIndex(line => line.includes('select this'))
+    expect(rowIndex).toBeGreaterThanOrEqual(0)
+    const colStart = screen[rowIndex].indexOf('select this')
+    // SGR 鼠标（1-based；pi 期望拖动/释放都保持 button=32，释放靠 m 后缀）。
+    // feedRaw：FakeTerminal 的 feed tokenizer 不识别 `\x1b[<…` 前缀的 SGR 序列。
+    test.terminal.feedRaw(`\x1b[<0;${colStart + 1};${rowIndex + 1}M`)
+    test.terminal.feedRaw(`\x1b[<32;${colStart + 12};${rowIndex + 1}M`)
+    test.terminal.feedRaw(`\x1b[<32;${colStart + 12};${rowIndex + 1}m`)
+    await settle()
+    // OSC 52 复制序列出现：选区内容来自屏幕上的消息文本（坐标含 ANSI 前缀，
+    // 不校验精确边界，只断言与消息行相交）。
+    const match = /\x1b\]52;c;([A-Za-z0-9+/=]+)\x07/.exec(test.terminal.output)
+    expect(match).not.toBeNull()
+    if (match !== null) {
+      const copied = Buffer.from(match[1], 'base64').toString('utf8')
+      expect(copied.length).toBeGreaterThan(0)
+      expect(line.includes(copied.trim())).toBe(true)
+    }
+  })
+
+  it('does not enable SGR mouse reporting by default (right-click belongs to the host)', async () => {
+    // 2026-08-20 用户决策：右键默认归 Warp——不发送上报启用序列（?1000/1002/1003/1004/1006）。
+    const off = mount()
+    await settle()
+    expect(off.terminal.output).not.toMatch(/\x1b\[\?1000h/)
+    // 显式开启（选项或 DSH_TUI_MOUSE=1）才发送启用序列。
+    const on = mount(undefined, { mouse: true })
+    await settle()
+    expect(on.terminal.output).toMatch(/\x1b\[\?1000h/)
+  })
+
+  it('exports the transcript to the terminal scrollback with [ on empty input', async () => {
+    const test = mount()
+    await settle()
+    test.app.render(doc([
+      { kind: 'user', id: 'u1', text: 'hello' },
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'world reply', thinking: [], state: 'committed' },
+    ]))
+    await settle()
+    // 输入框为空：`[` 退出 alt screen → 写转录到主屏（scrollback）→ 重进。
+    test.terminal.feed('[')
+    await settle()
+    expect(test.terminal.output).toContain('\x1b[?1049l')
+    expect(test.terminal.output).toContain('hello')
+    expect(test.terminal.output).toContain('world reply')
+    expect(test.terminal.output).toContain('\x1b[?1049h')
+    // 输入框有内容时 `[` 是普通字符。
+    test.terminal.feed('abc')
+    test.terminal.feed('[')
+    await settle()
+    expect(test.app.composerText).toBe('abc[')
+  })
+
+  it('renders and drives the composer in regular mode (TuiMainScreen)', async () => {
+    const test = mount(undefined, { regular: true })
+    await settle()
+    // 主屏渲染：消息文本可见。
+    test.app.render(doc([
+      { kind: 'user', id: 'u1', text: 'regular hello' },
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'regular reply', thinking: [], state: 'committed' },
+    ]))
+    await settle(60)
+    expect(test.terminal.plain()).toContain('regular hello')
+    expect(test.terminal.plain()).toContain('regular reply')
+    // 输入与发送照常（不依赖视口能力）。
+    test.terminal.feed('send me\r')
+    await settle(50)
+    expect(test.calls.input).toEqual(['send me'])
+    // 无应用滚动：Ctrl+F 搜索降级提示（regular 能力边界）。
+    test.terminal.feed('\x06') // Ctrl+F
+    await settle(50)
+    expect(test.terminal.plain()).toContain('regular 模式无应用内滚动')
+  })
+
+  it('pins the composer, updates incrementally and renders overlays in regular mode', async () => {
+    const test = mount(undefined, { regular: true })
+    await settle()
+    const entries = Array.from({ length: 5 }, (_, i) => ({
+      kind: 'assistant' as const, id: `a${i}`, turn: 1, step: i + 1,
+      text: `message ${i}`, thinking: [], state: 'committed' as const,
+    }))
+    test.app.render(doc(entries))
+    await settle(60)
+    const plain = test.terminal.plain()
+    for (let i = 0; i < 5; i++) expect(plain).toContain(`message ${i}`)
+    // 钉底：内容不足一屏时 BottomPad 补足到终端高度（composer 贴底）。
+    const pad = (test.app as unknown as { bottomPad: { height: number } }).bottomPad.height
+    expect(pad).toBeGreaterThan(0)
+    // 增量更新：同 id 新文本 → 只重渲染该条目（缓存失效路径），渲染结果正确。
+    test.app.render(doc([
+      ...entries.slice(0, 4),
+      { kind: 'assistant' as const, id: 'a4', turn: 1, step: 5, text: 'message 4 updated', thinking: [], state: 'committed' as const },
+    ]))
+    await settle(60)
+    expect(test.terminal.plain()).toContain('message 4 updated')
+    // 删除条目 → 视图与行缓存移除（plain 是累积输出，用内部状态断言）。
+    test.app.render(doc(entries.slice(0, 3)))
+    await settle(60)
+    const views = (test.app as unknown as { entryViews: Map<string, unknown> }).entryViews
+    expect(views.has('a4')).toBe(false)
+    // 内容变少 → BottomPad 增高（composer 仍贴底）。
+    const padAfter = (test.app as unknown as { bottomPad: { height: number } }).bottomPad.height
+    expect(padAfter).toBeGreaterThan(pad)
+    // overlay（TuiBase 层，两模式共用）：hotkeys 面板在 regular 下渲染。
+    test.app.showHotkeys()
+    await settle(60)
+    expect(test.terminal.plain()).toContain('快捷键')
+    // slash 菜单也在 regular 下可用（先关闭 hotkeys 面板）。
+    test.terminal.feed('\x1b')
+    await settle(60)
+    test.terminal.feed('/')
+    await settle(60)
+    expect(test.terminal.plain()).toContain('/new')
+  })
+
+  it('clears the composer with Esc while idle under cc (B6 Esc ladder)', async () => {
+    const test = mount()
+    await settle()
+    test.terminal.feed('half-typed draft')
+    await settle()
+    test.terminal.feed('\x1b')
+    await settle()
+    expect(test.app.composerText).toBe('')
+    // busy 时 Esc 仍是中断（keymap 优先于清空分支）。
+    test.app.render(doc([], true))
+    await settle()
+    test.terminal.feed('draft again')
+    test.terminal.feed('\x1b')
+    await settle()
+    expect(test.calls.interrupt).toBe(1)
+    expect(test.app.composerText).toBe('draft again') // busy 中断不清空输入
+  })
+
+  it('cycles session modes with Shift+Tab under cc (B8)', async () => {
+    const test = mount()
+    await settle()
+    test.terminal.feed('\x1b[Z') // shift+tab
+    await settle()
+    expect(test.calls.cycleMode).toBe(1)
+  })
+
+  it('keeps the dsh `Deep diving...` busy text with the CC parenthesized clock under cc (2026-08-21 折中)', async () => {
+    const test = mount()
+    await settle()
+    test.app.render(doc([], true))
+    await settle()
+    const busy = test.terminal.plain()
+    expect(busy).toContain('Deep diving')
+    expect(busy).toMatch(/Deep diving\.\.\. \(\d+[分秒sm]/)
+    // busy→idle→busy 后仍保持 Deep diving...（不再随机 CC 动词，用户 2026-08-21 决策）。
+    test.app.render(doc([], false))
+    await settle()
+    test.app.render(doc([], true))
+    await settle()
+    expect(test.terminal.plain()).toContain('Deep diving')
+  })
+
+  it('rewinds with double-Esc on empty input under cc (B7)', async () => {
+    const test = mount()
+    await settle()
+    // 第一次空输入 Esc：进入 400ms 待命，不触发。
+    test.terminal.feed('\x1b')
+    await settle()
+    expect(test.calls.rewind).toBe(0)
+    // 窗口内第二次 Esc：触发时间回溯选择器。
+    test.terminal.feed('\x1b')
+    await settle()
+    expect(test.calls.rewind).toBe(1)
+    // 有输入时 Esc 仍是清空（不触发 rewind）。
+    test.terminal.feed('draft')
+    test.terminal.feed('\x1b')
+    await settle()
+    expect(test.calls.rewind).toBe(1)
+    expect(test.app.composerText).toBe('')
+  })
+
+  it('attaches @-referenced file contents and directory listings on send (B9)', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'dsh-tui-at-send-'))
+    try {
+      writeFileSync(join(base, 'notes.txt'), 'important notes\n')
+      mkdirSync(join(base, 'docs'))
+      writeFileSync(join(base, 'docs', 'guide.md'), 'guide\n')
+      const test = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: base })
+      await settle()
+      // 文本文件引用：内容附加到消息。
+      test.terminal.feed('please read @notes.txt')
+      test.terminal.feed('\r')
+      await settle(50)
+      expect(test.calls.input.length).toBe(1)
+      expect(test.calls.input[0]).toContain('── notes.txt ──')
+      expect(test.calls.input[0]).toContain('important notes')
+      // 目录引用：列出内容。
+      test.terminal.feed('list @docs/')
+      test.terminal.feed('\r')
+      await settle(50)
+      expect(test.calls.input[1]).toContain('── docs/ ──')
+      expect(test.calls.input[1]).toContain('guide.md')
+      // 不存在的引用保留原文。
+      test.terminal.feed('see @missing.txt')
+      test.terminal.feed('\r')
+      await settle(50)
+      expect(test.calls.input[2]).toBe('see @missing.txt')
+    } finally {
+      rmSync(base, { recursive: true, force: true })
     }
   })
 
@@ -669,13 +1045,15 @@ describe('pi-tui surface', () => {
   })
 
   it('shows contextual footer hints and the ctx percentage', async () => {
-    const test = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', contextWindow: 100_000 })
+    const test = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', contextWindow: 100_000, effort: 'high' })
     test.terminal.resize(200, 30)
-    test.app.render({ entries: [], busy: false }) // refresh the footer at the new width
+    test.app.render({ entries: [], busy: false, permissionPreset: 'workspace-write' }) // refresh the footer at the new width
     await settle()
     // The fixed status area under the input line carries NO shortcut hints
-    // (they live in /hotkeys); the facts row shows model + ctx pressure.
+    // (they live in /hotkeys); the facts row shows model + effort + permission + ctx pressure.
     expect(test.terminal.plain()).not.toContain('Ctrl+C 退出')
+    expect(test.terminal.plain()).toContain('pi-ai/deepseek-v4 · high')
+    expect(test.terminal.plain()).toContain('Workspace Write')
     expect(test.terminal.plain()).toContain('ctx 0%')
     test.app.render(doc([
       { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'x', thinking: [], state: 'committed', usage: { inputTokens: 8_000, outputTokens: 2_000 } },
@@ -702,6 +1080,13 @@ describe('pi-tui surface', () => {
     test.app.render(doc([
       { kind: 'tool', id: 'c2', callId: 'c2', name: 'read_image', arguments: '{}', state: 'done', output: { blocks: [{ type: 'image', data: 'x', mediaType: 'image/png', width: 640, height: 480 }, { type: 'text', text: 'described' }] } },
     ]))
+    await settle()
+    // cc 语式：执行结束后自动收起为摘要行。
+    expect(test.terminal.plain()).toContain('✓ 完成 · 2 行输出 · described（⏎ 展开）')
+    // Tab 聚焦 + Enter 展开完整结果后，图片占位与文本可见。
+    test.terminal.feed('\t')
+    await settle()
+    test.terminal.feed('\r')
     await settle()
     const plain = test.terminal.plain()
     expect(plain).toContain('已读取 1 张图像')
@@ -753,6 +1138,64 @@ describe('pi-tui surface', () => {
     const plain = test.terminal.plain()
     expect(plain).toContain('14:05')
     expect(plain).toContain('1.6s')
+  })
+
+  it('renders the user message as a `❯` classic echo in cc+regular, and a bubble in fullscreen (V1)', async () => {
+    // cc classic（regular 默认）：`❯` 前缀 + 纯文本回显（无气泡）。
+    const classic = mount(undefined, { regular: true, keymap: 'cc' })
+    await settle()
+    classic.app.render(doc([{ kind: 'user', id: 'u1', text: 'hello' }]))
+    await settle()
+    expect(classic.terminal.plain()).toContain('❯ hello')
+
+    // fullscreen（默认）：保留气泡，无 `❯` 前缀。
+    const bubble = mount(undefined, { regular: false, keymap: 'cc' })
+    await settle()
+    bubble.app.render(doc([{ kind: 'user', id: 'u1', text: 'hello' }]))
+    await settle()
+    expect(bubble.terminal.plain()).toContain('hello')
+    expect(bubble.terminal.plain()).not.toContain('❯ hello')
+
+    // pi 预设（web 语式）在 regular 下也保留气泡，不套 cc 的 `❯` 回显。
+    const piRegular = mount(undefined, { regular: true, keymap: 'pi' })
+    await settle()
+    piRegular.app.render(doc([{ kind: 'user', id: 'u1', text: 'hello' }]))
+    await settle()
+    expect(piRegular.terminal.plain()).toContain('hello')
+    expect(piRegular.terminal.plain()).not.toContain('❯ hello')
+  })
+
+  it('shows `You`/`Claude` speaker labels in cc fullscreen, none in regular (V2)', async () => {
+    // fullscreen（默认 mount 注入 regular:false）+ cc 预设：消息渲染补归属标签。
+    const fs = mount(undefined, { regular: false, keymap: 'cc' })
+    await settle()
+    fs.app.render(doc([
+      { kind: 'user', id: 'u1', text: 'hello' },
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'hi there', thinking: [], state: 'committed' },
+    ]))
+    await settle()
+    const fsFrame = fs.terminal.plain()
+    expect(fsFrame).toContain('You')
+    expect(fsFrame).toContain('Claude')
+
+    // regular + cc：CC classic 无归属标签（V1 只加 `❯` 前缀）。
+    const reg = mount(undefined, { regular: true, keymap: 'cc' })
+    await settle()
+    reg.app.render(doc([
+      { kind: 'user', id: 'u1', text: 'hello' },
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'hi there', thinking: [], state: 'committed' },
+    ]))
+    await settle()
+    const regFrame = reg.terminal.plain()
+    expect(regFrame).not.toContain('You')
+    expect(regFrame).not.toContain('Claude')
+
+    // pi 预设（web 语式）在 fullscreen 下也不加 CC 归属标签。
+    const piFs = mount(undefined, { regular: false, keymap: 'pi' })
+    await settle()
+    piFs.app.render(doc([{ kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'hi there', thinking: [], state: 'committed' }]))
+    await settle()
+    expect(piFs.terminal.plain()).not.toContain('Claude')
   })
 
   it('cycles Tab focus through message frames and reports the focused entry (T3④)', async () => {
@@ -818,8 +1261,9 @@ describe('pi-tui surface', () => {
   it('grades thinking blocks by descending intensity (T5④)', async () => {
     const test = mount()
     await settle()
+    // streaming 中思考块展开（cc 语式在结束后才收起），分级着色在此态断言。
     test.app.render(doc([
-      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'answer', thinking: ['first thought', 'second thought', 'third thought'], state: 'committed' },
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'answer', thinking: ['first thought', 'second thought', 'third thought'], state: 'streaming' },
     ]))
     await settle()
     const plain = test.terminal.plain()
@@ -838,6 +1282,120 @@ describe('pi-tui surface', () => {
     const third = rgbOf('third thought')
     expect(first).not.toBe('')
     expect(first).not.toBe(third)
+  })
+
+  it('cc 语式：思考结束后自动收起，Enter 展开（Claude Code 对齐）', async () => {
+    const test = mount()
+    await settle()
+    // streaming：思考块展开可见。
+    test.app.render(doc([
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'answer', thinking: ['secret reasoning'], state: 'streaming' },
+    ]))
+    await settle()
+    expect(test.terminal.plain()).toContain('secret reasoning')
+    // committed：自动收起成一行「Thinking…」。
+    test.app.render(doc([
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'answer', thinking: ['secret reasoning'], state: 'committed' },
+    ]))
+    await settle()
+    const collapsed = test.terminal.plain()
+    expect(collapsed).toContain('Thinking…')
+    // Tab 聚焦消息 + Enter 展开思考块；再 Enter 收回。
+    test.terminal.feed('\t')
+    await settle()
+    test.terminal.feed('\r')
+    await settle()
+    expect(test.terminal.plain()).toContain('secret reasoning')
+    test.terminal.feed('\r')
+    await settle()
+    expect(test.terminal.plain()).toContain('Thinking…')
+  })
+
+  it('cc 语式：工具执行结束后自动收起为摘要行，Enter 展开完整输出', async () => {
+    const test = mount()
+    await settle()
+    const output = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n')
+    // running：执行中显示调用行。
+    test.app.render(doc([
+      { kind: 'tool', id: 'c1', callId: 'c1', name: 'bash', arguments: '{"command":"seq"}', state: 'running',
+        output: { blocks: [{ type: 'text', text: 'partial' }] } },
+    ]))
+    await settle()
+    expect(test.terminal.plain()).toContain('$ seq')
+    // done：自动收起为摘要行（状态 + 行数 + 首行输出），完整输出不可见。
+    test.app.render(doc([
+      { kind: 'tool', id: 'c1', callId: 'c1', name: 'bash', arguments: '{"command":"seq"}', state: 'done',
+        output: { blocks: [{ type: 'text', text: output }] } },
+    ]))
+    await settle()
+    const collapsed = test.terminal.plain()
+    expect(collapsed).toContain('✓ 完成 · 30 行输出 · line 0（⏎ 展开）')
+    expect(collapsed).not.toContain('line 29')
+    // Tab 聚焦 + Enter：展开完整输出；再 Enter：回到摘要。
+    test.terminal.feed('\t')
+    await settle()
+    test.terminal.feed('\r')
+    await settle()
+    expect(test.terminal.plain()).toContain('line 29')
+    test.terminal.feed('\r')
+    await settle()
+    expect(test.terminal.plain()).toContain('✓ 完成 · 30 行输出 · line 0（⏎ 展开）')
+  })
+
+  it('cc 预设收起工具卡：错误态折叠隐藏输出 + `✗ 失败`（V6）', async () => {
+    const test = mount()
+    await settle()
+    // 错误工具：收起态不应向用户展示失败输出内容（CC 语式：红点 + 输出隐藏）。
+    test.app.render(doc([
+      { kind: 'tool', id: 'c1', callId: 'c1', name: 'bash', arguments: '{"command":"false"}', state: 'error',
+        output: { blocks: [{ type: 'text', text: 'command not found' }] } },
+    ]))
+    await settle()
+    const collapsed = test.terminal.plain()
+    expect(collapsed).toContain('✗ 失败 ·')
+    expect(collapsed).not.toContain('command not found')
+    expect(collapsed).not.toContain('✓ 完成 ·')
+  })
+
+  it('pi 预设不自动收起：thinking 与工具过程保持展开（回归）', async () => {
+    const test = mount({ model: 'pi-ai/deepseek-v4', session: 'session-abc', workspace: '/workspace' }, { keymap: 'pi' })
+    await settle()
+    test.app.render(doc([
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'answer', thinking: ['visible reasoning'], state: 'committed' },
+      { kind: 'tool', id: 'c1', callId: 'c1', name: 'bash', arguments: '{"command":"seq"}', state: 'done',
+        output: { blocks: [{ type: 'text', text: 'full output' }] } },
+    ]))
+    await settle()
+    const plain = test.terminal.plain()
+    expect(plain).toContain('visible reasoning')
+    expect(plain).toContain('full output')
+    expect(plain).not.toContain('✓ 完成 ·')
+  })
+
+  it('setKeymap 热切换：cc → pi 恢复展开，pi → cc 已结束条目收起', async () => {
+    const test = mount()
+    await settle()
+    test.app.render(doc([
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'answer', thinking: ['hidden reasoning'], state: 'committed' },
+      { kind: 'tool', id: 'c1', callId: 'c1', name: 'bash', arguments: '{"command":"seq"}', state: 'done',
+        output: { blocks: [{ type: 'text', text: 'tool output' }] } },
+    ]))
+    await settle()
+    // cc：已收起。
+    expect(test.terminal.plain()).toContain('Thinking…')
+    expect(test.terminal.plain()).toContain('✓ 完成 ·')
+    // 切到 pi：恢复展开。
+    test.app.setKeymap('pi')
+    await settle()
+    const piFrame = test.terminal.plain()
+    expect(piFrame).toContain('hidden reasoning')
+    expect(piFrame).toContain('tool output')
+    // 切回 cc：再次收起。
+    test.app.setKeymap('cc')
+    await settle()
+    const ccFrame = test.terminal.plain()
+    expect(ccFrame).toContain('Thinking…')
+    expect(ccFrame).toContain('✓ 完成 ·')
   })
 
   it('renders mermaid diagrams as terminal box art (T5⑥)', async () => {
@@ -869,7 +1427,7 @@ describe('pi-tui surface', () => {
   })
 
   it('shows the elapsed time in the busy slot as the turn runs', async () => {
-    const test = mount()
+    const test = mount(undefined, { keymap: 'pi' }) // web 文案固定于 pi 预设（B14）
     await settle()
     test.app.render({ entries: [], busy: true })
     await new Promise(resolve => setTimeout(resolve, 1100))
@@ -879,13 +1437,14 @@ describe('pi-tui surface', () => {
   })
 
   it('renders the busy status in the web-brand gradient', async () => {
-    const test = mount()
+    const test = mount(undefined, { keymap: 'pi' }) // web 文案固定于 pi 预设（B14）
     await settle()
     test.app.render({ entries: [], busy: true })
     await settle()
-    // Spinner (accent) → space → gradient starts at deepseek-450: the exact
-    // sequence only the status line produces (the brand splash has no spinner).
-    expect(test.terminal.output).toContain('⠋\x1b[39m \x1b[38;2;86;134;254')
+    // Spinner (star) → gradient starts at deepseek-450: the exact sequence
+    // only the status line produces (the brand splash has no spinner).
+    expect(test.terminal.output).toContain('·')
+    expect(test.terminal.output).toContain('\x1b[38;2;86;134;254')
     expect(test.terminal.plain()).toContain('Deep diving...')
   })
 
@@ -1066,6 +1625,32 @@ describe('pi-tui surface', () => {
     expect(test.terminal.plain()).toContain('(End)')
   })
 
+  it('shows a new-messages pill while scrolled up and clears it on return (B16)', async () => {
+    const test = mount()
+    await settle()
+    const longText = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n')
+    const entries = Array.from({ length: 8 }, (_, i) => ({
+      kind: 'assistant' as const, id: `a${i}`, turn: 1, step: i + 1, text: longText, thinking: [], state: 'committed' as const,
+    }))
+    test.app.render(doc(entries))
+    await settle(60)
+    test.terminal.feed('\x1b[5~') // 离开底部
+    await settle(60)
+    await waitFor(() => test.terminal.plain().includes('回到底部'))
+    // 新消息到达 → pill 计数（离开时的条目数基线 8 → 9）。
+    test.app.render(doc([...entries, { kind: 'assistant' as const, id: 'a8', turn: 1, step: 9, text: 'fresh', thinking: [], state: 'committed' as const }]))
+    await settle(60)
+    const state = test.app as unknown as { newMessages: number; offBottomBaseline: number | undefined }
+    expect(state.offBottomBaseline).toBe(8)
+    expect(state.newMessages).toBe(1)
+    expect(test.terminal.plain()).toContain('1 条新消息')
+    // 回到底部（PgDn 数次；End 在编辑器聚焦时被编辑器消费为行尾）→ 计数清除。
+    // plain() 是累积输出，断言内部计数状态。
+    for (let i = 0; i < 8; i++) test.terminal.feed('\x1b[6~') // PgDn
+    await settle(60)
+    await waitFor(() => (test.app as unknown as { newMessages: number }).newMessages === 0)
+  })
+
   it('Home/End 聚焦输入框时走行首/行尾（光标），不动视口', async () => {
     const test = mount()
     await settle()
@@ -1088,7 +1673,7 @@ describe('pi-tui surface', () => {
   })
 
   it('输入区不吃滚轮：编辑器行内的滚轮不滚动转录', async () => {
-    const test = mount()
+    const test = mount(undefined, { mouse: true }) // 上报开启时才收到滚轮事件
     await settle()
     const longText = Array.from({ length: 20 }, (_, i) => `line ${i} of a deliberately long message`).join('\n')
     test.app.render(doc(Array.from({ length: 8 }, (_, i) => ({
@@ -1216,7 +1801,7 @@ describe('pi-tui surface', () => {
     test.terminal.feed('qu')
     await settle()
     expect(test.app.composerText).toBe('/qu')
-    expect(test.terminal.plain()).toContain('❯ /quit · 退出 TUI')
+    expect(test.terminal.plain()).toContain('❯/quit')
     // Enter executes the filtered command through the catalog resolution.
     test.terminal.feed('it\r')
     await settle()
@@ -1246,7 +1831,71 @@ describe('pi-tui surface', () => {
     const positions = ['/hotkeys', '/model', '/new', '/quit'].map(name => frame.indexOf(name))
     expect(positions.every(pos => pos >= 0)).toBe(true)
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
-    expect(frame).toContain('❯ /hotkeys')
+    expect(frame).toContain('❯/hotkeys')
+  })
+
+  it('wraps the slash menu selection around the list ends and pages with PgUp/PgDn', async () => {
+    const test = mount()
+    await settle()
+    test.terminal.feed('/')
+    await settle()
+    expect(test.terminal.plain()).toContain('❯/hotkeys')
+    test.terminal.feed('\x1b[B\x1b[B\x1b[B') // ↓ 三次到尾 /quit
+    await settle()
+    expect(test.terminal.plain()).toContain('❯/quit')
+    test.terminal.feed('\x1b[B') // ↓ 触底 → 循环回首部
+    await settle()
+    expect(test.terminal.plain()).toContain('❯/hotkeys')
+    test.terminal.feed('\x1b[A') // ↑ 首部 → 循环到尾部
+    await settle()
+    expect(test.terminal.plain()).toContain('❯/quit')
+    // PgUp/PgDn 经视口钩子路由到菜单：越界钳制在两端，不滚转录。
+    test.terminal.feed('\x1b[6~')
+    await settle()
+    expect(test.terminal.plain()).toContain('❯/quit')
+    test.terminal.feed('\x1b[5~')
+    await settle()
+    expect(test.terminal.plain()).toContain('❯/hotkeys')
+    test.terminal.feed('\x1b') // 关闭菜单
+    await settle()
+    expect(test.app.composerText).toBe('')
+  })
+
+  it('runs the selected slash-menu item on Enter without a prior Tab (上游语义)', async () => {
+    const test = mount()
+    await settle()
+    test.terminal.feed('/')
+    await settle()
+    expect(test.terminal.plain()).toContain('❯/hotkeys') // 首项选中
+    test.terminal.feed('\r') // Enter 直接执行选中项，不提交过滤串 `/`
+    await settle()
+    expect(test.calls.commandPicks).toContainEqual({ name: '__help', raw: '' })
+    expect(test.app.composerText).toBe('') // 执行后输入行清空
+    // ↓ 选中 /quit 后 Enter：直接退出（不再静默）。
+    test.terminal.feed('/')
+    await settle()
+    test.terminal.feed('\x1b[B\x1b[B\x1b[B')
+    await settle()
+    expect(test.terminal.plain()).toContain('❯/quit')
+    test.terminal.feed('\r')
+    await settle()
+    expect(test.calls.quit).toBe(1)
+  })
+
+  it('pages a long option card with PgUp/PgDn (顶层覆盖层路由)', async () => {
+    const test = mount()
+    await settle()
+    const options = Array.from({ length: 14 }, (_, i) => `option ${i}`)
+    const answerPromise = test.app.askDialog({ title: 'pick one', options })
+    await settle()
+    expect(test.terminal.plain()).toContain('1. option 0')
+    test.terminal.feed('\x1b[6~') // PgDn → 第 7 项（窗口跟随，选中行可见）
+    await settle()
+    expect(test.terminal.plain()).toContain('❯ 7. option 6')
+    test.terminal.feed('\r')
+    await settle()
+    const answer = await answerPromise
+    expect(answer.picked).toBe('option 6')
   })
 
   it('completes the selected command with Tab and passes inline args (cc style)', async () => {
@@ -1384,9 +2033,14 @@ describe('pi-tui surface', () => {
     const plain = test.terminal.plain()
     expect(plain).toContain('快捷键')
     // Grouped sections with one binding per row (no more run-on lines).
-    expect(plain).toContain('会话与模型')
-    expect(plain).toContain('Ctrl+G')
-    expect(plain).toContain('选择模型')
+    expect(plain).toContain('输入')
+    expect(plain).toContain('Ctrl+Enter') // B5: 打断当前回合并发送
+    // 输入区新增 Ctrl+Enter 行后「会话与模型」区在窗口外：滚动揭示。
+    for (let i = 0; i < 6; i++) test.terminal.feed('\x1b[B')
+    await settle()
+    expect(test.terminal.plain()).toContain('会话与模型')
+    expect(test.terminal.plain()).toContain('Ctrl+G')
+    expect(test.terminal.plain()).toContain('选择模型')
     // The 命令与退出 section sits below the panel window: arrow keys scroll
     // the focused panel and reveal it.
     for (let i = 0; i < 20; i++) test.terminal.feed('\x1b[B')
@@ -1451,7 +2105,7 @@ describe('pi-tui surface', () => {
     await settle()
     const plain = test.terminal.plain()
     expect(plain).toContain('权限')
-    expect(plain).toContain('workspace-write')
+    expect(plain).toContain('Workspace Write')
     expect(plain).toContain('goal')
     expect(plain).toContain('Goal A')
   })
@@ -1472,21 +2126,22 @@ describe('pi-tui surface', () => {
     test.app.render(doc([]))
     await settle()
     const raw = test.terminal.output
-    // full-access 红、workspace-write 蓝、read-only 暗灰：值与色码相邻成串。
-    expect(raw).toContain(fg('error')('danger-full-access'))
+    // full-access 红、workspace-write 蓝、read-only 暗灰：显示名（web 同款）
+    // 与色码相邻成串。
+    expect(raw).toContain(fg('error')('Full access'))
     test.app.setProjections([{ key: 'permissions', currentValue: 'workspace-write', options: [] }])
     test.app.render(doc([]))
     await settle()
-    expect(test.terminal.output).toContain(fg('info')('workspace-write'))
+    expect(test.terminal.output).toContain(fg('info')('Workspace Write'))
     test.app.setProjections([{ key: 'permissions', currentValue: 'read-only', options: [] }])
     test.app.render(doc([]))
     await settle()
-    expect(test.terminal.output).toContain(fg('dim')('read-only'))
-    // 无投影注册时回退 fold 的 permissionPreset，同样分色。
+    expect(test.terminal.output).toContain(fg('dim')('Read Only'))
+    // 无投影注册时回退 fold 的 permissionPreset，同样分色 + 显示名。
     test.app.setProjections([])
     test.app.render({ entries: [], busy: false, permissionPreset: 'read-only' })
     await settle()
-    expect(test.terminal.output).toContain(fg('dim')('read-only'))
+    expect(test.terminal.output).toContain(fg('dim')('Read Only'))
   })
 
   it('pulses a thinking marker while streaming with empty text (CC-06)', async () => {
@@ -1741,15 +2396,17 @@ describe('pi-tui surface', () => {
         output: { blocks: [{ type: 'text', text: longOutput }] } },
     ]))
     await settle()
-    const before = test.terminal.plain()
-    expect(before).toContain('还有 14 行（⏎ 展开）')
-    expect(before).not.toContain('output line 19')
-    // Tab focuses the card, Enter expands it.
+    // cc 语式：执行结束后自动收起为摘要行（状态 + 行数 + 首行输出）。
+    const collapsed = test.terminal.plain()
+    expect(collapsed).toContain('✓ 完成 · 20 行输出 · output line 0（⏎ 展开）')
+    expect(collapsed).not.toContain('output line 19')
+    // Tab focuses the card, Enter expands the full result.
     test.terminal.feed('\t')
     await settle()
     test.terminal.feed('\r')
     await settle()
-    expect(test.terminal.plain()).toContain('output line 19')
+    const expanded = test.terminal.plain()
+    expect(expanded).toContain('output line 19')
     // `i` on the focused card opens the raw-input detail view (B10).
     test.terminal.feed('i')
     await settle()

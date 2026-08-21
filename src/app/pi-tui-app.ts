@@ -10,6 +10,7 @@
 
 import {
   CombinedAutocompleteProvider,
+  TuiMainScreen,
   Container,
   Editor,
   Loader,
@@ -27,7 +28,8 @@ import {
   type TUI,
   type Terminal,
 } from '@earendil-works/pi-tui'
-import { emptyDocument } from '../document/document.ts'
+import { emptyDocument, transcriptText } from '../document/document.ts'
+import { AtFileAutocompleteProvider, resolveAtPath } from './at-file-autocomplete.ts'
 import type { AssistantEntry, TurnOutcome, ViewDocument, ViewEntry } from '../document/document.ts'
 import { statsStrip } from '../projection/stats.ts'
 import { BrandView, shouldShowBrand, BRAND, ICE, gradientText } from '../view/brand.ts'
@@ -54,13 +56,13 @@ import { FocusableToolCard } from '../view/components/tool-card.ts'
 import { FocusableRetryRow } from '../view/components/retry-row.ts'
 import { CollapsibleMessage, maybeCollapse } from '../view/components/collapsible-message.ts'
 import { FocusableFrame } from '../view/components/focus-frame.ts'
-import { SlashMenu } from '../view/components/slash-menu.ts'
+import { SlashMenu, SLASH_MENU_ROWS } from '../view/components/slash-menu.ts'
 import type { SlashMenuItem, SlashMenuStyle } from '../view/components/slash-menu.ts'
 import { HotkeysPanel } from '../view/components/hotkeys-panel.ts'
 import { PluginsPanel } from '../view/components/plugins-panel.ts'
 import { SettingsPanel } from '../view/components/settings-panel.ts'
 import { TrajectoryPanel } from '../view/components/trajectory-panel.ts'
-import { matchCommands, permissionTone } from './pi/command-match.ts'
+import { matchCommands, permissionDisplayName, permissionTone } from './pi/command-match.ts'
 import { isKeymapId, isLeaderKey, keymapById, resolveKeyAction, resolveLeaderChord } from './pi/keymaps.ts'
 import type { KeyAction, KeymapId } from './pi/keymaps.ts'
 import type { OverlayHandle } from '@earendil-works/pi-tui'
@@ -68,7 +70,7 @@ import { ApprovalEntryView, presentApprovalDialog } from '../view/components/app
 import type { ApprovalAnswer, ApprovalQuestion } from '../view/components/approval-view.ts'
 import { fg, bold, italic } from './pi/color.ts'
 import { strings } from '../view/strings.ts'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import spawn from 'cross-spawn'
@@ -87,6 +89,61 @@ class BottomPad implements Component {
 
   render(_width: number): string[] {
     return new Array<string>(Math.max(0, this.height)).fill('')
+  }
+}
+
+/**
+ * regular 模式的转录容器（增量追加，DESIGN.md regular 备忘「待做」项）：
+ * 缓存每个子组件（条目视图/brand splash/BottomPad）在给定宽度下的渲染行，
+ * 条目更新时由 applyState 显式失效——流式 chunk 到达时只有变化条目重渲染，
+ * TuiMainScreen 每帧只做「拼缓存行 + 差分写屏」，长会话渲染成本从
+ * O(全会话 × 每条目重渲染) 降到 O(缓存拼接)。
+ */
+class CachedTranscript implements Component {
+  private readonly rows = new Map<Component, { width: number; lines: string[] }>()
+  private readonly order: Component[] = []
+  private lastWidth = -1
+  private joined: string[] = []
+  private dirty = true
+
+  invalidate(): void {
+    this.dirty = true
+  }
+
+  /** 视图状态变化（applyState 的 updateEntryView 后）→ 失效该条目行缓存。 */
+  invalidateEntry(component: Component): void {
+    this.rows.delete(component)
+    this.dirty = true
+  }
+
+  addChild(component: Component): void {
+    this.order.push(component)
+    this.dirty = true
+  }
+
+  removeChild(component: Component): void {
+    const index = this.order.indexOf(component)
+    if (index >= 0) this.order.splice(index, 1)
+    this.rows.delete(component)
+    this.dirty = true
+  }
+
+  render(width: number): string[] {
+    if (width === this.lastWidth && !this.dirty) return this.joined
+    this.lastWidth = width
+    this.dirty = false
+    const parts: string[][] = []
+    for (const child of this.order) {
+      let hit = this.rows.get(child)
+      if (hit === undefined || hit.width !== width) {
+        const lines = child.render(width)
+        hit = { width, lines }
+        this.rows.set(child, hit)
+      }
+      parts.push(hit.lines)
+    }
+    this.joined = parts.flat()
+    return this.joined
   }
 }
 
@@ -129,6 +186,9 @@ class StatusSlot implements Component {
         piTuiInternals.animFrameMs > 0 ? Date.now() - this.busyStartedAt : 0,
       ),
       'Working…',
+      // cc 预设对齐 Claude Code 的星芒 spinner（`· ✢ ✳ ✶ ✻ ✽`，见 how-claude-code-works
+      // 的 SpinnerGlyph 逆向分析）；pi Loader 支持自定义帧。
+      { frames: ['·', '✢', '✳', '✶', '✻', '✽'], intervalMs: 80 },
     )
   }
 
@@ -173,23 +233,26 @@ class StatusSlot implements Component {
 /** Terminal/TUI construction seam; tests substitute a headless fake. */
 export const piTuiInternals: {
   createTerminal: () => Terminal
-  createTui: (terminal: Terminal) => TUI
+  createTui: (terminal: Terminal, mouse?: boolean, regular?: boolean) => TUI
   /** Shimmer frame cadence in ms; 0 disables the brand + status animations. */
   animFrameMs: number
 } = {
   createTerminal: () => new ProcessTerminal(),
   // The hardware cursor follows the composer/input caret, so IME candidate
   // windows anchor at the caret instead of the start of the input block.
-  // Mouse capture is ON by default: SGR mouse reporting enables in-TUI wheel
-  // scrolling (slash-menu wheel routing included) and native mouse
-  // selection. Expansion toggles are keyboard-only (pi-style), so clicks are
-  // never intercepted. It suppresses the host terminal's native right-click
-  // menu and wheel behavior, so `DSH_TUI_MOUSE=0` opts back out;
-  // PageUp/PageDown/arrow scrolling always works.
+  // Mouse capture is OFF by default (2026-08-20, 用户决策「右键默认归 Warp」):
+  // SGR mouse reporting is only enabled when the app passes `mouse: true`
+  // (PiTuiAppOptions.mouse or `DSH_TUI_MOUSE=1`). While reporting is off,
+  // right-click and wheel belong to the host terminal (Warp's native menu /
+  // scrollback); with it on, in-TUI wheel scrolling (slash-menu wheel routing
+  // included) and the pi-native drag selection (B8) work. Expansion toggles
+  // stay keyboard-only (pi-style) either way.
   // (TuiMainScreen has no layout engine, so the alt-screen renderer
   // is the only mode this surface can use — see DESIGN.md §10.)
-  createTui: (terminal: Terminal) =>
-    new TuiAltScreen(terminal, true, undefined, { mouse: process.env.DSH_TUI_MOUSE !== '0' }),
+  createTui: (terminal: Terminal, mouse?: boolean, regular?: boolean) =>
+    regular === true
+      ? new TuiMainScreen(terminal, true, undefined)
+      : new TuiAltScreen(terminal, true, undefined, { mouse: mouse ?? process.env.DSH_TUI_MOUSE === '1' }),
   // The DeepSeek brand/status shimmer repaints ~57 frames over 3.4s; opt
   // out for constrained terminals/tests with DSH_TUI_ANIM=0.
   animFrameMs: process.env.DSH_TUI_ANIM === '0' ? 0 : 60,
@@ -205,12 +268,16 @@ const FOLD_KEEP = 30
  * 此处保留模块级引用。
  */
 
-/** 排队消息的队首预览：折叠空白 + 截断（busy 状态行展示，T1⑤）。 */
+/** B17: 排队消息预览——最多展示 3 条、各自折叠空白并截断（busy 状态行）。
+ *  未领取区（远程的 steer/follow-up 区）在终端状态行里的等价呈现。 */
 function queuePreview(messages: readonly string[]): string {
-  const first = messages[0] ?? ''
-  const flat = first.replace(/\s+/g, ' ').trim()
-  if (flat === '') return '…'
-  return flat.length > 24 ? `${flat.slice(0, 23)}…` : flat
+  const flat = (text: string): string => {
+    const one = text.replace(/\s+/g, ' ').trim()
+    return one.length > 24 ? `${one.slice(0, 23)}…` : one
+  }
+  const body = messages.slice(0, 3).map(flat).filter(text => text !== '').join(' · ')
+  if (body === '') return '…'
+  return messages.length > 3 ? `${body} …` : body
 }
 
 /** Searchable text for one entry (T2②). */
@@ -339,6 +406,15 @@ export interface PiTuiAppOptions {
   historyFile?: string
   /** 快捷键预设（cc/pi）；缺省取 DSH_TUI_KEYMAP env，再缺省 cc。 */
   keymap?: KeymapId
+  /** 开启 SGR 鼠标上报（TUI 内滚轮/选区复制）；缺省取 DSH_TUI_MOUSE=1，
+   *  再缺省关闭（右键/滚轮归宿主终端，2026-08-20 用户决策）。 */
+  mouse?: boolean
+  /** regular 模式（TuiMainScreen 主屏渲染，输出留在 scrollback；无布局引擎/
+   *  应用滚动/鼠标，见 DESIGN.md regular 备忘）。**默认开启（2026-08-20 用户决策）**；
+   *  fullscreen 显式关闭。 */
+  regular?: boolean
+  /** fullscreen 视口模式（TuiAltScreen，旧的默认）；与 regular 互斥，优先于 regular。 */
+  fullscreen?: boolean
 }
 
 export class PiTuiApp implements TerminalApp {
@@ -358,7 +434,7 @@ export class PiTuiApp implements TerminalApp {
 
   private markdownTheme = getMarkdownTheme()
   private header?: Text
-  private document?: Container
+  private document?: Component & { addChild(component: Component): void; removeChild(component: Component): void }
   private scrollView?: ScrollView
   private statusSlot?: StatusSlot
   private bottomPad = new BottomPad()
@@ -400,19 +476,41 @@ export class PiTuiApp implements TerminalApp {
   /** 500ms idle ticker: live job clocks (E8) + the ↓ End hint (F2). */
   private idleTick?: ReturnType<typeof setInterval>
   private lastFollowingEnd = true
+  /** B14: 当前回合的 cc 预设 busy 动词（每回合重置；空 = 用 web 文案）。 */
+  /** B16: NewMessagesPill——离开底部时的条目数基线（undefined = 未离开过）。 */
+  private offBottomBaseline: number | undefined
+  private newMessages = 0
   /** Busy flag of the previous render (elapsed-time anchor). */
   private wasBusy = false
   /** 当前快捷键预设（cc/pi/opencode），/keymap 与 DSH_TUI_KEYMAP 切换。 */
   private keymap: KeymapId = 'cc'
+  /** SGR 鼠标上报开关（默认关：右键/滚轮归宿主终端；开启后 TUI 内选区/滚轮可用）。 */
+  private readonly mouse: boolean
+  /** regular 模式（TuiMainScreen 主屏渲染；默认开启，--fullscreen 切回视口）。 */
+  private readonly regular: boolean
   /** opencode leader 键等待态（Ctrl+X 前缀 + 2s 超时）。 */
   private pendingLeader = false
   private leaderTimer?: ReturnType<typeof setTimeout>
+  /** cc 预设双按退出：空输入首次 Ctrl+C/Ctrl+D 进入 3s 待命，再按才退出。 */
+  private exitArmed = false
+  private exitArmTimer?: ReturnType<typeof setTimeout>
+  /** B7: 空输入双击 Esc 的时间回溯待命（400ms 窗口内第二次 Esc 触发 /rewind）。 */
+  private rewindArmed = false
+  private rewindTimer?: ReturnType<typeof setTimeout>
   /** /settings 面板实例（打开期间就地刷新行）。 */
   private settingsPanel?: SettingsPanel
 
   constructor(options: PiTuiAppOptions = {}) {
     this.historyFile = options.historyFile
     this.keymap = options.keymap ?? (isKeymapId(process.env.DSH_TUI_KEYMAP ?? '') ? process.env.DSH_TUI_KEYMAP as KeymapId : 'cc')
+    // 鼠标上报默认关闭（右键/滚轮归宿主终端）；DSH_TUI_MOUSE=1 或选项显式开启。
+    this.mouse = options.mouse ?? process.env.DSH_TUI_MOUSE === '1'
+    // 渲染模式（2026-08-20 用户决策：regular 为默认）：
+    // options.regular 显式优先；fullscreen（选项或 DSH_TUI_FULLSCREEN=1）显式
+    // 切回 alt-screen 视口；DSH_TUI_REGULAR=1 显式 regular；缺省 regular。
+    const envFullscreen = process.env.DSH_TUI_FULLSCREEN === '1'
+    const envRegular = process.env.DSH_TUI_REGULAR === '1'
+    this.regular = options.regular ?? (options.fullscreen === true || envFullscreen ? false : envRegular || true)
   }
 
   start(handlers: TerminalAppHandlers, meta: SurfaceMeta): void {
@@ -420,14 +518,15 @@ export class PiTuiApp implements TerminalApp {
     this.meta = meta
     const terminal = piTuiInternals.createTerminal()
     this.terminal = terminal
-    const tui: TUI = piTuiInternals.createTui(terminal)
+    const tui: TUI = piTuiInternals.createTui(terminal, this.mouse, this.regular)
     this.tui = tui
     if (tui instanceof TuiAltScreen) this.altScreen = tui
     else this.altScreen = undefined
-    this.hookAltScreen()
+    if (isViewportTUI(tui)) this.hookAltScreen()
 
     this.header = new Text('', 0, 0)
-    this.document = new Container()
+    // regular 模式用行缓存转录容器（增量追加）；alt-screen 保持 Container。
+    this.document = this.regular ? new CachedTranscript() : new Container()
     // The pad pushes short transcripts to the bottom (chat-style anchoring).
     this.document.addChild(this.bottomPad)
     // The DeepSeek brand splash sits above the transcript while the session
@@ -435,12 +534,15 @@ export class PiTuiApp implements TerminalApp {
     this.document.addChild(this.brandView)
     // The transcript absorbs all remaining height; everything else keeps its
     // intrinsic size, so the composer is pinned to the bottom of the frame.
-    this.scrollView = new ScrollView(this.document, {
-      follow: 'end',
-      primary: true,
-      scrollbar: 'auto',
-      scrollbarStyle: (text: string) => fg('scrollbarThumb')(text),
-    })
+    // regular 模式无 ScrollView（转录直接渲染进主屏 scrollback）。
+    if (isViewportTUI(tui)) {
+      this.scrollView = new ScrollView(this.document, {
+        follow: 'end',
+        primary: true,
+        scrollbar: 'auto',
+        scrollbarStyle: (text: string) => fg('scrollbarThumb')(text),
+      })
+    }
     const statusSlot = new StatusSlot(tui)
     this.statusSlot = statusSlot
 
@@ -463,14 +565,16 @@ export class PiTuiApp implements TerminalApp {
       if (text === '/quit') handlers.onQuit()
       else if (text === '/new') handlers.onNewSessionRequest?.()
       else if (text === '') return
-      // D2: DSH_TUI_ENTER=steer swaps busy-Enter to steer (web EnterBehaviorRow
-      // semantics); the default stays queue (web default).
-      else if (this.current.busy && process.env.DSH_TUI_ENTER === 'steer') handlers.onSteerRequest?.(text)
+      // busy Enter 语义（B1，BACKLOG-CC-PARITY）：cc 预设默认 steer（CC 语义），
+      // pi/opencode 预设默认 queue（web 语义）；DSH_TUI_ENTER 或 /settings 显式
+      // 设置（steer/queue）覆盖预设默认。
+      else if (this.current.busy && this.busyEnterIsSteer()) handlers.onSteerRequest?.(text)
       else handlers.onInput(text)
     }
     const accept = (text: string): void => {
       editor.addToHistory(text)
-      submit(text)
+      // B9: 发送前展开 @ 引用——文本文件内容/目录列表自动附加（命令/! 行不经过这里）。
+      submit(this.expandAtReferences(text))
       // Slash commands are session controls, not conversation worth recalling.
       if (!text.startsWith('/')) this.persistHistory(text)
     }
@@ -516,7 +620,11 @@ export class PiTuiApp implements TerminalApp {
     // own overlay palette (not pi's autocomplete): typing '/' opens it and the
     // follow-up keys filter it, so the upstream Enter-confirms-suggestion bug
     // in pi-tui 0.84.1 never applies to command input.
-    editor.setAutocompleteProvider(new CombinedAutocompleteProvider([], this.meta.workspace ?? process.cwd()))
+    // B9: @ 引用补全走自研扫描（basename 匹配、@"path" 引号），# 路径补全仍由 pi 提供。
+    editor.setAutocompleteProvider(new AtFileAutocompleteProvider(
+      new CombinedAutocompleteProvider([], this.meta.workspace ?? process.cwd()),
+      this.meta.workspace ?? process.cwd(),
+    ))
     editor.onChange = (text: string) => {
       this.updateSlashMenu(text)
     }
@@ -525,17 +633,35 @@ export class PiTuiApp implements TerminalApp {
     // Ctrl+- / Alt+Y, and Ctrl+Y stays our rate key.
     getKeybindings().setUserBindings({ 'tui.editor.undo': 'ctrl+z', 'tui.editor.yankPop': 'ctrl+shift+z' })
 
-    const layout = new VStack([
-      this.header,
-      new DynamicBorder((text: string) => fg('borderAccent')(text)),
-      this.capabilityPanel,
-      { component: this.scrollView, basis: 0, grow: 1, shrink: 1, minSize: 1 },
-      statusSlot,
-      new DynamicBorder((text: string) => fg('borderMuted')(text)),
-      this.footerLine,
-      editor,
-    ])
-    if (isViewportTUI(tui)) tui.setLayoutRoot(layout)
+    if (isViewportTUI(tui)) {
+      // alt-screen（默认）：布局引擎 + ScrollView 滚动（见 DESIGN.md）。
+      const layout = new VStack([
+        this.header,
+        new DynamicBorder((text: string) => fg('borderAccent')(text)),
+        this.capabilityPanel,
+        { component: this.scrollView!, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+        statusSlot,
+        new DynamicBorder((text: string) => fg('borderMuted')(text)),
+        this.footerLine,
+        editor,
+      ])
+      tui.setLayoutRoot(layout)
+    } else {
+      // regular 模式（TuiMainScreen，--regular / DSH_TUI_REGULAR=1）：主屏渲染，
+      // 无布局引擎——组件按文档流顺序堆叠（TuiBase.render 逐 child 拼行），
+      // 转录不经过 ScrollView（直接是 document），底部由 BottomPad 手动钉底。
+      // 能力降级：无应用滚动（isFollowingEnd 恒 true → 回底提示/B16 计数不出现）、
+      // 无鼠标（归终端原生）、Ctrl+F 跳转不可用（startSearch 守卫）。
+      this.scrollView = undefined
+      tui.addChild(this.header)
+      tui.addChild(new DynamicBorder((text: string) => fg('borderAccent')(text)))
+      tui.addChild(this.capabilityPanel)
+      tui.addChild(this.document) // 转录（含 brand splash 与 BottomPad）
+      tui.addChild(statusSlot)
+      tui.addChild(new DynamicBorder((text: string) => fg('borderMuted')(text)))
+      tui.addChild(this.footerLine)
+      tui.addChild(editor)
+    }
 
     this.attachInputListener(tui)
 
@@ -550,13 +676,67 @@ export class PiTuiApp implements TerminalApp {
     // 每个键击上报：runner 据此暂停启动期标题回填（按键渲染优先）。
     this.handlers?.onUserActivity?.()
     if (this.handleSlashMenuKey(data)) return { consume: true }
+    // 菜单打开时 Enter 直接执行当前选中项（上游语义：↑/↓ 选中即执行，
+    // 无需先 Tab 补全——编辑器里的 `/xxx` 只是过滤串，未补全时提交它
+    // 会解析成空命令而静默失效）。skill 项照常走 onCommandPicked 的插入语义。
+    if (matchesKey(data, 'enter') && this.slashMenuOpen) {
+      const token = /^\/(\S*)$/.exec(this.editor?.getText() ?? '')?.[1]?.toLowerCase() ?? ''
+      const picked = this.matchingCommands(token)[this.slashMenuIndex]
+      if (picked !== undefined) {
+        this.closeSlashMenu()
+        this.editor?.setText('')
+        this.handlers?.onCommandPicked(picked.value, '')
+        this.tui?.requestRender()
+        return { consume: true }
+      }
+    }
     // 通用交互不进预设：Tab 焦点环与 Esc 焦点复位。
-    if (matchesKey(data, 'tab') && !this.overlayOpen && this.focusableItems.length > 0) {
-      this.cycleFocus()
+    // 导出转录到终端 scrollback（Claude Code fullscreen 的 `[` 语义）：仅输入框
+    // 为空时响应，避免与普通打字冲突。
+    if (data === '[' && !this.overlayOpen && (this.editor?.getText() ?? '') === '') {
+      this.exportTranscriptToScrollback()
       return { consume: true }
+    }
+    // cc 预设的 CC 语义例外（B4）：busy 且输入非空时 Tab = follow-up（排入当前
+    // 回合之后），输入为空仍走焦点环。
+    if (matchesKey(data, 'tab') && !this.overlayOpen) {
+      if (this.keymap === 'cc' && this.current.busy && (this.editor?.getText() ?? '').trim() !== '') {
+        const text = this.editor?.getText() ?? ''
+        this.editor?.setText('')
+        this.handlers?.onInput(text)
+        this.toast(strings().queuedFollowUp, 'info')
+        this.tui?.requestRender()
+        return { consume: true }
+      }
+      if (this.focusableItems.length > 0) {
+        this.cycleFocus()
+        return { consume: true }
+      }
     }
     if (matchesKey(data, 'escape') && !this.overlayOpen && this.focusIndex >= 0) {
       this.setFocusIndex(-1)
+      return { consume: true }
+    }
+    // B6/B7（BACKLOG-CC-PARITY）：cc 预设 idle Esc 层级——菜单/补全的 Esc 已被
+    // 上层消费，落到这里的有输入先清空（CC 语义）；空输入双击 Esc = 时间回溯
+    // rewind（400ms 窗口）。busy Esc 由 keymap 的 interrupt 处理。
+    if (matchesKey(data, 'escape') && !this.overlayOpen && this.keymap === 'cc' && !this.current.busy) {
+      const text = this.editor?.getText() ?? ''
+      if (text !== '') {
+        this.disarmExit()
+        this.disarmRewind()
+        this.editor?.setText('')
+        this.tui?.requestRender()
+        return { consume: true }
+      }
+      if (this.rewindArmed) {
+        this.disarmRewind()
+        this.handlers?.onRewindRequest?.()
+        return { consume: true }
+      }
+      this.rewindArmed = true
+      this.clearRewindTimer()
+      this.rewindTimer = setTimeout(() => { this.rewindArmed = false }, PiTuiApp.REWIND_ARM_MS)
       return { consume: true }
     }
     const preset = keymapById(this.keymap)
@@ -576,18 +756,49 @@ export class PiTuiApp implements TerminalApp {
     return action === undefined ? undefined : this.runAction(action)
   }
 
+  /** 当前按键预设下的 busy Enter 语义（B1）：显式设置覆盖，否则按预设默认。
+   *  cc 预设 = steer（Claude Code），pi/opencode 预设 = queue（web）。 */
+  private busyEnterIsSteer(): boolean {
+    const saved = process.env.DSH_TUI_ENTER
+    if (saved === 'steer') return true
+    if (saved === 'queue') return false
+    return this.keymap === 'cc'
+  }
+
   /** 执行一个全局键动作（预设解析后的公共分发点）。 */
   private runAction(action: KeyAction): { consume: boolean } | undefined {
     switch (action) {
       case 'interrupt':
         this.handlers?.onInterrupt()
         return { consume: true }
+      case 'interruptSend':
+        // B5: Ctrl+Enter = 打断当前回合并立即投递输入（CC 三态投递）；空输入退化为纯中断。
+        if (this.overlayOpen || this.focusIndex >= 0) return undefined
+        {
+          const text = this.editor?.getText() ?? ''
+          if (text.trim() === '') {
+            this.handlers?.onInterrupt()
+          } else {
+            this.editor?.setText('')
+            this.handlers?.onInterruptSend?.(this.expandAtReferences(text))
+          }
+          this.tui?.requestRender()
+          return { consume: true }
+        }
+      case 'cycleMode':
+        // B8: Shift+Tab 循环会话模式（默认 → 计划 → 完全访问）。
+        if (this.overlayOpen) return undefined
+        this.handlers?.onCycleModeRequest?.()
+        return { consume: true }
       case 'quit':
       case 'quitCtrlD':
+        // B3/B20: cc 预设下 idle Ctrl+C/Ctrl+D 是 CC 语义双按退出（有输入先清空）；
+        // 其他预设保持单次退出（pi/opencode 各自的肌肉记忆）。
+        if (this.keymap === 'cc') {
+          this.handleCcDoubleExit()
+          return { consume: true }
+        }
         this.handlers?.onQuit()
-        return { consume: true }
-      case 'swallow':
-        // cc 预设 busy Ctrl+C：吞掉（Esc 才是中断键）。
         return { consume: true }
       case 'clearInput':
         // opencode input_clear：busy Ctrl+C 清空输入而非中断。
@@ -614,6 +825,10 @@ export class PiTuiApp implements TerminalApp {
         return { consume: true }
       case 'compose':
         void this.composeInEditor()
+        return { consume: true }
+      case 'editInput':
+        // B18: cc 预设 Ctrl+X——用 $EDITOR 编辑当前输入，保存退出回填（CC 复刻）。
+        void this.editInputInEditor()
         return { consume: true }
       case 'export':
         this.handlers?.onCommandPicked('__export', '')
@@ -688,12 +903,112 @@ export class PiTuiApp implements TerminalApp {
     }
   }
 
+  /**
+   * 导出转录到终端 scrollback（Claude Code fullscreen 的 `[` 语义）：退出
+   * alternate screen → 把转录写入主屏缓冲（内容进入终端原生 scrollback，
+   * Cmd+F/tmux copy-mode 可搜索）→ 重新进入 alt screen 并重绘。
+   */
+  private exportTranscriptToScrollback(): void {
+    const text = transcriptText(this.current)
+    if (text === '') {
+      this.toast(strings().transcriptEmpty, 'info')
+      return
+    }
+    const terminal = this.terminal
+    if (terminal === undefined) return
+    terminal.write('\x1b[?1049l') // 退出 alt screen（EXIT_ALT_SCREEN）
+    terminal.write(`\n${text}\n`)
+    terminal.write('\x1b[?1049h') // 重进 alt screen（ENTER_ALT_SCREEN）
+    this.tui?.requestRender()
+    this.toast(strings().transcriptToScrollback, 'success')
+  }
+
+  /** cc 预设双按退出的 3s 待命窗口。 */
+  private static readonly EXIT_ARM_MS = 3000
+  /** B7: 空输入双击 Esc 的时间回溯窗口。 */
+  private static readonly REWIND_ARM_MS = 400
+  /** B9: @ 引用自动附加的单个文件大小上限（64 KiB，超出保留原文）。 */
+  private static readonly AT_ATTACH_MAX_BYTES = 64 * 1024
+
+  /**
+   * cc 预设的 CC 语义退出（B3/B20）：idle Ctrl+C/Ctrl+D——输入非空先清空输入
+   * （并解除待命）；空输入第一次进入 3s 待命并提示「再按一次退出」，窗口内
+   * 再按才真正退出。避免单次误触直接退出（此前 cc 单次 Ctrl+C 即退）。
+   */
+  private handleCcDoubleExit(): void {
+    const text = this.editor?.getText() ?? ''
+    if (text !== '') {
+      this.disarmExit()
+    this.disarmRewind()
+      this.editor?.setText('')
+      this.tui?.requestRender()
+      return
+    }
+    if (this.exitArmed) {
+      this.disarmExit()
+    this.disarmRewind()
+      this.handlers?.onQuit()
+      return
+    }
+    this.exitArmed = true
+    this.clearExitTimer()
+    this.exitArmTimer = setTimeout(() => { this.exitArmed = false }, PiTuiApp.EXIT_ARM_MS)
+    this.toast(strings().pressAgainToExit, 'info')
+  }
+
+  private disarmExit(): void {
+    this.exitArmed = false
+    this.clearExitTimer()
+  }
+
+  private clearExitTimer(): void {
+    if (this.exitArmTimer !== undefined) {
+      clearTimeout(this.exitArmTimer)
+      this.exitArmTimer = undefined
+    }
+  }
+
+  private disarmRewind(): void {
+    this.rewindArmed = false
+    this.clearRewindTimer()
+  }
+
+  private clearRewindTimer(): void {
+    if (this.rewindTimer !== undefined) {
+      clearTimeout(this.rewindTimer)
+      this.rewindTimer = undefined
+    }
+  }
+
   /** 切换快捷键预设（/keymap）；热键面板与全局键立即随新预设解析。 */
   setKeymap(id: KeymapId): void {
     if (this.keymap === id) return
+    const prev = this.keymap
     this.keymap = id
     this.clearLeaderPending()
+    // cc ⇄ 其他预设：已结束条目的自动收起态随预设切换（cc 收、其他展开）。
+    if ((prev === 'cc') !== (id === 'cc')) {
+      for (const [key, view] of this.entryViews) {
+        const entry = this.current.entries.find(item => item.id === key)
+        const done = entry === undefined || !('state' in entry) || entry.state !== 'streaming'
+        const inner = view instanceof FocusableFrame ? view.inner : view
+        if (inner instanceof AssistantMessageComponent) {
+          inner.setAutoCollapseThinking(id === 'cc' && done)
+        } else if (view instanceof CollapsibleMessage) {
+          const wrapped = view.getInner()
+          if (wrapped instanceof AssistantMessageComponent) wrapped.setAutoCollapseThinking(id === 'cc' && done)
+        } else if (view instanceof FocusableToolCard && (id === 'cc' ? done : view.isAutoCollapsed)) {
+          // 切到 cc：已结束的收起；切走：恢复完整渲染。
+          view.setAutoCollapsed(id === 'cc')
+        }
+      }
+    }
     this.tui?.requestRender()
+  }
+
+  /** cc 预设启用 Claude Code 语式的「结束后自动收起」。 */
+  private get ccAutoCollapse(): boolean {
+    return this.keymap === 'cc'
   }
 
   /** 进入 leader 等待态（opencode：2s 超时）。 */
@@ -776,6 +1091,8 @@ export class PiTuiApp implements TerminalApp {
     this.entryOrder = []
     this.lastEntry.clear()
     this.pendingToast = undefined
+    this.disarmExit()
+    this.disarmRewind()
     // Drop the previous session's view state before re-rendering the next.
     this.current = emptyDocument()
     this.wasBusy = false
@@ -790,6 +1107,8 @@ export class PiTuiApp implements TerminalApp {
     this.removeInputListener = undefined
     this.clearLeaderTimer()
     this.pendingLeader = false
+    this.disarmExit()
+    this.disarmRewind()
     if (this.toastTimer !== undefined) {
       clearTimeout(this.toastTimer)
       this.toastTimer = undefined
@@ -865,6 +1184,15 @@ export class PiTuiApp implements TerminalApp {
     })), (value) => { this.handlers?.onForkPicked(value === null ? null : Number(value)) })
   }
 
+  /** B7: 时间回溯选择器（/rewind 与空输入双击 Esc 共用入口）。 */
+  showRewindPicker(items: readonly SessionChoice[]): void {
+    this.showChoicePicker(strings().rewindPickerTitle, items.map(item => ({
+      value: item.value,
+      label: item.label,
+      description: item.description,
+    })), (value) => { this.handlers?.onRewindPicked?.(value === null ? null : Number(value)) })
+  }
+
   /** Push the command catalog for the inline slash menu (cc/pi style). */
   setCommands(items: readonly CommandChoice[]): void {
     this.commandCatalog = [...items]
@@ -902,7 +1230,9 @@ export class PiTuiApp implements TerminalApp {
         const [name, ...tail] = rest.split(' ')
         return {
           name,
-          ...tail.length > 0 ? { hint: tail.join(' ') } : {},
+          // tail 里混了参数提示（`<provider/model>`）与中文显示名（`· 新会话`）。
+          // 只有含 `<…>` 的才是 hint；中文显示名并入 description 对齐 Claude Code。
+          ...tail.filter(part => part.includes('<')).length > 0 ? { hint: tail.filter(part => part.includes('<')).join(' ') } : {},
           ...compact ? {} : { description: item.description },
         }
       })
@@ -915,8 +1245,13 @@ export class PiTuiApp implements TerminalApp {
       this.slashMenu = menu
       this.slashMenuOpen = true
       this.slashMenuIndex = 0
+      // cc（plain）语式的菜单接近终端全宽（Claude Code `/` 补全的分列列表——
+      // 描述列需要足够空间）；boxed/popup 保持弹层宽度（有边框的浮层语义）。
+      const menuWidth = menuStyle === 'plain'
+        ? Math.max(24, (this.terminal?.columns ?? 80) - 2)
+        : this.overlayWidth - 8
       this.slashMenuHandle = this.tui.showOverlay(menu, {
-        anchor: 'bottom-left', offsetY: -6, maxHeight: '40%', width: this.overlayWidth - 8,
+        anchor: 'bottom-left', offsetY: -6, maxHeight: '40%', width: menuWidth,
         nonCapturing: true,
       })
     } else {
@@ -938,15 +1273,30 @@ export class PiTuiApp implements TerminalApp {
   /** Up/Down/Esc/Tab while the slash menu is open (the editor keeps focus). */
   private handleSlashMenuKey(data: string): boolean {
     if (!this.slashMenuOpen || this.slashMenu === undefined || this.slashMenuHandle === undefined) return false
+    // ↑/↓ 在整表间循环（触底回首部，反之到尾部）；PgUp/PgDn 按窗口整页跳转。
     if (matchesKey(data, 'up')) {
-      this.slashMenuIndex = Math.max(0, this.slashMenuIndex - 1)
+      const items = this.slashMenuItemsCount()
+      this.slashMenuIndex = this.slashMenuIndex === 0 ? items - 1 : this.slashMenuIndex - 1
       this.slashMenu.selectedIndex = this.slashMenuIndex
       this.tui?.requestRender()
       return true
     }
     if (matchesKey(data, 'down')) {
       const items = this.slashMenuItemsCount()
-      this.slashMenuIndex = Math.min(items - 1, this.slashMenuIndex + 1)
+      this.slashMenuIndex = this.slashMenuIndex === items - 1 ? 0 : this.slashMenuIndex + 1
+      this.slashMenu.selectedIndex = this.slashMenuIndex
+      this.tui?.requestRender()
+      return true
+    }
+    if (matchesKey(data, 'pageUp')) {
+      this.slashMenuIndex = Math.max(0, this.slashMenuIndex - SLASH_MENU_ROWS)
+      this.slashMenu.selectedIndex = this.slashMenuIndex
+      this.tui?.requestRender()
+      return true
+    }
+    if (matchesKey(data, 'pageDown')) {
+      const items = this.slashMenuItemsCount()
+      this.slashMenuIndex = Math.min(items - 1, this.slashMenuIndex + SLASH_MENU_ROWS)
       this.slashMenu.selectedIndex = this.slashMenuIndex
       this.tui?.requestRender()
       return true
@@ -1021,6 +1371,24 @@ export class PiTuiApp implements TerminalApp {
         this.syncIdleTicker()
         return { consume: true }
       }
+      // 斜杠菜单打开时 PgUp/PgDn 翻菜单（与滚轮同一条拦截路径）：pi 的视口
+      // 处理无条件 consume 这两个键，应用监听器收不到，必须在这里先截走。
+      if (this.slashMenuOpen && (matchesKey(data, 'pageUp') || matchesKey(data, 'pageDown'))) {
+        this.handleSlashMenuKey(data)
+        return { consume: true }
+      }
+      // 覆盖层打开时 PgUp/PgDn 翻覆盖层（picker/settings/plugins/轨迹/热键/
+      // 决策卡），而不是滚背后的转录——同样因视口处理先吞键而必须在此转发。
+      if (this.overlayOpen && (matchesKey(data, 'pageUp') || matchesKey(data, 'pageDown'))) {
+        const target = this.topmostOverlayWithInput()
+        if (target !== undefined) {
+          target.handleInput(data)
+          this.tui?.requestRender()
+          this.syncBackToBottomHint()
+          this.syncIdleTicker()
+          return { consume: true }
+        }
+      }
       const result = handleViewportInput(data)
       this.syncBackToBottomHint()
       this.syncIdleTicker()
@@ -1032,6 +1400,24 @@ export class PiTuiApp implements TerminalApp {
     const text = this.editor?.getText() ?? ''
     const token = /^\/(\S*)$/.exec(text)?.[1]?.toLowerCase() ?? ''
     return Math.max(1, this.matchingCommands(token).length)
+  }
+
+  /**
+   * 顶层覆盖层里第一个带 handleInput 的组件（决策卡/选择器/面板/输入框）。
+   * pi 的 overlayStack 是私有字段，这里结构性读取（与 altScreen 的
+   * routeWheel/handleViewportInput 同一模式）；栈顶即最近打开的覆盖层。
+   */
+  private topmostOverlayWithInput(): { handleInput(data: string): void } | undefined {
+    if (this.tui === undefined) return undefined
+    const stack = (this.tui as unknown as { overlayStack?: Array<{ component: unknown }> }).overlayStack
+    if (stack === undefined) return undefined
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const component = stack[i]?.component
+      if (component !== null && typeof component === 'object' && 'handleInput' in component) {
+        return component as { handleInput(data: string): void }
+      }
+    }
+    return undefined
   }
 
   showCommandPicker(items: readonly CommandChoice[]): void {
@@ -1184,12 +1570,18 @@ export class PiTuiApp implements TerminalApp {
     if (tui === undefined) return undefined
     switch (entry.kind) {
       case 'user': {
-        const inner = new UserMessageComponent(entry.text, this.markdownTheme, 1, [codeLabelTransformer, mermaidTransformer])
+        // cc classic（regular 默认）：`❯` 前缀 + 纯文本回显（V1）；fullscreen 保持气泡。
+        const classic = this.keymap === 'cc' && this.regular
+        // V2：fullscreen 下 cc 预设补 `You` 归属标签（气泡上方一行）。
+        const youLabel = this.keymap === 'cc' && !this.regular ? strings().youLabel : undefined
+        const inner = new UserMessageComponent(entry.text, this.markdownTheme, 1, [codeLabelTransformer, mermaidTransformer], classic, youLabel)
         inner.setFooter(clockFooter(entry.at))
         return frameOrSelf(maybeCollapse(inner, entry.text), '用户消息')
       }
       case 'assistant': {
         const { provider, model } = this.modelIdentity()
+        // V2：fullscreen 下 cc 预设补 `Claude` 归属标签（内容上方一行）。
+        const claudeLabel = this.keymap === 'cc' && !this.regular ? strings().claudeLabel : undefined
         const inner = new AssistantMessageComponent(
           synthesizeAssistantMessage(entry, provider, model),
           this.hideThinking,
@@ -1197,7 +1589,10 @@ export class PiTuiApp implements TerminalApp {
           'Thinking…',
           1,
           [codeLabelTransformer, mermaidTransformer],
+          claudeLabel,
         )
+        // cc 语式：思考结束后自动收起成一行（Claude Code 对齐）。
+        inner.setAutoCollapseThinking(this.ccAutoCollapse && entry.state !== 'streaming')
         inner.setFooter(assistantFooter(entry, this.current))
         return frameOrSelf(maybeCollapse(inner, entry.text, entry.state !== 'streaming'), '助手回复')
       }
@@ -1219,6 +1614,9 @@ export class PiTuiApp implements TerminalApp {
           view.updateResult(synthesizeToolResult(entry))
         }
         const card = new FocusableToolCard(view)
+        // cc 语式：执行中过程流式可见（全量），结束后自动收起为摘要行。
+        card.setDone(entry.state !== 'running')
+        if (this.ccAutoCollapse) card.setAutoCollapsed(entry.state !== 'running')
         card.setFooter(toolDurationFooter(entry))
         card.setChildren(entry.children)
         return card
@@ -1257,6 +1655,8 @@ export class PiTuiApp implements TerminalApp {
       const raw = view instanceof FocusableFrame ? view.inner as AssistantMessageComponent : view
       const { provider, model } = this.modelIdentity()
       raw.setHideThinkingBlock(this.hideThinking)
+      // cc 语式：思考结束后自动收起（streaming 中保持展开）。
+      raw.setAutoCollapseThinking(this.ccAutoCollapse && entry.state !== 'streaming')
       raw.updateContent(synthesizeAssistantMessage(entry, provider, model), entry.state === 'streaming')
       raw.setFooter(assistantFooter(entry, doc))
       // Streaming finished with a long message: swap in the fold wrapper.
@@ -1270,6 +1670,7 @@ export class PiTuiApp implements TerminalApp {
     } else if (entry.kind === 'assistant' && view instanceof AssistantMessageComponent) {
       const { provider, model } = this.modelIdentity()
       view.setHideThinkingBlock(this.hideThinking)
+      view.setAutoCollapseThinking(this.ccAutoCollapse && entry.state !== 'streaming')
       view.updateContent(synthesizeAssistantMessage(entry, provider, model), entry.state === 'streaming')
       view.setFooter(assistantFooter(entry, doc))
       // Streaming finished with a long message: swap in the fold wrapper.
@@ -1290,12 +1691,16 @@ export class PiTuiApp implements TerminalApp {
         1,
         [codeLabelTransformer],
       )
+      inner.setAutoCollapseThinking(this.ccAutoCollapse && entry.state !== 'streaming')
       inner.setFooter(assistantFooter(entry, doc))
       view.replaceInner(inner, entry.text)
     } else if (entry.kind === 'tool' && view instanceof FocusableToolCard) {
       if (entry.state !== 'running' && entry.output !== undefined) {
         view.inner.updateResult(synthesizeToolResult(entry))
       }
+      view.setDone(entry.state !== 'running')
+      // cc 语式：执行中全量流式，结束后自动收起为摘要行。
+      if (this.ccAutoCollapse) view.setAutoCollapsed(entry.state !== 'running')
       view.setFooter(toolDurationFooter(entry))
       view.setChildren(entry.children)
     } else if (entry.kind === 'status' && entry.status === 'retry') {
@@ -1372,6 +1777,7 @@ export class PiTuiApp implements TerminalApp {
       statsStrip(this.current, strings()) ?? '', {
         contextWindow: this.meta.contextWindow,
         model: this.meta.model,
+        effort: this.meta.effort,
         breakdown: this.meta.contextBreakdown,
       })
   }
@@ -1420,6 +1826,8 @@ export class PiTuiApp implements TerminalApp {
         this.document?.addChild(view)
       } else if (this.lastEntry.get(entry.id) !== entry) {
         this.updateEntryView(existing, entry, doc)
+        // regular：视图状态已变，失效该条目的行缓存（增量追加）。
+        if (this.document instanceof CachedTranscript) this.document.invalidateEntry(existing)
         this.lastEntry.set(entry.id, entry)
       }
     }
@@ -1465,26 +1873,48 @@ export class PiTuiApp implements TerminalApp {
   private applyStatusLines(doc: ViewDocument): void {
     const slot = this.statusSlot
     if (slot === undefined) return
-    const offBottom = !(this.scrollView?.isFollowingEnd ?? true)
-    const endHint = offBottom ? ` · ${fg('dim')(`↓ ${strings().backToBottom} (End)`)}` : ''
+    const following = this.scrollView?.isFollowingEnd ?? true
+    // B16: NewMessagesPill 计数——离开底部时快照条目数，之后新增即 pill；
+    // 回到底部清除基线（与 F2 的回底提示共用同一状态）。
+    if (following) {
+      this.offBottomBaseline = undefined
+      this.newMessages = 0
+    } else if (this.offBottomBaseline === undefined) {
+      this.offBottomBaseline = this.current.entries.length
+    }
+    this.newMessages = this.offBottomBaseline === undefined
+      ? 0
+      : Math.max(0, this.current.entries.length - this.offBottomBaseline)
+    const offBottom = !following
+    const endHint = offBottom
+      ? ` · ${this.newMessages > 0 ? fg('accent')(`↓ ${strings().newMessages(this.newMessages)}`) + ' · ' : ''}${fg('dim')(`↓ ${strings().backToBottom} (End)`)}`
+      : ''
     if (doc.busy) {
       // The fixed slot ABOVE the input line carries running state only
       // (web: the composer area itself never shows the stats strip — it
       // lives in the composer.dock under the input line, our footer).
       // Shortcut hints deliberately do not render here (see /hotkeys).
-      if (!this.wasBusy) this.busyStartedAt = Date.now()
+      if (!this.wasBusy) {
+        this.busyStartedAt = Date.now()
+        // 2026-08-21 用户决策：cc 预设保留 dsh 标志性文案 Deep diving...（折中），
+        // 不用 CC 随机动词；但仍保留 CC 语式的括号恒常时钟与星芒 spinner。
+      }
       const seconds = Math.floor((Date.now() - this.busyStartedAt) / 1000)
-      // Web parity: "Deep diving..." plus a clock only after 15 seconds
-      // (formatRunDuration with the web's duration templates).
-      const clock = seconds >= 15
+      // 时钟：cc 预设对齐 Claude Code 的恒常耗时（括号包裹、从 0s 起就显示）；
+      // 其他预设保留 web parity（Deep diving... 15s 后才加时钟）。
+      const isCC = this.keymap === 'cc'
+      const clock = isCC || seconds >= 15
         ? seconds >= 60
           ? strings().durationMinutes(Math.floor(seconds / 60), String(seconds % 60).padStart(2, '0'))
           : strings().durationSeconds(seconds)
         : ''
-      const diving = clock === '' ? strings().diving : `${strings().diving} ${clock}`
+      const diving = strings().diving
+      // cc 预设的耗时带括号（对齐 CC `✻ Herding… (8m 39s · ↓ N tokens)` 语式段）；
+      // 其他预设保持 web 的空格拼接。
+      const busyText = clock === '' ? diving : isCC ? `${diving} (${clock})` : `${diving} ${clock}`
       // 排队不只给数量：队首消息预览让用户知道自己排了什么（/queue dock 看全量）。
       const queued = this.queueCount > 0 ? ` · ${strings().queueFirst(this.queueCount, queuePreview(this.queueMessages))}` : ''
-      slot.setMessage(`${diving}${queued}${endHint}`)
+      slot.setMessage(`${busyText}${queued}${endHint}`)
     } else {
       slot.setMessage(strings().diving)
     }
@@ -1496,8 +1926,11 @@ export class PiTuiApp implements TerminalApp {
       .map((row) => {
         const label = row.key === 'permissions' ? strings().permission : row.key
         const current = row.options.find(option => option.value === row.currentValue)?.name ?? row.currentValue
-        // CC-01：permissions 投影的当前值按危险等级分色，其余投影保持中性。
-        const styled = row.key === 'permissions' ? permissionTone(row.currentValue)(current) : fg('text')(current)
+        // CC-01：permissions 投影的当前值按危险等级分色 + web 同款显示名
+        // （Workspace Write / Full access），其余投影保持中性。
+        const styled = row.key === 'permissions'
+          ? permissionTone(row.currentValue)(permissionDisplayName(current))
+          : fg('text')(current)
         return `ℹ ${fg('info')(label)}：${styled}`
       })
       .join(' · ')
@@ -1505,25 +1938,41 @@ export class PiTuiApp implements TerminalApp {
       ? projectionLine
       : doc.permissionPreset === undefined
         ? ''
-        : `ℹ ${fg('info')('权限预设')}：${permissionTone(doc.permissionPreset)(doc.permissionPreset)}`
-    slot.setIdleLine(offBottom && idleBase === ''
-      ? `${fg('dim')(`↓ ${strings().backToBottom} (End)`)}`
-      : `${idleBase}${endHint}`)
+        : `ℹ ${fg('info')('权限预设')}：${permissionTone(doc.permissionPreset)(permissionDisplayName(doc.permissionPreset))}`
+    // 离开底部时回底提示 + 新消息 pill 挂到 idle 行（F2/B16）；idleBase 为空时
+    // 提示独占该行（去掉 endHint 的前导分隔符）。
+    slot.setIdleLine(offBottom
+      ? `${idleBase}${endHint}`.replace(/^ · /, '')
+      : idleBase)
     slot.setBusy(doc.busy)
   }
 
   /** Bottom-anchor the transcript when it is shorter than the viewport (T7). */
   private updateBottomPadding(): void {
     const scroll = this.scrollView
-    if (scroll === undefined) return
     const width = this.terminal?.columns ?? 100
     let content = 0
     for (const key of this.entryOrder) {
       const view = this.entryViews.get(key)
       if (view !== undefined) content += view.render(width).length
     }
-    const pad = Math.max(0, scroll.viewportHeight - content)
-    this.bottomPad.setHeight(pad)
+    // regular 模式无 ScrollView：钉底 = 终端高度 - chrome 高度 - 转录内容。
+    // chrome = header + 两条 border + 面板 + 状态槽 + footer + 编辑器（动态行数）。
+    const chrome = this.regular
+      ? (this.header?.render(width).length ?? 0)
+        + 2
+        + this.capabilityPanel.render(width).length
+        + (this.statusSlot?.render(width).length ?? 0)
+        + this.footerLine.render(width).length
+        + (this.editor?.render(width).length ?? 0)
+      : 0
+    const viewportHeight = scroll?.viewportHeight ?? Math.max(1, (this.terminal?.rows ?? 24) - chrome)
+    const pad = Math.max(0, viewportHeight - content)
+    if (pad !== this.bottomPad.height) {
+      this.bottomPad.setHeight(pad)
+      // regular：BottomPad 行缓存失效（高度已变）。
+      if (this.document instanceof CachedTranscript) this.document.invalidateEntry(this.bottomPad)
+    }
   }
 
   /** Put a retrieved queued message back into the composer (T5②). */
@@ -1626,13 +2075,21 @@ export class PiTuiApp implements TerminalApp {
 
   /** Refresh path-bound views after a workspace switch (T2④). */
   setWorkspace(path: string): void {
-    this.editor?.setAutocompleteProvider(new CombinedAutocompleteProvider([], path))
+    this.editor?.setAutocompleteProvider(new AtFileAutocompleteProvider(
+      new CombinedAutocompleteProvider([], path),
+      path,
+    ))
     this.applyState(this.current)
     this.tui?.requestRender()
   }
 
   /** Ctrl+F: query → match list → jump the transcript to the picked match (T2②). */
   private async startSearch(): Promise<void> {
+    // regular 模式无应用滚动（scrollTo 依赖 scrollTop），搜索跳转不可用。
+    if (this.scrollView === undefined) {
+      this.toast(strings().searchUnavailableRegular, 'error')
+      return
+    }
     const answer = await this.askDialog({ title: strings().search, options: [] })
     if (answer.reason !== 'picked' || answer.picked === undefined) return
     const query = answer.picked.trim()
@@ -1748,6 +2205,46 @@ export class PiTuiApp implements TerminalApp {
     return this.editor?.getText() ?? ''
   }
 
+  /** 回填输入框（B7 rewind：把原消息放回输入框供修改重发）。 */
+  setComposerText(text: string): void {
+    this.editor?.setText(text)
+    this.tui?.requestRender()
+  }
+
+  /**
+   * B9: 发送前展开消息里的 @ 引用——`@path` / `@"path"` 指向的文本文件内容或
+   * 目录列表自动附加到消息尾部（CC 语义）；不存在/超限/不可读的引用保留原文。
+   */
+  private expandAtReferences(text: string): string {
+    const workspace = this.meta.workspace ?? process.cwd()
+    const blocks: string[] = []
+    const expanded = text.replace(/@"([^"]+)"|@([^\s]+)/g, (match: string, quotedPath: string | undefined, plainPath: string | undefined) => {
+      const path = quotedPath ?? plainPath
+      if (path === undefined) return match
+      const resolved = resolveAtPath(workspace, path)
+      if (resolved === undefined) return match
+      if (resolved.stat.isDirectory()) {
+        try {
+          const names = readdirSync(resolved.absolute).slice(0, 50).join('\n')
+          const display = path.endsWith('/') ? path : `${path}/`
+          blocks.push(`── ${display} ──\n${names}`)
+        } catch {
+          // 目录不可读：保留原文
+        }
+        return match
+      }
+      if (resolved.stat.size > PiTuiApp.AT_ATTACH_MAX_BYTES) return match
+      try {
+        const content = readFileSync(resolved.absolute, 'utf8')
+        blocks.push(`── ${path} ──\n${content}`)
+      } catch {
+        // 读取失败（二进制等）：保留原文
+      }
+      return match
+    })
+    return blocks.length === 0 ? text : `${expanded}\n\n${blocks.join('\n\n')}`
+  }
+
   /** Ctrl+X: copy the latest assistant reply to the clipboard via OSC 52 (T5⑤). */
   private copyLastReply(): void {
     const last = [...this.current.entries].reverse().find(entry => entry.kind === 'assistant' && entry.text !== '')
@@ -1820,6 +2317,33 @@ export class PiTuiApp implements TerminalApp {
         return
       }
       this.handlers?.onInput(text)
+    } catch (error) {
+      this.toast(strings().composeFailed(error instanceof Error ? error.message : String(error)), 'error')
+    } finally {
+      try {
+        rmSync(path, { force: true })
+      } catch {
+        // 临时草稿清理失败无害。
+      }
+    }
+  }
+
+  /** B18: cc 预设 Ctrl+X——用 $EDITOR 编辑当前输入，保存退出后回填输入框
+   *  （不自动发送；与 /compose 的"撰写新消息并发送"区分）。 */
+  async editInputInEditor(): Promise<void> {
+    if (this.tui === undefined) return
+    const initial = this.editor?.getText() ?? ''
+    const path = join(tmpdir(), `dsh-tui-edit-${Date.now()}.md`)
+    try {
+      writeFileSync(path, initial, 'utf8')
+    } catch {
+      this.toast(strings().editorUnset, 'error')
+      return
+    }
+    try {
+      await this.openExternalEditor(path)
+      const edited = readFileSync(path, 'utf8').replace(/^\n+/, '').trimEnd()
+      if (edited !== initial) this.setComposerText(edited)
     } catch (error) {
       this.toast(strings().composeFailed(error instanceof Error ? error.message : String(error)), 'error')
     } finally {

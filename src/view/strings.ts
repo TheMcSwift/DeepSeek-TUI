@@ -43,6 +43,9 @@ export interface Strings {
   truncated: string
   running: string
   diving: string
+  /** V2: fullscreen 消息归属标签（CC 语式，用户=You / 助手=Claude；zh/en 同英文不本地化）。 */
+  youLabel: string
+  claudeLabel: string
   durationSeconds: (seconds: number) => string
   durationMinutes: (minutes: number, seconds: string) => string
   stop: string
@@ -105,6 +108,12 @@ export interface Strings {
   providerSaved: (route: string) => string
   providerSaveFailed: (message: string) => string
   editorUnset: string
+  // Warp 通知（OSC 777，事实标准：Warp/Ghostty/WezTerm 兼容）
+  warpNotifyTitle: string
+  warpTurnComplete: (summary: string) => string
+  warpTurnFailed: (code: string) => string
+  warpApproval: (tool: string) => string
+  warpToolError: (name: string) => string
   // 插件 session 投影（K3）
   projectionUnwritable: (key: string) => string
   // 审批卡命令块（CC-02，Claude Code 权限弹窗语义）
@@ -153,6 +162,33 @@ export interface Strings {
   enterQueue: string
   enterSteer: string
   enterSwitched: (mode: string) => string
+  /** cc 预设双按退出：空输入首次 Ctrl+C/Ctrl+D 的提示（B3/B20）。 */
+  pressAgainToExit: string
+  /** cc 预设 Tab follow-up：busy 时排入当前回合之后（B4）。 */
+  queuedFollowUp: string
+  /** B6: 中断时排队消息将自动重投（drain 在回合落定后 followup）。 */
+  pendingReposted: (n: number) => string
+  /** B8: Shift+Tab 会话模式循环的档名与切换提示。 */
+  modeDefault: string
+  modePlan: string
+  modeFull: string
+  sessionModeSwitched: (mode: string) => string
+  /** B11: plan-review 反馈输入行。 */
+  reviewFeedback: string
+  reviewFeedbackEmpty: string
+  reviewApproveError: string
+  /** B7: /rewind 时间回溯。 */
+  rewindPickerTitle: string
+  rewindNoTarget: string
+  rewindEmpty: string
+  rewindNotice: string
+  /** B19: 退出时打印的恢复命令提示。 */
+  resumeHint: string
+  /** 任务 1: `[` 键导出转录到 scrollback 的提示。 */
+  transcriptToScrollback: string
+  transcriptEmpty: string
+  /** regular 模式能力降级提示。 */
+  searchUnavailableRegular: string
   animOn: string
   animOff: string
   animSwitched: (state: string) => string
@@ -188,6 +224,45 @@ export interface Strings {
   chooseLanguage: string
   brandTagline: string
   backToBottom: string
+  /** B16: NewMessagesPill 的新消息计数。 */
+  newMessages: (n: number) => string
+  /** B13: CC 命令全集的状态类/说明类文案。 */
+  statusModel: string
+  statusState: string
+  statusSession: string
+  statusDirectory: string
+  statusTokens: string
+  statusCacheHit: string
+  statusContextUsage: string
+  statusTitle: string
+  stateWorking: string
+  stateIdle: string
+  tokensTitle: string
+  tokensInput: string
+  tokensCacheRead: string
+  tokensCacheWrite: string
+  tokensOutput: string
+  doctorTitle: string
+  doctorApiKey: string
+  doctorApiKeyMissing: string
+  doctorApiKeySet: string
+  doctorConfig: string
+  contextWindowLabel: string
+  initCreated: (path: string) => string
+  initExists: string
+  agentsTitle: string
+  agentsEmpty: string
+  skillsTitle: string
+  skillsEmpty: string
+  noteMcp: string
+  notePermissions: string
+  noteLogin: string
+  noteLogout: string
+  noteAddDir: string
+  noteHooks: string
+  noteVim: string
+  noteTerminalSetup: string
+  noteConnect: string
   skipQuestion: string
   prevQuestion: string
   questionProgress: (index: number, total: number) => string
@@ -216,6 +291,8 @@ const zh: Strings = {
   // The web's turn-status line is hardcoded English (ChatView.tsx), not
   // localized: "Deep diving..." plus a clock after 15s. Reused verbatim.
   diving: 'Deep diving...',
+  youLabel: 'You',
+  claudeLabel: 'Claude',
   durationSeconds: (seconds: number): string => `${seconds}秒`,
   durationMinutes: (minutes: number, seconds: string): string => `${minutes}分${seconds}秒`,
   stop: '停止生成',
@@ -229,7 +306,8 @@ const zh: Strings = {
     {
       title: '输入',
       rows: [
-        { keys: 'Enter', action: '发送消息' },
+        { keys: 'Enter', action: '发送 · 运行中并入当前轮（steer）' },
+        { keys: 'Ctrl+Enter', action: '打断当前回合并发送' },
         { keys: 'Alt+Enter', action: '并入当前轮（steer）' },
         { keys: 'Alt+Up', action: '取回排队消息' },
         { keys: '↑/↓', action: '输入历史' },
@@ -241,6 +319,7 @@ const zh: Strings = {
       title: '会话与模型',
       rows: [
         { keys: 'Ctrl+R', action: '会话列表' },
+        { keys: 'Shift+Tab', action: '会话模式循环（默认/计划/完全访问）' },
         { keys: 'Ctrl+G', action: '选择模型' },
         { keys: 'Ctrl+P', action: '权限预设循环（行内切换）' },
         { keys: 'Ctrl+E', action: '退出 plan 模式' },
@@ -252,14 +331,15 @@ const zh: Strings = {
       title: '消息与视图',
       rows: [
         { keys: 'Ctrl+F', action: '搜索' },
+        { keys: '[', action: '导出转录到 scrollback（Cmd+F 搜索）' },
         { keys: 'Ctrl+Y', action: '评价回复' },
-        { keys: 'Ctrl+X', action: '复制回复' },
+        { keys: 'Ctrl+X', action: '$EDITOR 编辑当前输入' },
         { keys: 'Ctrl+K', action: '折叠旧消息' },
         { keys: 'Ctrl+T', action: 'thinking 开关' },
         { keys: 'Ctrl+O', action: 'jobs 折叠/展开' },
         { keys: 'Ctrl+L', action: '轨迹（事件日志）' },
         { keys: 'PgUp/PgDn', action: '滚动' },
-        { keys: 'Tab · Esc', action: '焦点循环 / 取消' },
+        { keys: 'Tab', action: '焦点循环 · 运行中 follow-up 入队' },
         { keys: 'Enter', action: '展开/收起（thinking/工具卡/长消息）' },
       ],
     },
@@ -269,9 +349,9 @@ const zh: Strings = {
         { keys: '/', action: 'slash 命令（如 /model、/permission、/config）' },
         { keys: 'Ctrl+/', action: '命令面板' },
         { keys: '! · !!', action: '执行 shell：发送 / 静默' },
-        { keys: 'Esc', action: '中断当前轮' },
-        { keys: 'Ctrl+C', action: '退出（空闲时）' },
-        { keys: 'Ctrl+D', action: '退出' },
+        { keys: 'Esc · Ctrl+C', action: '中断当前轮（运行中）' },
+        { keys: 'Ctrl+C', action: '清空输入 · 再按一次退出（空闲时）' },
+        { keys: 'Ctrl+D', action: '再按一次退出' },
       ],
     },
   ],
@@ -452,6 +532,12 @@ const zh: Strings = {
   providerSaved: (route: string): string => `已保存供应商：${route}`,
   providerSaveFailed: (message: string): string => `供应商保存失败：${message}`,
   editorUnset: '$EDITOR 未设置，无法打开编辑器',
+  // Warp 通知（OSC 777；格式 ESC ] 777 ; notify ; <title> ; <body> BEL）
+  warpNotifyTitle: 'dsh tui',
+  warpTurnComplete: (summary: string): string => `完成 · ${summary}`,
+  warpTurnFailed: (code: string): string => `失败 · ${code}`,
+  warpApproval: (tool: string): string => `需要审批 · ${tool}`,
+  warpToolError: (name: string): string => `工具失败 · ${name}`,
   projectionUnwritable: (key: string): string => `投影 ${key} 没有对应的写命令（插件需注册同名命令）`,
   // 审批卡命令块（CC-02，Claude Code 权限弹窗语义）
   permissionCommand: '命令',
@@ -489,7 +575,7 @@ const zh: Strings = {
   profileUnknown: (value: string, available: string): string => `未知预设：${value}（可用：${available}）`,
   // /settings 聚合面板（M2）
   settingsTitle: '设置',
-  settingsHint: '↑/↓ 选择 · 数字直选 · Enter 执行 · Esc 关闭',
+  settingsHint: '↑/↓ 选择 · PgUp/PgDn 翻页 · 数字直选 · Enter 执行 · Esc 关闭',
   settingsCycleHint: '←/→ 切换值',
   settingsLanguage: '语言',
   settingsTheme: '主题',
@@ -500,9 +586,27 @@ const zh: Strings = {
   themeVariantDark: '暗色',
   themeVariantLight: '亮色',
   themeVariantAuto: '跟随终端',
-  enterQueue: '排队（web 默认）',
+  enterQueue: '排队（web 语义）',
   enterSteer: '并入当前轮（steer）',
   enterSwitched: (mode: string): string => `Enter 行为：${mode}`,
+  pressAgainToExit: '再按一次退出',
+  queuedFollowUp: '已排队：当前回合结束后处理',
+  pendingReposted: (n: number): string => `已中断 · ${n} 条排队消息将自动重投`,
+  modeDefault: '默认',
+  modePlan: '计划',
+  modeFull: '完全访问',
+  sessionModeSwitched: (mode: string): string => `${mode} 模式`,
+  reviewFeedback: '反馈',
+  reviewFeedbackEmpty: '反馈（直接打字进入）',
+  reviewApproveError: '批准不能附带反馈',
+  rewindPickerTitle: '时间回溯 · 选择要回退到的用户消息',
+  rewindNoTarget: '不能回退到第一条消息',
+  rewindEmpty: '没有可回退的用户消息',
+  rewindNotice: '已回退到该消息之前（可修改后重发）',
+  resumeHint: '恢复本会话',
+  transcriptToScrollback: '转录已写入终端 scrollback（Cmd+F 可搜索）',
+  transcriptEmpty: '转录为空',
+  searchUnavailableRegular: 'regular 模式无应用内滚动，搜索跳转不可用（可用终端原生 Cmd+F）',
   animOn: '开',
   animOff: '关',
   animSwitched: (state: string): string => `动画：${state}`,
@@ -518,10 +622,11 @@ const zh: Strings = {
   // 斜杠菜单
   slashNoMatch: '无匹配命令',
   slashMore: (n: number): string => `↓ 还有 ${n} 条 · 继续输入缩小范围`,
-  slashHint: '↑/↓ 选择 · Tab 补全 · Enter 执行 · Esc 取消',
+  slashHint: '↑/↓ 选择 · PgUp/PgDn 翻页 · Tab 补全 · Enter 执行 · Esc 取消',
   slashPopupTitle: (n: number): string => `命令 · ${n} 项`,
-  // 窄终端也要留住面板入口（Esc 取消是通用语义，见 /hotkeys），故不进本行。
-  slashPopupHint: '↑/↓ 选择 · Tab 补全 · Enter 执行 · Ctrl+P 面板',
+  // 窄终端也要留住面板入口（Esc 取消是通用语义，见 /hotkeys），故不进本行；
+  // 弹层行最挤，Tab 补全不写进底栏（Tab 键仍然可用）。
+  slashPopupHint: '↑/↓ 选择 · PgUp/PgDn 翻页 · Enter 执行 · Ctrl+P 面板',
   workspaceTitle: '工作区',
   workspaceCurrent: '当前',
   workspaceSessions: (n: number): string => `${n} 个会话`,
@@ -531,12 +636,49 @@ const zh: Strings = {
   chooseLanguage: '选择语言',
   brandTagline: '探索未至之境！',
   backToBottom: '回到底部',
+  newMessages: (n: number): string => `${n} 条新消息`,
+  statusModel: '模型',
+  statusState: '状态',
+  statusSession: '会话',
+  statusDirectory: '目录',
+  statusTokens: 'Tokens',
+  statusCacheHit: '缓存命中',
+  statusContextUsage: '上下文占用',
+  statusTitle: '标题',
+  stateWorking: '工作中',
+  stateIdle: '空闲',
+  tokensTitle: 'Token 明细',
+  tokensInput: '输入',
+  tokensCacheRead: '缓存读',
+  tokensCacheWrite: '缓存写',
+  tokensOutput: '输出',
+  doctorTitle: '环境自检',
+  doctorApiKey: 'API key',
+  doctorApiKeyMissing: '未配置（DEEPSEEK_API_KEY）',
+  doctorApiKeySet: '已配置（脱敏）',
+  doctorConfig: '配置',
+  contextWindowLabel: '上下文窗口',
+  initCreated: (path: string): string => `已创建 ${path}`,
+  initExists: 'AGENTS.md 已存在',
+  agentsTitle: '子代理',
+  agentsEmpty: '本会话没有子代理',
+  skillsTitle: '技能目录',
+  skillsEmpty: '无可用技能',
+  noteMcp: 'MCP 未配置：在 cordis.patch.yml 插入 @deepseek-ai/dsh-mcp-client 行后，工具以 mcp__<服务器>__<工具> 注册。',
+  notePermissions: '文件/shell/sandbox/审批策略由当前 DSH profile 决定；/permission 切换预设（full-access 有确认）。',
+  noteLogin: '凭证来自环境变量（如 DEEPSEEK_API_KEY）或 provider 配置；/provider 可添加提供方。',
+  noteLogout: '删除凭证环境变量或 settings.yaml 中的 provider 配置即登出（DSH 无会话级登出）。',
+  noteAddDir: '文件策略作用域由当前 DSH profile 决定（默认启动目录）；/permission 切换范围。',
+  noteHooks: 'DSH 当前无等价 hooks 机制，本命令为占位说明。',
+  noteVim: '终端由 pi 引擎驱动，无 Vim 模态编辑（HTTP 系客户端有）；本命令为占位说明。',
+  noteTerminalSetup: '需要扩展键盘协议（kitty/iTerm2/WezTerm/ghostty）以启用 ⌘/Ctrl+Enter 等修饰键；粘贴经 Ctrl+V。',
+  noteConnect: '本客户端是进程内 profile，不支持远程连接（远程场景用 HTTP 系客户端）。',
   // web ui-user-questions locale, verbatim
   skipQuestion: '跳过本题',
   prevQuestion: '上一题',
   questionProgress: (index, total) => `${index} / ${total}`,
-  pickHint: '数字直选 · Enter 确认 · Esc 取消',
-  multiPickHint: '数字/空格 多选 · Enter 确认 · Esc 取消',
+  pickHint: 'PgUp/PgDn 翻页 · 数字直选 · Enter 确认 · Esc 取消',
+  multiPickHint: 'PgUp/PgDn 翻页 · 数字/空格 多选 · Enter 确认 · Esc 取消',
 }
 
 const en: Strings = {
@@ -558,6 +700,8 @@ const en: Strings = {
   // ui-conversation
   running: 'Working…',
   diving: 'Deep diving...',
+  youLabel: 'You',
+  claudeLabel: 'Claude',
   durationSeconds: (seconds: number): string => `${seconds}s`,
   durationMinutes: (minutes: number, seconds: string): string => `${minutes}m ${seconds}s`,
   stop: 'Stop generating',
@@ -572,7 +716,8 @@ const en: Strings = {
     {
       title: 'Input',
       rows: [
-        { keys: 'Enter', action: 'Send message' },
+        { keys: 'Enter', action: 'Send · steer into the running turn' },
+        { keys: 'Ctrl+Enter', action: 'Interrupt the turn and send' },
         { keys: 'Alt+Enter', action: 'Steer into the running turn' },
         { keys: 'Alt+Up', action: 'Retrieve a queued message' },
         { keys: '↑/↓', action: 'Input history' },
@@ -584,6 +729,7 @@ const en: Strings = {
       title: 'Session & model',
       rows: [
         { keys: 'Ctrl+R', action: 'Session list' },
+        { keys: 'Shift+Tab', action: 'Cycle session modes (default/plan/full access)' },
         { keys: 'Ctrl+G', action: 'Pick model' },
         { keys: 'Ctrl+P', action: 'Cycle permission preset (inline)' },
         { keys: 'Ctrl+E', action: 'Exit plan mode' },
@@ -595,14 +741,15 @@ const en: Strings = {
       title: 'Messages & view',
       rows: [
         { keys: 'Ctrl+F', action: 'Search' },
+        { keys: '[', action: 'Export transcript to scrollback (search with Cmd+F)' },
         { keys: 'Ctrl+Y', action: 'Rate reply' },
-        { keys: 'Ctrl+X', action: 'Copy reply' },
+        { keys: 'Ctrl+X', action: 'Edit input in $EDITOR' },
         { keys: 'Ctrl+K', action: 'Fold old messages' },
         { keys: 'Ctrl+T', action: 'Toggle thinking' },
         { keys: 'Ctrl+O', action: 'Fold/expand jobs' },
         { keys: 'Ctrl+L', action: 'Trajectory (event log)' },
         { keys: 'PgUp/PgDn', action: 'Scroll' },
-        { keys: 'Tab · Esc', action: 'Focus cycle / cancel' },
+        { keys: 'Tab', action: 'Focus cycle · follow-up while running' },
         { keys: 'Enter', action: 'Expand/collapse (thinking / tool cards / long messages)' },
       ],
     },
@@ -612,9 +759,9 @@ const en: Strings = {
         { keys: '/', action: 'Slash commands (e.g. /model, /permission, /config)' },
         { keys: 'Ctrl+/', action: 'Command palette' },
         { keys: '! · !!', action: 'Run shell: send / silent' },
-        { keys: 'Esc', action: 'Interrupt the running turn' },
-        { keys: 'Ctrl+C', action: 'Quit (while idle)' },
-        { keys: 'Ctrl+D', action: 'Quit' },
+        { keys: 'Esc · Ctrl+C', action: 'Interrupt the running turn' },
+        { keys: 'Ctrl+C', action: 'Clear input · press again to exit (idle)' },
+        { keys: 'Ctrl+D', action: 'Press again to exit' },
       ],
     },
   ],
@@ -795,6 +942,12 @@ const en: Strings = {
   providerSaved: (route: string): string => `Provider saved: ${route}`,
   providerSaveFailed: (message: string): string => `Provider save failed: ${message}`,
   editorUnset: '$EDITOR is not set, cannot open an editor',
+  // Warp notifications (OSC 777; format ESC ] 777 ; notify ; <title> ; <body> BEL)
+  warpNotifyTitle: 'dsh tui',
+  warpTurnComplete: (summary: string): string => `Done · ${summary}`,
+  warpTurnFailed: (code: string): string => `Failed · ${code}`,
+  warpApproval: (tool: string): string => `Approval needed · ${tool}`,
+  warpToolError: (name: string): string => `Tool failed · ${name}`,
   projectionUnwritable: (key: string): string => `Projection ${key} has no writable command (plugins register a command with the same name)`,
   // Approval-card command block (CC-02, Claude Code permission-dialog parity)
   permissionCommand: 'Command',
@@ -832,7 +985,7 @@ const en: Strings = {
   profileUnknown: (value: string, available: string): string => `Unknown preset: ${value} (available: ${available})`,
   // /settings panel (M2)
   settingsTitle: 'Settings',
-  settingsHint: '↑/↓ select · number to jump · Enter run · Esc close',
+  settingsHint: '↑/↓ select · PgUp/PgDn page · number to jump · Enter run · Esc close',
   settingsCycleHint: '←/→ cycle value',
   settingsLanguage: 'Language',
   settingsTheme: 'Theme',
@@ -843,9 +996,27 @@ const en: Strings = {
   themeVariantDark: 'Dark',
   themeVariantLight: 'Light',
   themeVariantAuto: 'Follow terminal',
-  enterQueue: 'Queue (web default)',
+  enterQueue: 'Queue (web semantics)',
   enterSteer: 'Steer into the running turn',
   enterSwitched: (mode: string): string => `Enter behavior: ${mode}`,
+  pressAgainToExit: 'Press again to exit',
+  queuedFollowUp: 'Queued: will process after this turn',
+  pendingReposted: (n: number): string => `Interrupted · ${n} queued message${n === 1 ? '' : 's'} will be re-sent`,
+  modeDefault: 'Default',
+  modePlan: 'Plan',
+  modeFull: 'Full access',
+  sessionModeSwitched: (mode: string): string => `Mode: ${mode}`,
+  reviewFeedback: 'Feedback',
+  reviewFeedbackEmpty: 'Feedback (just start typing)',
+  reviewApproveError: 'Approval cannot carry feedback',
+  rewindPickerTitle: 'Rewind · pick the user message to rewind to',
+  rewindNoTarget: 'Cannot rewind before the first message',
+  rewindEmpty: 'No user messages to rewind to',
+  rewindNotice: 'Rewound before that message (edit and resend)',
+  resumeHint: 'Resume this session',
+  transcriptToScrollback: 'Transcript written to terminal scrollback (search with Cmd+F)',
+  transcriptEmpty: 'Transcript is empty',
+  searchUnavailableRegular: 'No in-app scrolling in regular mode; search jump unavailable (use native Cmd+F)',
   animOn: 'On',
   animOff: 'Off',
   animSwitched: (state: string): string => `Animations: ${state}`,
@@ -861,9 +1032,10 @@ const en: Strings = {
   // Slash menu
   slashNoMatch: 'No matching commands',
   slashMore: (n: number): string => `↓${n} more · keep typing to narrow`,
-  slashHint: '↑/↓ select · Tab complete · Enter run · Esc cancel',
+  slashHint: '↑/↓ select · PgUp/PgDn page · Tab complete · Enter run · Esc cancel',
   slashPopupTitle: (n: number): string => `Commands · ${n}`,
-  slashPopupHint: '↑/↓ select · Tab complete · Enter run · Ctrl+P palette',
+  // The popup line is the tightest: Tab stays functional but is not hinted.
+  slashPopupHint: '↑/↓ select · PgUp/PgDn page · Enter run · Ctrl+P palette',
   workspaceTitle: 'Workspace',
   workspaceCurrent: 'current',
   workspaceSessions: (n: number): string => `${n} sessions`,
@@ -873,12 +1045,49 @@ const en: Strings = {
   chooseLanguage: 'Choose language',
   brandTagline: 'Explore the uncharted!',
   backToBottom: 'to bottom',
+  newMessages: (n: number): string => `${n} new messages`,
+  statusModel: 'Model',
+  statusState: 'State',
+  statusSession: 'Session',
+  statusDirectory: 'Directory',
+  statusTokens: 'Tokens',
+  statusCacheHit: 'Cache hit',
+  statusContextUsage: 'Context usage',
+  statusTitle: 'Title',
+  stateWorking: 'working',
+  stateIdle: 'idle',
+  tokensTitle: 'Token detail',
+  tokensInput: 'Input',
+  tokensCacheRead: 'Cache read',
+  tokensCacheWrite: 'Cache write',
+  tokensOutput: 'Output',
+  doctorTitle: 'Environment check',
+  doctorApiKey: 'API key',
+  doctorApiKeyMissing: 'not set (DEEPSEEK_API_KEY)',
+  doctorApiKeySet: 'set (redacted)',
+  doctorConfig: 'Config',
+  contextWindowLabel: 'Context window',
+  initCreated: (path: string): string => `Created ${path}`,
+  initExists: 'AGENTS.md already exists',
+  agentsTitle: 'Subagents',
+  agentsEmpty: 'No subagents in this session',
+  skillsTitle: 'Skill catalog',
+  skillsEmpty: 'No skills available',
+  noteMcp: 'MCP not configured: insert an @deepseek-ai/dsh-mcp-client row in cordis.patch.yml; tools register as mcp__<server>__<tool>.',
+  notePermissions: 'File/shell/sandbox/approval policy comes from the current DSH profile; /permission switches presets (full access confirms).',
+  noteLogin: 'Credentials come from environment variables (e.g. DEEPSEEK_API_KEY) or provider config; /provider adds providers.',
+  noteLogout: 'Remove the credential env var or the provider config in settings.yaml to log out (DSH has no session logout).',
+  noteAddDir: 'The filesystem policy scope comes from the current DSH profile (defaults to the launch directory); /permission switches scope.',
+  noteHooks: 'DSH has no hooks equivalent today; this command is a placeholder note.',
+  noteVim: 'The terminal is driven by the pi engine without Vim modal editing (HTTP clients have it); placeholder note.',
+  noteTerminalSetup: 'Extended keyboard protocols (kitty/iTerm2/WezTerm/ghostty) enable modifier keys like ⌘/Ctrl+Enter; paste with Ctrl+V.',
+  noteConnect: 'This client is an in-process profile and cannot connect remotely (use an HTTP client for that).',
   // web ui-user-questions locale, verbatim
   skipQuestion: 'Skip this question',
   prevQuestion: 'Previous question',
   questionProgress: (index, total) => `${index} / ${total}`,
-  pickHint: 'number to pick · Enter confirm · Esc cancel',
-  multiPickHint: 'number/space multi-select · Enter confirm · Esc cancel',
+  pickHint: 'PgUp/PgDn page · number to pick · Enter confirm · Esc cancel',
+  multiPickHint: 'PgUp/PgDn page · number/space multi-select · Enter confirm · Esc cancel',
 }
 
 let current: Strings = zh

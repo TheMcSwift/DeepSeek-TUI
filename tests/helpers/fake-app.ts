@@ -124,6 +124,18 @@ export class FakeApp implements TerminalApp {
     this.forkPoints = [...items]
   }
 
+  /** B7: 时间回溯选择器（/rewind 与空输入双击 Esc 共用）。 */
+  rewindPoints: readonly SessionChoice[] = []
+  showRewindPicker(items: readonly SessionChoice[]): void {
+    this.rewindPoints = [...items]
+  }
+
+  /** B7: 回填输入框（rewind 原消息）。 */
+  composerText = ''
+  setComposerText(text: string): void {
+    this.composerText = text
+  }
+
   trajectoryRows: import('../../src/app/terminal-app.ts').TrajectoryRow[][] = []
   showTrajectory(rows: readonly import('../../src/app/terminal-app.ts').TrajectoryRow[]): void {
     this.trajectoryRows.push([...rows])
