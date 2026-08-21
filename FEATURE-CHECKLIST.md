@@ -10,7 +10,7 @@
 | # | 功能点 | Web 实现 | TUI 现状 | 状态 |
 |---|---|---|---|---|
 | A1 | 流式文本渲染 | AssistantMarkdown 增量解析、冻结块只解析尾部 | assistant/chunk 流式追加 + 差分重渲染 | ✅ |
-| A2 | 推理/思考块折叠 | ReasoningRow：运行时显示最后一行、静止第一行、可展开 | thinking L1/L2/L3 分级着色 + Ctrl+T 全局隐藏；无逐块折叠 | 🟡 |
+| A2 | 推理/思考块折叠 | ReasoningRow：运行时显示最后一行、静止第一行、可展开 | thinking L1/L2/L3 分级着色 + Ctrl+T 全局隐藏；**cc 语式思考结束后自动收起为一行（Enter 展开）** | 🟡 |
 | A3 | Markdown 管线 | 自研 mdast：GFM + TeX 数学 + 链接协议白名单 | pi Markdown + hljs；无 TeX；链接协议白名单 ✅（fileLink 只放行 http/https/mailto + 本地路径，控制字符剥离） | 🟡 |
 | A4 | 代码块高亮 | shiki（懒加载语言、语言横幅 + 复制按钮） | hljs 高亮 + 语言标签（web shiki 色板）；无块级复制按钮 | 🟡 |
 | A5 | 数学公式 KaTeX | `$…$`/`$$…$$`/math 围栏，流式字面、settled 渲染 | pi Markdown 内置 renderLatex → Unicode（`x^2`→`x²`，KaTeX 的终端等价） | ✅ |
@@ -27,7 +27,7 @@
 
 | # | 功能点 | Web 实现 | TUI 现状 | 状态 |
 |---|---|---|---|---|
-| B1 | 工具调用/结果卡片 | 摘要行点击展开、状态点、错误首行折叠 | 工具卡展开/折叠、状态着色、错误摘要 | ✅ |
+| B1 | 工具调用/结果卡片 | 摘要行点击展开、状态点、错误首行折叠 | 工具卡展开/折叠、状态着色、错误摘要；**cc 语式执行结束后自动收起为摘要行（call + 状态 + 首行输出，Enter 展开）** | ✅ |
 | B2 | 工具分类变体标题 | bash/pwsh/read/web/grep/glob/write/edit/run_code/cordis_* | dsh-tools 部分标题映射 | 🟡 |
 | B3 | 递归子调用树 | ToolCallTree 根/子递归 | `tool/code-dispatch-start`/`code-dispatch` 折叠进父卡 `children` 树（`run_code` 子调用递归缩进渲染：状态点 + 名称 + 参数 + 输出摘要） | ✅ |
 | B4 | 终端卡片 | ANSI 彩色输出、退出码 pill、复制原始、16 行中折 | 退出码/killed pill（`[exit code: N]` marker 契约解析）+ ANSI 透传 + 折叠；无块级复制 | 🟡 |
@@ -139,11 +139,11 @@
 | G33 | terminal 工具（open/list/send/…） | `packages/terminal/tool-terminal` | 通用工具卡 | 🟡 |
 | G34 | web 工具（web_search/web_fetch） | `packages/web/tool-web` | 原始文本展示；无 WebBlock 引用卡 | 🟡 |
 | G35 | 审批瀑布（ask-once/always/never） | `packages/interaction/user-approval` | 审批弹窗 allow once/reject + 审计行（E2E 验证） | ✅ |
-| G36 | 权限预设（read-only/workspace-write/danger-full-access/custom） | `packages/interaction/permission-presets` | Ctrl+P 切换（K3 投影 chip + 通用枚举 picker）+ `/permission [预设]`（枚举选择/参数直切）+ full-access 确认 + preset 通知行 | ✅ |
+| G36 | 权限预设（read-only/workspace-write/danger-full-access/custom） | `packages/interaction/permission-presets` | Ctrl+P 切换（K3 投影 chip + 通用枚举 picker）+ `/permission [预设]`（枚举选择/参数直切）+ full-access 确认 + preset 通知行；**显示名与 web PermissionSelect 同口径（Workspace Write / Full access，footer 状态栏 + 状态槽 + toast + picker + 通知行统一）** | ✅ |
 | G37 | sandbox 模式折叠 | `packages/sandbox/*` | 随预设切换（sandbox+approval 一体） | ✅ |
 | G38 | workspace 切换 | `packages/workspace/workspace` | --workspace + Ctrl+W 切换 | ✅ |
 | G39 | provider/model listing + 默认模型持久化 | `packages/llm/llm`、`core/agent-default-model` | Ctrl+G picker + `/model [provider/model]`（枚举选择/参数直切）+ agentDefaultModel.saveSelection | ✅ |
-| G40 | reasoning effort 层级（不支持显式拒绝） | `packages/llm/llm` | /effort 独立选择；无 efforts 时 notice | ✅ |
+| G40 | reasoning effort 层级（不支持显式拒绝） | `packages/llm/llm` | /effort 独立选择；无 efforts 时 notice；**footer 状态栏紧跟模型显示当前 effort 显示名（切换/启动回填）** | ✅ |
 | G41 | token 计量（input/output/cacheRead/cacheWrite） | `packages/llm/token-meter` | 会话统计条 + 每消息 usage + 缓存命中率 | ✅ |
 | G42 | 上下文压力计（request/surface/breakdown） | `packages/llm/token-meter` | footer `ctx N%` + 10 段三段彩条（system/tools/messages，经 token-meter 的 contextBreakdown 投影快照；缺省回退 cache/surface 两段近似） | ✅ |
 | G43 | session telemetry（OTLP） | `packages/*/session-telemetry-otel` | 运行时行为（env 控制），TUI 不感知 | ✅ N/A |
