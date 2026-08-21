@@ -33,8 +33,8 @@ export interface SlashMenuItem {
 /** 广义交互层样式：cc 无边框 / pi 圆角框 / opencode 方角弹层。 */
 export type SlashMenuStyle = 'plain' | 'boxed' | 'popup'
 
-/** Rows visible in the menu window at once. */
-const MENU_ROWS = 8
+/** Rows visible in the menu window at once (PgUp/PgDn 也按此翻页). */
+export const SLASH_MENU_ROWS = 8
 
 /** 补齐到目标显示宽度（与 settings/hotkeys 面板同一约定）。 */
 function padTo(text: string, target: number): string {
@@ -68,8 +68,10 @@ export class SlashMenu implements Component {
   }
 
   render(width: number): string[] {
-    // boxed/popup 都带边框，只有边角字符与标题行不同。
-    const framed = this.style !== 'plain'
+    // cc（plain）语式独立处理：名称列对齐 + 描述列，选中行整行高亮（Claude Code 视觉）。
+    if (this.style === 'plain') return this.renderPlain(width)
+    // boxed/popup 都带边框，只有边角字符与标题行不同（plain 已在上方返回）。
+    const framed = true
     const popup = this.style === 'popup'
     const frame = fg('borderAccent')
     const inner = Math.max(8, width - 2)
@@ -90,9 +92,9 @@ export class SlashMenu implements Component {
     }
     // The window follows the selection (Up/Down or wheel), so the selected
     // row is always visible when the list overflows the window.
-    const maxStart = Math.max(0, this.items.length - MENU_ROWS)
+    const maxStart = Math.max(0, this.items.length - SLASH_MENU_ROWS)
     const start = Math.min(Math.max(0, this.selectedIndex - 3), maxStart)
-    const visible = this.items.slice(start, start + MENU_ROWS)
+    const visible = this.items.slice(start, start + SLASH_MENU_ROWS)
     if (start > 0) {
       push(fg('dim')(`↑ 还有 ${start} 条`))
     }
@@ -123,9 +125,43 @@ export class SlashMenu implements Component {
     return lines
   }
 
+  /**
+   * cc（plain）语式：名称列对齐（含参数提示）+ 描述列，选中行整行高亮
+   * （Claude Code `/` 补全的视觉——命令名列 + 灰色描述列，选中背景铺满整行）。
+   */
+  private renderPlain(width: number): string[] {
+    const lines: string[] = []
+    if (this.items.length === 0) {
+      lines.push(truncateToWidth(fg('muted')(strings().slashNoMatch), width))
+      return lines
+    }
+    const maxStart = Math.max(0, this.items.length - SLASH_MENU_ROWS)
+    const start = Math.min(Math.max(0, this.selectedIndex - 3), maxStart)
+    const visible = this.items.slice(start, start + SLASH_MENU_ROWS)
+    if (start > 0) lines.push(truncateToWidth(fg('dim')(`↑ 还有 ${start} 条`), width))
+    // 名称列最大宽（`/name <hint>`），描述从对齐列开始。
+    const nameWidth = Math.max(...visible.map(item => visibleWidth(`/${item.name}${item.hint === undefined ? '' : ` ${item.hint}`}`)))
+    for (let i = 0; i < visible.length; i++) {
+      const item = visible[i]
+      const selected = start + i === this.selectedIndex
+      const label = `/${item.name}${item.hint === undefined ? '' : ` ${item.hint}`}`
+      const gap = ' '.repeat(Math.max(0, nameWidth - visibleWidth(label)))
+      const desc = item.description === undefined ? '' : item.description
+      const descText = desc === '' ? '' : `  ${desc}`
+      // 选中：整行背景（名称 accent 粗体 + 描述 dim）；非选中：名称 text + 描述 dim。
+      const text = selected
+        ? bg('selectedBg')(bold(fg('accent')(`❯${label}`)) + fg('dim')(`${gap}${descText}`))
+        : `${fg('text')(`  ${label}`)}${fg('dim')(`${gap}${descText}`)}`
+      lines.push(truncateToWidth(text, width))
+    }
+    const remaining = this.items.length - (start + visible.length)
+    if (remaining > 0) lines.push(truncateToWidth(fg('dim')(strings().slashMore(remaining)), width))
+    lines.push(truncateToWidth(fg('dim')(strings().slashHint), width))
+    return lines
+  }
+
   /** 顶边：popup 把标题计数行嵌进方角边框，boxed 是纯圆角横线。 */
-  private topBorder(inner: number, popup: boolean): string {
-    const frame = fg('borderAccent')
+  private topBorder(inner: number, popup: boolean): string {    const frame = fg('borderAccent')
     if (!popup) return `${frame('╭')}${'─'.repeat(inner)}${frame('╮')}`
     const title = strings().slashPopupTitle(this.items.length)
     const fill = Math.max(0, inner - visibleWidth(title) - 3)

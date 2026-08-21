@@ -15,6 +15,10 @@ export class UserMessageComponent extends Container {
 	private markdownTheme: MarkdownTheme;
 	private outputPad: number;
 	private markdownTransformers: readonly MarkdownTransformer[];
+	/** cc classic（regular 默认）：`❯` 前缀 + 纯文本回显（无气泡）；否则气泡（fullscreen）。 */
+	private classic: boolean;
+	/** V2: fullscreen 消息归属标签（`You`，气泡上方一行）。 */
+	private label?: string;
 	/** Optional one-line footer under the bubble (T3① message clock). */
 	private footerText?: Text;
 
@@ -23,12 +27,16 @@ export class UserMessageComponent extends Container {
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
+		classic = false,
+		label?: string,
 	) {
 		super();
 		this.text = text;
 		this.markdownTheme = markdownTheme;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
+		this.classic = classic;
+		this.label = label;
 		this.rebuild();
 	}
 
@@ -45,23 +53,32 @@ export class UserMessageComponent extends Container {
 
 	private rebuild(): void {
 		this.clear();
-		const contentBox = new Box(this.outputPad, 1, (content: string) => theme.bg("userMessageBg", content));
-		contentBox.addChild(
-			new Markdown(
-				this.text,
-				0,
-				0,
-				this.markdownTheme,
-				{
-					color: (content: string) => theme.fg("userMessageText", content),
-				},
-				{
-					preserveOrderedListMarkers: true,
-					preserveBackslashEscapes: true,
-					transform: createMarkdownTransform("user", false, this.markdownTransformers),
-				},
-			),
+		const markdown = new Markdown(
+			// cc classic：`❯` 前缀 + 纯文本回显（Claude Code 语式）；否则气泡原文。
+			this.classic ? `❯ ${this.text}` : this.text,
+			0,
+			0,
+			this.markdownTheme,
+			{
+				color: (content: string) => theme.fg("userMessageText", content),
+			},
+			{
+				preserveOrderedListMarkers: true,
+				preserveBackslashEscapes: true,
+				transform: createMarkdownTransform("user", false, this.markdownTransformers),
+			},
 		);
+		if (this.classic) {
+			// 无气泡、无输出垫：`❯ 消息` 直接落在文档流。
+			this.addChild(markdown);
+			return;
+		}
+		// V2：fullscreen 归属标签（`You`，气泡上方一行）。
+		if (this.label !== undefined) {
+			this.addChild(new Text(theme.fg("dim", this.label), 0, 0));
+		}
+		const contentBox = new Box(this.outputPad, 1, (content: string) => theme.bg("userMessageBg", content));
+		contentBox.addChild(markdown);
 		this.addChild(contentBox);
 	}
 

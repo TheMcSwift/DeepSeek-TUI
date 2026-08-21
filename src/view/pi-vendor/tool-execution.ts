@@ -39,6 +39,11 @@ export class ToolExecutionComponent extends Container {
 	};
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
+	/**
+	 * cc 语式（Claude Code 对齐）：执行结束后收起为摘要（call 行 + 状态 +
+	 * 首行输出），Enter 展开。执行中为 false（过程流式可见）。
+	 */
+	private collapsed = false;
 
 	constructor(
 		toolName: string,
@@ -208,6 +213,13 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	/** cc 语式：执行结束后收起为摘要行；false 恢复完整渲染。 */
+	setCollapsed(collapsed: boolean): void {
+		if (this.collapsed === collapsed) return;
+		this.collapsed = collapsed;
+		this.updateDisplay();
+	}
+
 	setShowImages(show: boolean): void {
 		this.showImages = show;
 		this.updateDisplay();
@@ -289,37 +301,45 @@ export class ToolExecutionComponent extends Container {
 			}
 
 			if (this.result) {
-				const resultRenderer = this.getResultRenderer();
-				if (!resultRenderer) {
-					const component = this.createResultFallback();
-					if (component) {
-						renderContainer.addChild(component);
-						hasContent = true;
-					}
+				if (this.collapsed) {
+					// cc 语式收起：call 行后只挂一行摘要（状态 + 行数 + 首行输出）。
+					renderContainer.addChild(
+						new Text(theme.fg(this.result.isError ? "error" : "success", this.collapsedSummaryLine()), 0, 0),
+					);
+					hasContent = true;
 				} else {
-					try {
-						const component = resultRenderer(
-							{ content: this.result.content as any, details: this.result.details },
-							{ expanded: this.expanded, isPartial: this.isPartial },
-							theme,
-							this.getRenderContext(this.resultRendererComponent),
-						);
-						this.resultRendererComponent = component;
-						renderContainer.addChild(component);
-						hasContent = true;
-					} catch {
-						this.resultRendererComponent = undefined;
+					const resultRenderer = this.getResultRenderer();
+					if (!resultRenderer) {
 						const component = this.createResultFallback();
 						if (component) {
 							renderContainer.addChild(component);
 							hasContent = true;
+						}
+					} else {
+						try {
+							const component = resultRenderer(
+								{ content: this.result.content as any, details: this.result.details },
+								{ expanded: this.expanded, isPartial: this.isPartial },
+								theme,
+								this.getRenderContext(this.resultRendererComponent),
+							);
+							this.resultRendererComponent = component;
+							renderContainer.addChild(component);
+							hasContent = true;
+						} catch {
+							this.resultRendererComponent = undefined;
+							const component = this.createResultFallback();
+							if (component) {
+								renderContainer.addChild(component);
+								hasContent = true;
+							}
 						}
 					}
 				}
 			}
 		} else {
 			this.contentText.setCustomBgFn(bgFn);
-			this.contentText.setText(this.formatToolExecution());
+			this.contentText.setText(this.collapsed && this.result ? this.formatCollapsedSummary() : this.formatToolExecution());
 			hasContent = true;
 		}
 
@@ -332,7 +352,7 @@ export class ToolExecutionComponent extends Container {
 		}
 		this.imageSpacers = [];
 
-		if (this.result) {
+		if (this.result && !this.collapsed) {
 			const imageBlocks = this.result.content.filter((c) => c.type === "image");
 			const caps = getCapabilities();
 			for (let i = 0; i < imageBlocks.length; i++) {
@@ -365,6 +385,25 @@ export class ToolExecutionComponent extends Container {
 
 	private getTextOutput(): string {
 		return getRenderedTextOutput(this.result, this.showImages);
+	}
+
+	/** 收起摘要（无 renderer 路径：工具名 + 状态 + 行数 + 首行输出）。 */
+	private formatCollapsedSummary(): string {
+		return `${theme.fg("toolTitle", theme.bold(this.toolName))}\n${this.collapsedSummaryLine()}`;
+	}
+
+	/** 收起摘要行：状态 + 行数 + 首行输出（renderer 路径接在 call 行后）。 */
+	private collapsedSummaryLine(): string {
+		const lines = this.getTextOutput()
+			.split("\n")
+			.filter((line) => line.trim() !== "");
+		const isError = this.result?.isError === true;
+		const mark = isError ? "✗" : "✓";
+		const status = isError ? "失败" : "完成";
+		// CC 语式：非零退出/错误时收起态隐藏输出（不向用户展示失败细节，
+		// 保留行数计数；Enter/Ctrl+O 展开看完整输出）。
+		const first = isError || lines[0] === undefined ? "" : ` · ${lines[0].trim()}`;
+		return `${mark} ${status} · ${lines.length} 行输出${first}（⏎ 展开）`;
 	}
 
 	private formatToolExecution(): string {

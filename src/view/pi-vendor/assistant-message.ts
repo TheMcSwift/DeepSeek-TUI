@@ -28,7 +28,15 @@ export class AssistantMessageComponent extends Container {
 	 * (Enter on the focused message), pi-style — no mouse listening.
 	 */
 	private thinkingExpanded = false;
+	/**
+	 * cc 语式（Claude Code 对齐）：思考结束后本消息的 thinking 自动收起成
+	 * 一行「Thinking…」，Enter 展开。与全局 Ctrl+T（hideThinkingBlock）
+	 * 正交：两者任一为真且未展开时即折叠；app 在流式结束/预设切换时设置。
+	 */
+	private autoCollapseThinking = false;
 	private hasThinking = false;
+	/** V2: fullscreen 消息归属标签（`Claude`，内容上方一行）。 */
+	private label?: string;
 	/** Optional one-line footer under the message (T1② stats). */
 	private footerText?: Text;
 
@@ -39,6 +47,7 @@ export class AssistantMessageComponent extends Container {
 		hiddenThinkingLabel = "Thinking...",
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
+		label?: string,
 	) {
 		super();
 
@@ -47,9 +56,14 @@ export class AssistantMessageComponent extends Container {
 		this.hiddenThinkingLabel = hiddenThinkingLabel;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
+		this.label = label;
 
 		// Container for text/thinking content
 		this.contentContainer = new Container();
+		// V2：fullscreen 归属标签（`Claude`，内容上方一行）——先加标签再挂内容，保证标签在上。
+		if (this.label !== undefined) {
+			this.addChild(new Text(theme.fg("dim", this.label), 0, 0));
+		}
 		this.addChild(this.contentContainer);
 
 		if (message) {
@@ -71,6 +85,20 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
+	/** cc 语式：思考结束后自动收起（streaming 时传 false 保持展开）。 */
+	setAutoCollapseThinking(collapse: boolean): void {
+		if (this.autoCollapseThinking === collapse) return;
+		this.autoCollapseThinking = collapse;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
+	/** 是否处于折叠态（全局 Ctrl+T 或 cc 自动收起，且本消息未手动展开）。 */
+	private isThinkingCollapsed(): boolean {
+		return (this.hideThinkingBlock || this.autoCollapseThinking) && !this.thinkingExpanded;
+	}
+
 	setHiddenThinkingLabel(label: string): void {
 		this.hiddenThinkingLabel = label;
 		if (this.lastMessage) {
@@ -80,7 +108,7 @@ export class AssistantMessageComponent extends Container {
 
 	/** Whether thinking blocks exist and are currently hidden. */
 	hasHiddenThinking(): boolean {
-		return this.hasThinking && this.hideThinkingBlock && !this.thinkingExpanded;
+		return this.hasThinking && this.isThinkingCollapsed();
 	}
 
 	/** Whether THIS message's thinking was expanded (round-trip). */
@@ -115,7 +143,7 @@ export class AssistantMessageComponent extends Container {
 		// expanded): a pure status marker — the toggle is the keyboard
 		// (Enter on the focused message).
 		if (this.hasThinking && lines.length > 0) {
-			const icon = this.hideThinkingBlock && !this.thinkingExpanded ? '▸' : '▾';
+			const icon = this.isThinkingCollapsed() ? '▸' : '▾';
 			lines[0] = `${truncateToWidth(lines[0], Math.max(1, width - 2))}${theme.fg('thinkingText', icon)}`;
 		}
 		if (this.hasToolCalls || lines.length === 0) {
@@ -179,7 +207,7 @@ export class AssistantMessageComponent extends Container {
 					.slice(i + 1)
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
-				if (this.hideThinkingBlock && !this.thinkingExpanded) {
+				if (this.isThinkingCollapsed()) {
 					// Show one static label for each run of thinking blocks when hidden.
 					this.contentContainer.addChild(
 						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0),

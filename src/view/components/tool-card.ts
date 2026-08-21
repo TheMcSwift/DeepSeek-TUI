@@ -21,6 +21,13 @@ export class FocusableToolCard implements Component, Focusable {
   private details = false
   private footer: string | undefined
   private children: readonly ToolEntry[] | undefined
+  /** 执行是否已结束（app 经 setDone 通知）。 */
+  private done = false
+  /**
+   * cc 语式（Claude Code 对齐）：结束后自动收起为摘要行（call + 状态 +
+   * 首行输出），Enter 展开；执行中 false（过程流式可见）。
+   */
+  private autoCollapsed = false
 
   constructor(public readonly inner: ToolExecutionComponent) {}
 
@@ -40,10 +47,48 @@ export class FocusableToolCard implements Component, Focusable {
     return this.expanded
   }
 
+  /** 是否处于 cc 语式的结束收起态（供 keymap 热切换遍历）。 */
+  get isAutoCollapsed(): boolean {
+    return this.autoCollapsed
+  }
+
+  /** 执行是否已结束（app 在每个状态折叠时通知）。 */
+  setDone(done: boolean): void {
+    this.done = done
+  }
+
+  /**
+   * cc 语式自动收起：执行中（false）展开全量流式过程；结束（true）收起
+   * 为摘要行。手动 Enter 展开后，再次 Enter 回到摘要。幂等：每次调用都
+   * 同步 expanded（流式更新路径每 chunk 调用一次）。
+   */
+  setAutoCollapsed(collapsed: boolean): void {
+    this.autoCollapsed = collapsed
+    this.expanded = !collapsed
+    this.inner.setCollapsed(collapsed)
+    this.inner.setExpanded(!collapsed)
+    this.inner.invalidate()
+  }
+
   handleInput(data: string): void {
     if (matchesKey(data, 'enter')) {
-      this.expanded = !this.expanded
-      this.inner.setExpanded(this.expanded)
+      if (this.autoCollapsed) {
+        // 摘要 → 展开完整（call + 结果）。
+        this.autoCollapsed = false
+        this.expanded = true
+        this.inner.setCollapsed(false)
+        this.inner.setExpanded(true)
+      } else if (this.done) {
+        // 已结束：完整 ⇄ 摘要（Claude Code 的展开/收起语义）。
+        this.autoCollapsed = true
+        this.expanded = false
+        this.inner.setCollapsed(true)
+        this.inner.setExpanded(false)
+      } else {
+        // 执行中：仅切换结果的展开/截断。
+        this.expanded = !this.expanded
+        this.inner.setExpanded(this.expanded)
+      }
       this.inner.invalidate()
     }
     if (data === 'i') {

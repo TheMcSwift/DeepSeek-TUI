@@ -43,6 +43,11 @@ export class CollapsibleMessage implements Component, Focusable {
     this.invalidate()
   }
 
+  /** The wrapped component (keymap 热切换等需要遍历到 inner）。 */
+  getInner(): Component {
+    return this.inner
+  }
+
   handleInput(data: string): void {
     if (data === '\r') {
       this.expanded = !this.expanded

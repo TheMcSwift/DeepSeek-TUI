@@ -31,7 +31,7 @@ describe('SlashMenu popup 语式（opencode）', () => {
     expect(joined).toContain('/new · 新会话')
     expect(joined).toContain('开一个新会话') // 描述列（compact 语式才省略）
     expect(joined).toContain('Ctrl+P 面板')
-    expect(joined).toContain('Tab 补全')
+    expect(joined).toContain('PgUp/PgDn 翻页')
   })
 
   it('选中行铺满内宽（整行高亮），且每行等宽', () => {
