@@ -77,11 +77,19 @@ export class PluginsPanel implements Component, Focusable {
       return
     }
     if (matchesKey(data, 'pageUp')) {
-      this.offset = Math.max(0, this.offset - VISIBLE_ROWS)
+      if (items.length > 0) {
+        const pos = Math.max(0, this.itemIndexes().indexOf(this.selected) - VISIBLE_ROWS)
+        this.selected = items[pos] ?? this.selected
+        this.revealSelection()
+      }
       return
     }
     if (matchesKey(data, 'pageDown')) {
-      this.offset = Math.min(Math.max(0, this.rows.length - VISIBLE_ROWS), this.offset + VISIBLE_ROWS)
+      if (items.length > 0) {
+        const pos = Math.min(items.length - 1, this.itemIndexes().indexOf(this.selected) + VISIBLE_ROWS)
+        this.selected = items[pos] ?? this.selected
+        this.revealSelection()
+      }
       return
     }
     if (matchesKey(data, 'enter')) {

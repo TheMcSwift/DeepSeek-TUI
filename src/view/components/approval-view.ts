@@ -114,6 +114,8 @@ export interface ApprovalAnswer {
   skipped?: boolean
   /** True when the user chose the back entry. */
   back?: boolean
+  /** Plan-review 反馈文本（B11）：随「继续规划」提交，经回答的 custom 槽回给模型。 */
+  custom?: string
 }
 
 /**
@@ -168,6 +170,11 @@ export function presentApprovalDialog(
         ...(question.backLabel !== undefined ? [question.backLabel] : []),
         ...(question.skipLabel !== undefined ? [question.skipLabel] : []),
       ]
+      // B11: plan-review 启用底部反馈输入行；「继续规划」= 非批准的那个选项。
+      const reviewFeedbackEnabled = question.approveLabel !== undefined
+      const keepPlanningLabel = reviewFeedbackEnabled
+        ? question.options.find(option => option !== question.approveLabel)
+        : undefined
       const card = new DecisionCard(
         title,
         detailLines,
@@ -182,6 +189,7 @@ export function presentApprovalDialog(
         question.commandText,
         question.impactLines,
         style === 'plain' ? 'plain' : 'boxed',
+        reviewFeedbackEnabled,
       )
       // cc-style: the card hugs the left margin above the composer; opencode
       // centers it (广义交互层——卡形态随键位预设)。
@@ -191,6 +199,11 @@ export function presentApprovalDialog(
       })
       const optionCount = question.options.length
       const settleEntry = (index: number): void => {
+        // 反馈行（B11）：提交「继续规划」+ 反馈文本（custom 槽；空反馈不带 custom）。
+        if (reviewFeedbackEnabled && index === card.feedbackIndex && keepPlanningLabel !== undefined) {
+          settle({ picked: keepPlanningLabel, ...(card.feedback === '' ? {} : { custom: card.feedback }), reason: 'picked' })
+          return
+        }
         if (index < optionCount) {
           if (question.multiSelect === true) {
             // Multi-select: toggling the highlighted option; Enter confirms.
@@ -203,16 +216,36 @@ export function presentApprovalDialog(
           settle({ picked: question.options[index], reason: 'picked' })
           return
         }
-        const footer = footerEntries[index - optionCount]
+        const footer = footerEntries[index - optionCount - (reviewFeedbackEnabled ? 1 : 0)]
         if (footer === question.backLabel) settle({ reason: 'picked', back: true })
         else if (footer === question.skipLabel) settle({ reason: 'picked', skipped: true })
       }
       removeListener = tui.addInputListener((data: string) => {
+        // B11: plan-review 下可打印字符进入反馈行（远程语义：有反馈内容时数字
+        // 也视为反馈字符；空反馈时 1/2 仍直选）。
+        if (reviewFeedbackEnabled && data.length === 1 && data >= ' ' && data <= '~') {
+          if (!(data >= '1' && data <= '9' && card.feedback === '')) {
+            card.typeFeedback(data)
+            tui.requestRender()
+            return { consume: true }
+          }
+        }
+        if (reviewFeedbackEnabled && matchesKey(data, 'backspace')) {
+          card.backspaceFeedback()
+          tui.requestRender()
+          return { consume: true }
+        }
         // Number keys pick the option directly (cc parity); in multi-select
         // mode they toggle the option in the confirmed set instead.
         if (data.length === 1 && data >= '1' && data <= '9') {
           const index = Number(data) - 1
           if (index < optionCount) {
+            // B11: 批准带反馈 → 卡内报错（批准必须干净，协议视为继续规划）。
+            if (reviewFeedbackEnabled && question.options[index] === question.approveLabel && card.feedback !== '') {
+              card.setErrorHint(strings().reviewApproveError)
+              tui.requestRender()
+              return { consume: true }
+            }
             if (question.multiSelect === true) {
               card.selectedOptions.has(index)
                 ? card.selectedOptions.delete(index)
@@ -237,12 +270,23 @@ export function presentApprovalDialog(
           return undefined
         }
         if (matchesKey(data, 'up')) {
-          card.selectedIndex = Math.max(0, card.selectedIndex - 1)
+          card.moveSelection(-1)
           tui.requestRender()
           return { consume: true }
         }
         if (matchesKey(data, 'down')) {
-          card.selectedIndex = Math.min(card.entryCount - 1, card.selectedIndex + 1)
+          card.moveSelection(1)
+          tui.requestRender()
+          return { consume: true }
+        }
+        // 长选项表翻页：窗口跟随选中滚动（决策卡同一套导航语义）。
+        if (matchesKey(data, 'pageUp')) {
+          card.page(-1)
+          tui.requestRender()
+          return { consume: true }
+        }
+        if (matchesKey(data, 'pageDown')) {
+          card.page(1)
           tui.requestRender()
           return { consume: true }
         }
@@ -257,6 +301,13 @@ export function presentApprovalDialog(
                 .map(index => question.options[index])
               settle({ pickedMultiple, reason: 'picked' })
             }
+            return { consume: true }
+          }
+          // B11: 批准行带反馈 → 卡内报错（settleEntry 会提交批准——先拦截）。
+          if (reviewFeedbackEnabled && card.selectedIndex < optionCount
+            && question.options[card.selectedIndex] === question.approveLabel && card.feedback !== '') {
+            card.setErrorHint(strings().reviewApproveError)
+            tui.requestRender()
             return { consume: true }
           }
           settleEntry(card.selectedIndex)

@@ -137,6 +137,33 @@ describe('approval seams', () => {
     await ctx.fiber.dispose()
   })
 
+  it('encodes plan-review feedback through the custom slot alongside the keep-planning pick (B11)', async () => {
+    const ctx = new Context()
+    const presenter = makePresenter()
+    const registrations: unknown[] = []
+    ctx.provide('userQuestions', { registerProvider: (provider: unknown) => { registrations.push(provider); return () => {} } })
+    installApprovals(ctx, presenter, () => 'agent-1')
+    const provider = registrations[0] as {
+      ask(request: { questions: Array<{ id: string; question: string; detail?: string; intent?: { kind: string; approve: string }; options?: Array<{ label: string }> }> }): Promise<{ answers: Array<{ id: string; selected: string[]; custom?: string }> }>
+    }
+    // plan-review：选项 = 批准 + 继续规划；意图标记传给对话框（detailMarkdown）。
+    const answerPromise = provider.ask({
+      questions: [{
+        id: 'plan-review', question: 'Approve the plan?',
+        detail: '# Plan', intent: { kind: 'plan-review', approve: '批准' },
+        options: [{ label: '批准' }, { label: '继续规划' }],
+      }],
+    })
+    await Promise.resolve()
+    const asked = presenter.asked[0]
+    expect(asked.detailMarkdown).toBe(true)
+    expect(asked.approveLabel).toBe('批准')
+    // 反馈行 Enter：继续规划 + 反馈文本 → selected 带非批准选项 + custom。
+    presenter.resolve(0, { picked: '继续规划', custom: '改用 C 方案', reason: 'picked' })
+    expect(await answerPromise).toEqual({ answers: [{ id: 'plan-review', selected: ['继续规划'], custom: '改用 C 方案' }] })
+    await ctx.fiber.dispose()
+  })
+
   it('carries progress, header, descriptions and multiSelect to the dialog', async () => {
     const ctx = new Context()
     const presenter = makePresenter()

@@ -104,6 +104,10 @@ export type PluginsRow =
 export interface SurfaceMeta {
   /** `provider/model` of the active agent. */
   model: string
+  /** Reasoning effort display name of the active model selection
+   *  (`ModelSelection.reasoningEffort` 的 adapter 显示名，/effort 切换或
+   *  启动继承时回填）；未选时省略，footer 不渲染。 */
+  effort?: string
   /** Short session identity (the runner may truncate). */
   session: string
   /** Working directory label, when useful. */
@@ -125,6 +129,14 @@ export interface TerminalAppHandlers {
   onInput(text: string): void
   /** Esc while a turn is active (Claude Code style). */
   onInterrupt(): void
+  /** Ctrl+Enter（cc 预设）：打断当前回合并立即投递输入（CC 语义三态投递）。 */
+  onInterruptSend?(text: string): void
+  /** Shift+Tab（cc 预设）：循环会话模式（默认 → 计划 → 完全访问，B8）。 */
+  onCycleModeRequest?(): void
+  /** B7: /rewind 或空输入双击 Esc——打开用户消息选择器（时间回溯）。 */
+  onRewindRequest?(): void
+  /** B7: 选中了一条用户消息（seq），或 `null` 取消。 */
+  onRewindPicked?(seq: number | null): void
   /** The user asked to leave the TUI. */
   onQuit(): void
   /** Ctrl+R was pressed: the runner should gather sessions and open the picker. */
@@ -222,6 +234,10 @@ export interface TerminalApp {
   setWorkspace(path: string): void
   /** Open the fork-point picker overlay (T2①). */
   showForkPicker(items: readonly SessionChoice[]): void
+  /** B7: 打开时间回溯选择器（/rewind 与空输入双击 Esc 共用）。 */
+  showRewindPicker(items: readonly SessionChoice[]): void
+  /** 回填输入框（B7 rewind：原消息放回输入框供修改重发）。 */
+  setComposerText(text: string): void
   /** Open the trajectory (Inspect) overlay over the raw event log (B11/H31). */
   showTrajectory(rows: readonly TrajectoryRow[]): void
   /** Open (或就地刷新) /settings 聚合面板；行变化后重复调用即更新。 */

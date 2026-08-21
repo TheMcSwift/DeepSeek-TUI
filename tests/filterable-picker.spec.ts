@@ -32,4 +32,22 @@ describe('filterable picker', () => {
     panel.handleInput('\x1b[B')
     expect(panel.render(60).join('\n')).toContain('model')
   })
+
+  it('pages the selection with PgUp/PgDn by the window size', () => {
+    const rows = Array.from({ length: 25 }, (_, i) => ({ value: `v${i}`, label: `行 ${i}` }))
+    const picked: Array<string | null> = []
+    const panel = new FilterablePickerPanel('长列表', rows, (value) => { picked.push(value) })
+    // SelectList 的滚动信息行显示 (选中+1/总数)；初态 (1/25)。
+    expect(panel.render(60).join('\n')).toContain('(1/25)')
+    panel.handleInput('\x1b[6~') // PgDn → 第 11 行
+    expect(panel.render(60).join('\n')).toContain('(11/25)')
+    panel.handleInput('\x1b[5~') // PgUp → 回到首行
+    expect(panel.render(60).join('\n')).toContain('(1/25)')
+    panel.handleInput('\x1b[6~')
+    panel.handleInput('\x1b[6~')
+    panel.handleInput('\x1b[6~') // 尾部钳制
+    expect(panel.render(60).join('\n')).toContain('(25/25)')
+    panel.handleInput('\r')
+    expect(picked).toEqual(['v24'])
+  })
 })

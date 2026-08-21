@@ -40,6 +40,19 @@ export function permissionTone(value: string): (text: string) => string {
   return (text: string) => fg('text')(text)
 }
 
+/**
+ * 权限预设显示名（web PermissionSelect 同款变换，packages/client/
+ * ui-conversation displayName/optionLabel）：kebab-case 机器名转标题大小写
+ * （`workspace-write` → `Workspace Write`），`danger-full-access` 固定为产品
+ * 文案 `Full access`；非 kebab 的宿主配置名原样透传。纯函数，fold/视图/runner
+ * 共用同一显示口径。
+ */
+export function permissionDisplayName(value: string): string {
+  if (value === 'danger-full-access') return 'Full access'
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(value)) return value
+  return value.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+
 /** 目录显示名（去斜杠取首个词）：`/model <provider/model>` → `model`。 */
 const displayName = (item: CommandChoice): string => {
   const rest = item.label.startsWith('/') ? item.label.slice(1) : item.label

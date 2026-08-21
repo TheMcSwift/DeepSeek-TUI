@@ -8,7 +8,7 @@
  * @module dsh-tui-app/view/components/filterable-picker
  */
 
-import { SelectList, Text } from '@earendil-works/pi-tui'
+import { SelectList, Text, matchesKey } from '@earendil-works/pi-tui'
 import type { Component, Focusable } from '@earendil-works/pi-tui'
 import { fg } from '../../app/pi/color.ts'
 import { getSelectListTheme } from '../theme/theme.ts'
@@ -22,6 +22,9 @@ export interface PickerRow {
   /** The app marks the currently selected row with a bullet. */
   current?: boolean
 }
+
+/** 单页可见行数（SelectList 的 maxVisible）：PgUp/PgDn 按此翻页。 */
+const PAGE_ROWS = 10
 
 export class FilterablePickerPanel implements Component, Focusable {
   focused = false
@@ -47,7 +50,7 @@ export class FilterablePickerPanel implements Component, Focusable {
     this.rows = rows
     this.onFilter = onFilter
     this.onActivity = onActivity
-    this.list = this.buildList(rows)
+    this.list = this.buildList()
     this.hint = new Text(fg('dim')('输入即过滤 · ↑/↓ 选择 · Enter 确认 · Esc 取消'), 0, 0)
   }
 
@@ -57,30 +60,34 @@ export class FilterablePickerPanel implements Component, Focusable {
   setRows(rows: readonly PickerRow[]): void {
     this.rows = rows
     this.remoteRows = true
-    this.list = this.buildList(rows)
+    this.list = this.buildList()
     this.invalidate()
   }
 
   private applyQuery(next: string): void {
     this.query = next
     this.remoteRows = false
-    this.list = this.buildList(this.rows)
+    this.list = this.buildList()
     this.invalidate()
     this.onFilter?.(next)
   }
 
-  /** Rebuild the SelectList for the current query; item value = row index. */
-  private buildList(rows: readonly PickerRow[]): SelectList {
+  /** 当前过滤后的行（remoteRows 已按服务端匹配透传）。 */
+  private matchedRows(): PickerRow[] {
     const query = this.query.toLowerCase()
     // Label-only match: `value` is an opaque id (session ids, provider/model
     // keys) that would produce surprising substring hits (e.g. 'session-abc'
     // matching a query of 'b'). Remote rows skip the filter (already matched).
-    const matches = query === '' || this.remoteRows
-      ? [...rows]
-      : rows.filter(row => row.label.toLowerCase().includes(query))
+    if (query === '' || this.remoteRows) return [...this.rows]
+    return this.rows.filter(row => row.label.toLowerCase().includes(query))
+  }
+
+  /** Rebuild the SelectList for the current query; item value = row index. */
+  private buildList(): SelectList {
+    const matches = this.matchedRows()
     const list = new SelectList(
       matches.map((row, index) => ({ value: String(index), label: row.label, description: row.description })),
-      10,
+      PAGE_ROWS,
       getSelectListTheme(),
     )
     list.onSelect = (item) => { this.onPick(matches[Number(item.value)]?.value ?? null) }
@@ -103,6 +110,18 @@ export class FilterablePickerPanel implements Component, Focusable {
       this.applyQuery(this.query + data)
       return
     }
+    // PgUp/PgDn：按一页（PAGE_ROWS）跳转选中；SelectList 自身不做翻页，
+    // 这里读出当前选中下标再整页移动（↑/↓ 的循环语义由 SelectList 提供）。
+    if (matchesKey(data, 'pageUp') || matchesKey(data, 'pageDown')) {
+      const current = Number(this.list.getSelectedItem()?.value ?? '0') || 0
+      const count = this.matchedRows().length
+      if (count > 0) {
+        const delta = matchesKey(data, 'pageUp') ? -PAGE_ROWS : PAGE_ROWS
+        this.list.setSelectedIndex(Math.min(Math.max(0, current + delta), count - 1))
+        this.invalidate()
+      }
+      return
+    }
     // Arrows / Enter / other keys: forward to the current list.
     this.list.handleInput(data)
   }
@@ -115,8 +134,8 @@ export class FilterablePickerPanel implements Component, Focusable {
   render(width: number): string[] {
     const querySuffix = this.query === '' ? '' : ` ${fg('accent')(`/${this.query}`)}`
     const hint = strings().search === '搜索'
-      ? '输入即过滤 · ↑/↓ 选择 · Enter 确认 · Esc 取消'
-      : 'Type to filter · ↑/↓ select · Enter confirm · Esc cancel'
+      ? '输入即过滤 · ↑/↓ 选择 · PgUp/PgDn 翻页 · Enter 确认 · Esc 取消'
+      : 'Type to filter · ↑/↓ select · PgUp/PgDn page · Enter confirm · Esc cancel'
     return [
       `${fg('accent')('▸')} ${fg('text')(this.title)}${querySuffix}`,
       fg('borderMuted')('─'.repeat(Math.max(0, width))),

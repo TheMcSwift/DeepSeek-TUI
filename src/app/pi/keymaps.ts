@@ -3,8 +3,9 @@
  * 声明化为动作表，每张预设一张键位图，`/keymap` 与 `DSH_TUI_KEYMAP` 切换。
  * Tab 焦点环与 Esc 焦点复位是通用交互，不进预设。
  *
- * 语义来源：cc 预设 = 本仓库既有键位（Claude Code 式：Esc 中断、idle
- * Ctrl+C 退出）；pi 预设 = earendil-works/pi usage.md 的交互语义
+ * 语义来源：cc 预设 = 本仓库既有键位（Claude Code 式：Esc/Ctrl+C 中断、idle
+ * Ctrl+C 双按退出（B3）、Ctrl+Enter 打断并发送（B5））；pi 预设 = earendil-works/pi
+ * usage.md 的交互语义
  * （Ctrl+C 中断 / Ctrl+G 编辑器撰写 / Ctrl+P 循环模型）；opencode 预设 =
  * OpenCode 默认 keybinds（https://opencode.ai/docs/keybinds/：Esc 中断、
  * Ctrl+C idle 退出 / busy 清空输入、Ctrl+P 命令面板、Ctrl+X leader 键 +
@@ -19,6 +20,7 @@ export type KeymapId = 'cc' | 'pi' | 'opencode'
 /** 预设内可绑定的动作。 */
 export type KeyAction =
   | 'interrupt'   // 中断当前轮（busy）
+  | 'interruptSend' // Ctrl+Enter：打断当前回合并立即投递输入（CC 语义）
   | 'quit'        // 退出（idle）
   | 'quitCtrlD'   // Ctrl+D 退出（各预设通用）
   | 'sessions'    // 会话列表
@@ -29,6 +31,7 @@ export type KeyAction =
   | 'palette'     // 命令面板
   | 'theme'       // 视觉主题预设
   | 'compose'     // $EDITOR 撰写消息
+  | 'editInput'   // $EDITOR 编辑当前输入（保存回填，B18）
   | 'export'      // 导出会话日志
   | 'compact'     // 压缩上下文
   | 'exitPlan'    // 退出 plan 模式
@@ -44,7 +47,7 @@ export type KeyAction =
   | 'fold'        // 折叠旧消息
   | 'thinking'    // thinking 开关
   | 'clearInput'  // 清空输入框（opencode busy Ctrl+C 语义）
-  | 'swallow'     // 吞掉按键（cc 预设 busy Ctrl+C）
+  | 'cycleMode'   // Shift+Tab：会话模式循环（默认→计划→完全访问，B8）
 
 export interface KeymapEntry {
   action: KeyAction
@@ -105,10 +108,15 @@ export const CC_KEYMAP: Keymap = {
   interaction: { enum: 'inline-cycle', card: 'plain', slash: 'spacious' },
   entries: [
     { action: 'interrupt', keys: ['escape'], when: 'busy' },
+    // busy Ctrl+C 同样中断（CC 语义：Esc/Ctrl+C 双键中断）。
+    { action: 'interrupt', keys: ['ctrl+c'], when: 'busy' },
+    // idle Ctrl+C 走 cc 双按退出（runAction 的 quit 分支处理清空/待命）。
     { action: 'quit', keys: ['ctrl+c'], when: 'idle' },
-    // busy Ctrl+C 吞掉（不中断、不进编辑器剪贴板语义）——cc 的肌肉记忆。
-    { action: 'swallow', keys: ['ctrl+c'], when: 'busy' },
     { action: 'quitCtrlD', keys: ['ctrl+d'] },
+    // CC 语义三态投递：Ctrl+Enter = 打断当前回合并立即投递输入。
+    { action: 'interruptSend', keys: ['ctrl+enter'] },
+    // Shift+Tab：会话模式循环（默认 → 计划 → 完全访问，B8）。
+    { action: 'cycleMode', keys: ['shift+tab'] },
     { action: 'sessions', keys: ['ctrl+r'] },
     { action: 'model', keys: ['ctrl+g'] },
     { action: 'palette', keys: ['\x1f', 'ctrl+/'] },
@@ -117,7 +125,9 @@ export const CC_KEYMAP: Keymap = {
     { action: 'search', keys: ['\x06', 'ctrl+f'] },
     { action: 'fork', keys: ['\x02', 'ctrl+b'] },
     { action: 'rate', keys: ['\x19', 'ctrl+y'] },
-    { action: 'copy', keys: ['\x18', 'ctrl+x'] },
+    // B18: cc 预设 Ctrl+X = 用 $EDITOR 编辑当前输入（CC 复刻；复制回复在
+    // pi 预设 Ctrl+X 与 opencode <leader>y 保留）。
+    { action: 'editInput', keys: ['\x18', 'ctrl+x'] },
     { action: 'steer', keys: ['\x1b\r', 'alt+enter'] },
     { action: 'retrieve', keys: ['\x1b\x1b[A', 'alt+up'] },
     { action: 'jobs', keys: ['\x0f', 'ctrl+o'] },

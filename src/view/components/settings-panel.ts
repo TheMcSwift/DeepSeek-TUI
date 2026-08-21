@@ -82,21 +82,26 @@ export class SettingsPanel implements Component, Focusable {
       return
     }
     if (matchesKey(data, 'up')) {
-      this.selectedIndex = Math.max(0, this.selectedIndex - 1)
+      // 循环：首行再 ↑ 到尾行（与 plugins/决策卡同一套列表语义）。
+      const last = Math.max(0, this.rows.length - 1)
+      this.selectedIndex = this.selectedIndex === 0 ? last : this.selectedIndex - 1
       this.revealSelection()
       return
     }
     if (matchesKey(data, 'down')) {
-      this.selectedIndex = Math.min(this.rows.length - 1, this.selectedIndex + 1)
+      const last = Math.max(0, this.rows.length - 1)
+      this.selectedIndex = this.selectedIndex === last ? 0 : this.selectedIndex + 1
       this.revealSelection()
       return
     }
     if (matchesKey(data, 'pageUp')) {
-      this.offset = Math.max(0, this.offset - VISIBLE_ROWS)
+      this.selectedIndex = Math.max(0, this.selectedIndex - VISIBLE_ROWS)
+      this.revealSelection()
       return
     }
     if (matchesKey(data, 'pageDown')) {
-      this.offset = Math.min(Math.max(0, this.rows.length - VISIBLE_ROWS), this.offset + VISIBLE_ROWS)
+      this.selectedIndex = Math.min(this.rows.length - 1, this.selectedIndex + VISIBLE_ROWS)
+      this.revealSelection()
       return
     }
     if (matchesKey(data, 'enter')) {

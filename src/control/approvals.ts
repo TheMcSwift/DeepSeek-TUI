@@ -138,9 +138,15 @@ export function installApprovals(
           // questions carry the typed text in the custom slot. Multi-select
           // answers carry the confirmed labels in `selected`. Going back and
           // re-answering replaces the earlier entry (one answer per id).
-          const entry = options.length > 0
-            ? { id: question.id, selected: picked }
-            : { id: question.id, selected: [], custom: answer.picked }
+          // B11: plan-review 的反馈文本经 custom 槽回给模型（批准必须干净——
+          // 带 custom 即视为继续规划，见 dsh-plan-mode 的消费逻辑）。
+          const selected = options.length > 0 ? picked : []
+          const custom = options.length > 0 ? answer.custom : answer.picked
+          const entry = {
+            id: question.id,
+            selected,
+            ...(custom !== undefined ? { custom } : {}),
+          }
           const existingIndex = answers.findIndex(item => item.id === question.id)
           if (existingIndex === -1) answers.push(entry)
           else answers[existingIndex] = entry

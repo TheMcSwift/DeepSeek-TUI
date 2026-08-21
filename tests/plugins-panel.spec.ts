@@ -61,4 +61,22 @@ describe('plugins panel', () => {
     expect(lines.some(line => line.includes('↑ 还有'))).toBe(true)
     expect(lines.some(line => line.includes('↓ 还有'))).toBe(true)
   })
+
+  it('pages the selection with PgUp/PgDn (窗口跟随选中)', () => {
+    const many: PluginsRow[] = Array.from({ length: 30 }, (_, i): PluginsRow => ({ kind: 'item', action: `command:c${i}`, label: `/c${i}`, detail: 'x' }))
+    const picked: string[] = []
+    const panel = new PluginsPanel(many, () => {}, (action) => { picked.push(action) })
+    panel.handleInput('\x1b[6~') // PgDn → 第 12 条
+    panel.handleInput('\r')
+    expect(picked).toEqual(['command:c12'])
+    panel.handleInput('\x1b[6~') // → 第 24 条
+    panel.handleInput('\r')
+    expect(picked).toEqual(['command:c12', 'command:c24'])
+    panel.handleInput('\x1b[6~') // 越界钳制 → 第 29 条
+    panel.handleInput('\r')
+    expect(picked).toEqual(['command:c12', 'command:c24', 'command:c29'])
+    panel.handleInput('\x1b[5~') // PgUp → 第 17 条
+    panel.handleInput('\r')
+    expect(picked).toEqual(['command:c12', 'command:c24', 'command:c29', 'command:c17'])
+  })
 })

@@ -7,10 +7,18 @@ import { describe, expect, it } from 'vitest'
 import { CC_KEYMAP, OPENCODE_KEYMAP, PI_KEYMAP, isKeymapId, isLeaderKey, keymapById, resolveKeyAction, resolveLeaderChord } from '../../src/app/pi/keymaps.ts'
 
 describe('keymap presets', () => {
-  it('resolves the cc preset: Esc interrupts, idle Ctrl+C quits, busy Ctrl+C is swallowed', () => {
+  it('resolves the cc preset: Esc/Ctrl+C interrupt while busy, idle Ctrl+C quits, Ctrl+Enter sends', () => {
     expect(resolveKeyAction(CC_KEYMAP, '\x1b', true)).toBe('interrupt')
     expect(resolveKeyAction(CC_KEYMAP, '\x03', false)).toBe('quit')
-    expect(resolveKeyAction(CC_KEYMAP, '\x03', true)).toBe('swallow')
+    // B2: busy Ctrl+C 也是中断（CC 语义双键中断，不再吞掉）。
+    expect(resolveKeyAction(CC_KEYMAP, '\x03', true)).toBe('interrupt')
+    // B5: Ctrl+Enter = 打断当前回合并立即投递输入。普通终端 Ctrl+Enter 与 Enter
+    // 同字节（\r），只有扩展键盘协议（kitty CSI u）能区分——绑定按 CSI u 匹配。
+    expect(resolveKeyAction(CC_KEYMAP, '\x1b[13;5u', false)).toBe('interruptSend')
+    expect(resolveKeyAction(CC_KEYMAP, '\x1b[13;5u', true)).toBe('interruptSend')
+    expect(resolveKeyAction(CC_KEYMAP, '\r', false)).toBeUndefined() // 裸 Enter 不进动作表
+    // B8: Shift+Tab 循环会话模式。
+    expect(resolveKeyAction(CC_KEYMAP, '\x1b[Z', false)).toBe('cycleMode')
     expect(resolveKeyAction(CC_KEYMAP, '\x07', false)).toBe('model') // Ctrl+G → 模型
     expect(resolveKeyAction(CC_KEYMAP, '\x10', false)).toBe('permission') // Ctrl+P → 权限
   })
@@ -35,7 +43,7 @@ describe('keymap presets', () => {
     expect(isKeymapId('opencode')).toBe(true)
     expect(isKeymapId('vim')).toBe(false)
     expect(keymapById('pi').id).toBe('pi')
-    expect(keymapById('cc').entries.some(entry => entry.action === 'swallow')).toBe(true)
+    expect(keymapById('cc').entries.some(entry => entry.action === 'interruptSend')).toBe(true)
   })
 
   it('ships per-preset interaction profiles (广义交互层)', () => {

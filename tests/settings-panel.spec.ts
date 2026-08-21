@@ -66,6 +66,26 @@ describe('settings panel', () => {
     expect(lines.some(line => line.includes('行0'))).toBe(false)
   })
 
+  it('wraps arrows around the list ends and pages the selection with PgUp/PgDn', () => {
+    const many = Array.from({ length: 24 }, (_, i): SettingsRow => ({ key: `行${i}`, current: String(i), target: '→ x' }))
+    const panel = new SettingsPanel(many, () => {}, () => {}, () => {})
+    panel.handleInput('\x1b[A') // ↑ 首部 → 尾部
+    expect(panel.selectedIndex).toBe(23)
+    panel.handleInput('\x1b[B') // ↓ 尾部 → 首部
+    expect(panel.selectedIndex).toBe(0)
+    panel.handleInput('\x1b[6~') // PgDn → +10
+    expect(panel.selectedIndex).toBe(10)
+    panel.handleInput('\x1b[6~') // → 20
+    expect(panel.selectedIndex).toBe(20)
+    panel.handleInput('\x1b[6~') // 越界钳制
+    expect(panel.selectedIndex).toBe(23)
+    panel.handleInput('\x1b[5~') // PgUp → 13
+    expect(panel.selectedIndex).toBe(13)
+    // 翻页后选中行仍在窗口内可见（窗口跟随选中）。
+    const lines = panel.render(100).map(stripAnsi)
+    expect(lines.some(line => line.includes('行13'))).toBe(true)
+  })
+
   it('cycles values inline with ←/→ on cycle rows only (cc 语式)', () => {
     const cycled: Array<[number, 1 | -1]> = []
     const panel = new SettingsPanel([

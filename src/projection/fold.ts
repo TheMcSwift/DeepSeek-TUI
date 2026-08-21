@@ -16,6 +16,8 @@ import type {} from '@deepseek-ai/dsh-plan-mode'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-command-feedback'
+// 纯函数显示变换（kebab → 标题大小写），无 cordis/pi/IO，不破坏 fold 纯性。
+import { permissionDisplayName } from '../app/pi/command-match.ts'
 import { emptyDocument, joinTextBlocks } from '../document/document.ts'
 import type {
   ApprovalEntry,
@@ -501,7 +503,9 @@ export function fold(event: SessionEvent, doc: ViewDocument): ViewDocument {
     }
 
     case 'permission/preset': {
-      const entry: NoticeEntry = { kind: 'notice', id: `notice:preset:${event.seq}`, text: `权限预设：${String(event.data.preset)}`, tone: 'info', group: 'preset' }
+      // 显示名与 footer/状态槽同口径（web PermissionSelect 变换），转录行
+      // 保留审计语义但不再裸展示机器名。
+      const entry: NoticeEntry = { kind: 'notice', id: `notice:preset:${event.seq}`, text: `权限预设：${permissionDisplayName(String(event.data.preset))}`, tone: 'info', group: 'preset' }
       // The preset also pins to the fixed status slot above the input line
       // (web parity: the composer area carries the session's preset chip);
       // the transcript row above stays for the audit trail.

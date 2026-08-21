@@ -440,7 +440,7 @@ describe('projection', () => {
       event('plan/mode', { active: true } as never),
     ])
     expect(entriesOf(doc, 'notice').map(e => (e as { text: string }).text)).toEqual([
-      '会话标题：build the tui', '权限预设：workspace-write', '进入 plan 模式（提案待审）',
+      '会话标题：build the tui', '权限预设：Workspace Write', '进入 plan 模式（提案待审）',
     ])
     // The preset also pins to the fixed status slot above the input line.
     expect(doc.permissionPreset).toBe('workspace-write')

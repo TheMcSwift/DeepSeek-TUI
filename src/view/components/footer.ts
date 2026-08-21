@@ -10,6 +10,7 @@
 import { truncateToWidth } from '@earendil-works/pi-tui'
 import type { Component } from '@earendil-works/pi-tui'
 import { fg } from '../../app/pi/color.ts'
+import { permissionDisplayName, permissionTone } from '../../app/pi/command-match.ts'
 import type { ViewDocument } from '../../document/document.ts'
 
 /** What the footer should emphasise in this frame. */
@@ -18,6 +19,11 @@ export interface FooterContext {
   contextWindow?: number
   /** The active model (`provider/model`), shown in the footer (pi/cc style). */
   model?: string
+  /**
+   * The active model selection's reasoning effort display name（/effort 所选，
+   * 或启动时继承的持久化选择）。紧跟在模型标识之后；未选时省略。
+   */
+  effort?: string
   /**
    * token-meter 的三段 context breakdown（G42）：system/tools/messages 各自
    * 的 token 估算。提供时压力条按三段分色；缺省回退 usage 求和的两段近似。
@@ -58,9 +64,20 @@ export class FooterLine implements Component {
     const modelPart = context.model === undefined || context.model === ''
       ? ''
       : `${fg('cyan')(context.model)} · `
+    // Reasoning effort rides right after the model identity（模型属性跟随模型，
+    // /effort 切换后由 runner meta 回填显示名）。
+    const effortPart = context.effort === undefined || context.effort === ''
+      ? ''
+      : `${fg('muted')(context.effort)} · `
+    // 权限预设跟随模型/effort（web composer 的 PermissionSelect chip 等价物）：
+    // 按危险等级分色 + web 同款显示名（Workspace Write / Full access）。
+    const preset = doc.permissionPreset
+    const permissionPart = preset === undefined
+      ? ''
+      : `${permissionTone(preset)(permissionDisplayName(preset))} · `
     // Model and the pressure meter lead (pi/cc style: the live facts stay
     // visible when the cwd path truncates the tail on narrow terminals).
-    let facts = modelPart
+    let facts = modelPart + effortPart + permissionPart
     if (context.contextWindow !== undefined && context.contextWindow > 0) {
       // G42 提供 breakdown 时用量按其三段合计（token-meter 的估算口径）；
       // 否则按 usage 求和的折叠近似。

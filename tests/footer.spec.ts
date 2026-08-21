@@ -54,3 +54,41 @@ describe('footer context pressure bar', () => {
     expect(rendered[rendered.length - 1]).toContain('░'.repeat(10))
   })
 })
+
+describe('footer reasoning effort', () => {
+  it('shows the effort display name right after the model when set', () => {
+    const line = new FooterLine()
+    line.set({ entries: [], busy: false } as never, '/ws', '', { model: 'pi-ai/deepseek-v4', effort: 'high' })
+    const facts = line.render(200).map(stripAnsi).at(-1)!
+    expect(facts).toContain('pi-ai/deepseek-v4 · high · /ws')
+  })
+
+  it('omits the effort segment when no effort is selected', () => {
+    const line = new FooterLine()
+    line.set({ entries: [], busy: false } as never, '/ws', '', { model: 'pi-ai/deepseek-v4' })
+    const facts = line.render(200).map(stripAnsi).at(-1)!
+    expect(facts).toContain('pi-ai/deepseek-v4 · /ws')
+    expect(facts).not.toContain('· high')
+  })
+})
+
+describe('footer permission preset', () => {
+  it('shows the web-style display name after model/effort (PermissionSelect parity)', () => {
+    const line = new FooterLine()
+    line.set({ entries: [], busy: false, permissionPreset: 'workspace-write' } as never, '/ws', '',
+      { model: 'pi-ai/deepseek-v4', effort: 'high' })
+    const facts = line.render(200).map(stripAnsi).at(-1)!
+    expect(facts).toContain('pi-ai/deepseek-v4 · high · Workspace Write · /ws')
+  })
+
+  it('renders Full access for danger-full-access and omits the segment when unset', () => {
+    const line = new FooterLine()
+    line.set({ entries: [], busy: false, permissionPreset: 'danger-full-access' } as never, '/ws', '',
+      { model: 'pi-ai/deepseek-v4' })
+    const facts = line.render(200).map(stripAnsi).at(-1)!
+    expect(facts).toContain('pi-ai/deepseek-v4 · Full access · /ws')
+    const bare = new FooterLine()
+    bare.set({ entries: [], busy: false } as never, '/ws', '', { model: 'pi-ai/deepseek-v4' })
+    expect(bare.render(200).map(stripAnsi).at(-1)).not.toContain('Full access')
+  })
+})
