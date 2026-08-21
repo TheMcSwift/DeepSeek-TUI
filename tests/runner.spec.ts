@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
@@ -538,8 +538,41 @@ describe('tui runner', () => {
     }
   })
 
-  it('switches Enter behavior from the /settings panel and persists it', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-settings-home-'))
+  it('cycles session modes with Shift+Tab: plan on/off + preset ladder (B8)', async () => {
+    const executed: string[] = []
+    let preset = 'workspace-write'
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('commands', {
+        list: () => [],
+        execute: async (_agent: unknown, command: string) => { executed.push(command) },
+      })
+      ctx.provide('permissionPresets', {
+        names: ['read-only', 'workspace-write', 'danger-full-access'],
+        current: () => preset,
+        set: (_session: unknown, value: string) => { preset = value },
+        optionOf: (name: string) => ({ value: name, label: name, description: '' }),
+      })
+    })
+    await test.started
+    // default → plan：/plan on（权限不动）。
+    test.app.handlers?.onCycleModeRequest?.()
+    await settle(50)
+    expect(executed).toEqual(['/plan on'])
+    // plan → full：/plan off + 切 danger-full-access（FakeApp 默认确认）。
+    test.app.handlers?.onCycleModeRequest?.()
+    await settle(50)
+    expect(executed).toEqual(['/plan on', '/plan off'])
+    expect(preset).toBe('danger-full-access')
+    // full → default：切回 workspace-write（plan 已在 off，不重复执行）。
+    test.app.handlers?.onCycleModeRequest?.()
+    await settle(50)
+    expect(executed).toEqual(['/plan on', '/plan off'])
+    expect(preset).toBe('workspace-write')
+    expect(test.app.toasts.some(toast => toast.text.includes('模式'))).toBe(true)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('switches Enter behavior from the /settings panel and persists it', async () => {    const home = mkdtempSync(join(tmpdir(), 'dsh-tui-settings-home-'))
     const previousHome = process.env.DSH_HOME
     const previousEnter = process.env.DSH_TUI_ENTER
     process.env.DSH_HOME = home
@@ -552,7 +585,7 @@ describe('tui runner', () => {
       await settle(50)
       // Enter 行为行现在是带 ● 当前标记的单列 picker。
       const rows = test.app.queueRows[test.app.queueRows.length - 1]
-      expect(rows[0].current).toBe(true) // 默认 queue 是当前项
+      expect(rows[1].current).toBe(true) // cc 预设默认 steer 是当前项（B1）
       test.app.queuePicked?.('steer')
       await settle(150)
       expect(process.env.DSH_TUI_ENTER).toBe('steer')
@@ -936,7 +969,7 @@ describe('tui runner', () => {
     await settle(150)
     expect(test.app.permissions).toBeUndefined() // 没弹 picker
     expect(picked).toEqual(['danger-full-access'])
-    expect(test.app.toasts.some(toast => toast.text.includes('权限预设已切换：danger-full-access'))).toBe(true)
+    expect(test.app.toasts.some(toast => toast.text.includes('权限预设已切换：Full access'))).toBe(true)
     await test.ctx.fiber.dispose()
     } finally {
       if (previousHome === undefined) delete process.env.DSH_HOME
@@ -1017,7 +1050,7 @@ describe('tui runner', () => {
     await test.started
     test.app.handlers?.onCommandPickerRequest?.()
     await settle()
-    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__resume', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__settings', '__plugins', '__workspace', '__compose'])
+    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__resume', '__rewind', '__status', '__tokens', '__cost', '__doctor', '__init', '__agents', '__skills', '__mcp', '__permissions', '__login', '__logout', '__add-dir', '__hooks', '__vim', '__terminal-setup', '__connect', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__settings', '__plugins', '__workspace', '__compose'])
     expect(test.app.commands?.find(item => item.value === 'goal')?.label).toBe('/goal <objective>')
     expect(test.app.commands?.find(item => item.value === '__model')?.label).toBe('/model <provider/model>')
     expect(test.app.commands?.find(item => item.value === '__permission')?.label).toBe('/permission <preset>')
@@ -1182,6 +1215,152 @@ describe('tui runner', () => {
     const last = test.app.last
     expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('尚未完成'))).toBe(true)
     await test.ctx.fiber.dispose()
+  })
+
+  it('rewinds to a user message: forks before its turn and refills the composer (B7)', async () => {
+    let turn = 0
+    const test = await bench({
+      afterPrompt(session, message) {
+        turn++
+        appendTurn(session, turn, message, `reply ${turn}`)
+      },
+    }, {})
+    await test.started
+    test.app.input('first question')
+    await settle()
+    test.app.input('second question')
+    await settle()
+    // 选择器只列用户消息（newest-first）。
+    test.app.handlers?.onRewindRequest?.()
+    await settle()
+    expect(test.app.rewindPoints?.length).toBe(2)
+    const seq = Number(test.app.rewindPoints![1].value) // 第二条用户消息
+    expect(test.app.rewindPoints![1].label).toBe('second question')
+    test.app.handlers?.onRewindPicked?.(seq)
+    await settle()
+    expect(test.created).toHaveLength(2)
+    const child = test.created[1]
+    expect(child.meta?.parentSession).toBe(test.created[0].sessionId)
+    // 种子边界 = 第二条消息所属 turn/start 之前（回退到该轮起点之前）。
+    expect(child.seed?.length ?? 0).toBeGreaterThan(0)
+    expect(child.seed?.some(event => (event as { type: string }).type === 'user/message')).toBe(true)
+    // 原消息放回输入框供修改重发。
+    expect(test.app.composerText).toBe('second question')
+    const last = test.app.last
+    expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('回退'))).toBe(true)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects rewinding before the first message (B7)', async () => {
+    let turn = 0
+    const test = await bench({
+      afterPrompt(session, message) {
+        turn++
+        appendTurn(session, turn, message, 'only reply')
+      },
+    }, {})
+    await test.started
+    test.app.input('only question')
+    await settle()
+    const seq = Number(test.app.last.entries.find(entry => entry.kind === 'user')?.id.slice(1))
+    test.app.handlers?.onRewindPicked?.(seq)
+    await settle()
+    expect(test.created).toHaveLength(1) // 不创建分支
+    expect(test.app.toasts.some(toast => toast.text.includes('不能回退'))).toBe(true)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('exports a Markdown transcript with /export md (B12)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-tui-export-'))
+    try {
+      let turn = 0
+      const test = await bench({
+        afterPrompt(session, message) {
+          turn++
+          appendTurn(session, turn, message, `reply ${turn}`)
+        },
+      }, { workspace: dir })
+      await test.started
+      test.app.input('first question')
+      await settle()
+      test.app.handlers?.onCommandPicked?.('__export', 'md')
+      await settle(150)
+      const files = readdirSync(dir).filter(file => file.startsWith('dsh-tui-export-'))
+      expect(files.length).toBe(1)
+      const md = readFileSync(join(dir, files[0]), 'utf8')
+      expect(md).toContain('# dsh-tui 会话导出')
+      expect(md).toContain('## 用户')
+      expect(md).toContain('first question')
+      expect(md).toContain('## 助手')
+      expect(md).toContain('reply 1')
+      // 无参 /export 仍走 jsonl 路径（web 语义）。
+      test.app.handlers?.onCommandPicked?.('__export', '')
+      await settle(100)
+      const last = test.app.last
+      expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('jsonl'))).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('reports session status, tokens and cost as expandable notices (B13)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-tui-status-'))
+    try {
+      let turn = 0
+      const test = await bench({
+        afterPrompt(session, message) {
+          turn++
+          appendTurn(session, turn, message, 'reply')
+        },
+      }, { workspace: dir })
+      await test.started
+      test.app.input('question one')
+      await settle()
+      test.app.handlers?.onCommandPicked?.('__status', '')
+      await settle(50)
+      let last = test.app.last
+      const status = last.entries.find(entry => entry.kind === 'notice' && (entry as { text: string }).text.startsWith('状态'))
+      expect(status).toBeDefined()
+      const statusEntry = status as { detail?: string; text: string }
+      expect(statusEntry.detail).toContain('模型')
+      expect(statusEntry.detail).toContain(dir)
+      expect(statusEntry.detail).toContain('Tokens')
+      // /tokens 明细。
+      test.app.handlers?.onCommandPicked?.('__tokens', '')
+      await settle(50)
+      last = test.app.last
+      const tokens = last.entries.find(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('Token 明细'))
+      expect((tokens as { detail?: string } | undefined)?.detail).toContain('输入')
+      // /cost 紧凑视图。
+      test.app.handlers?.onCommandPicked?.('__cost', '')
+      await settle(50)
+      last = test.app.last
+      expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('Token 用量'))).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('creates AGENTS.md with /init and refuses to overwrite (B13)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-tui-init-'))
+    try {
+      const test = await bench({}, { workspace: dir })
+      await test.started
+      test.app.handlers?.onCommandPicked?.('__init', '')
+      await settle(50)
+      expect(existsSync(join(dir, 'AGENTS.md'))).toBe(true)
+      expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).toContain('# 项目')
+      // 已存在 → 错误 notice。
+      test.app.handlers?.onCommandPicked?.('__init', '')
+      await settle(50)
+      const last = test.app.last
+      expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { tone: string }).tone === 'error' && (entry as { text: string }).text.includes('已存在'))).toBe(true)
+      await test.ctx.fiber.dispose()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('rates the latest reply into the TUI feedback sidecar and replays the summary', async () => {
@@ -1428,6 +1607,56 @@ describe('tui runner', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('emits OSC 777 notifications on turn completion, approvals and tool errors (Warp 集成)', async () => {
+    const test = await bench({
+      afterPrompt(session, message) {
+        appendTurn(session, 1, message, 'the final answer')
+        // approval/asked 是 log-only 审计事件（官方 append 不带 surfaceOp）。
+        session.append('approval/asked', { id: 'a1' as never, toolName: 'bash' })
+        session.append('tool/result', {
+          turn: 1, step: 1,
+          message: {
+            id: 'tool-result-1' as never,
+            role: 'user',
+            content: [{ type: 'tool-result', toolCallId: 'c1' as never, content: [{ type: 'text', text: '' }] }],
+            source: { kind: 'tool', callId: 'c1' as never },
+          },
+          error: { name: 'bash', code: 'EXIT_1' },
+        }, { surfaceOp: 'append' })
+      },
+    }, {})
+    await test.started
+    capturedStdout = ''
+    test.app.input('hello')
+    await settle()
+    expect(capturedStdout).toContain('\x1b]777;notify;dsh tui;完成 · the final answer\x07')
+    expect(capturedStdout).toContain('\x1b]777;notify;dsh tui;需要审批 · bash\x07')
+    expect(capturedStdout).toContain('\x1b]777;notify;dsh tui;工具失败 · bash\x07')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('sanitizes OSC 777 payloads and honors DSH_TUI_WARP_NOTIFY=off', async () => {
+    const previous = process.env.DSH_TUI_WARP_NOTIFY
+    process.env.DSH_TUI_WARP_NOTIFY = 'off'
+    try {
+      const test = await bench({
+        afterPrompt(session, message) {
+          // `;` 是协议分隔符：正文中的分号会被清洗成空格。
+          appendTurn(session, 1, message, 'a;b')
+        },
+      }, {})
+      await test.started
+      capturedStdout = ''
+      test.app.input('hello')
+      await settle()
+      expect(capturedStdout).not.toContain('\x1b]777')
+      await test.ctx.fiber.dispose()
+    } finally {
+      if (previous === undefined) delete process.env.DSH_TUI_WARP_NOTIFY
+      else process.env.DSH_TUI_WARP_NOTIFY = previous
+    }
+  })
+
   it('confirms before enabling Full access (web copy reuse)', async () => {
     const set: string[] = []
     const test = await bench({}, {}, (ctx) => {
@@ -1598,7 +1827,8 @@ describe('tui runner', () => {
     test.app.handlers?.onCommandPicked('__permission', 'workspace-write')
     await settle()
     expect(set).toEqual(['workspace-write'])
-    expect(test.app.toasts.some(toast => toast.text.includes('workspace-write'))).toBe(true)
+    // toast 用 web 同款显示名。
+    expect(test.app.toasts.some(toast => toast.text.includes('Workspace Write'))).toBe(true)
     // Direct switching to Full access keeps the web confirmation.
     test.app.handlers?.onCommandPicked('__permission', 'danger-full-access')
     await settle()
@@ -1622,6 +1852,8 @@ describe('tui runner', () => {
     await settle()
     const last = test.app.last
     expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('未知权限预设'))).toBe(true)
+    // 可用列表用显示名（与 picker 同口径）。
+    expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('Workspace Write'))).toBe(true)
     expect(set).toEqual([])
     await test.ctx.fiber.dispose()
   })
@@ -1762,7 +1994,7 @@ describe('tui runner', () => {
     // Ctrl+P 走通用枚举 picker：permissions 投影复用权限 picker（含确认）。
     test.app.handlers?.onPermissionPickerRequest?.()
     await settle()
-    expect(test.app.permissions?.map(item => item.label)).toEqual(['workspace-write', 'danger-full-access'])
+    expect(test.app.permissions?.map(item => item.label)).toEqual(['Workspace Write', 'Full access'])
     expect(test.app.permissions?.[0].current).toBe(true)
     test.app.handlers?.onPermissionPicked('danger-full-access')
     await settle()

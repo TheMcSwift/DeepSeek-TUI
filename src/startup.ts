@@ -31,6 +31,8 @@ export interface TuiStartupValues {
   browse?: boolean
   /** --no-session: skip persisting this run's session on quit. */
   noSession?: boolean
+  /** --regular: regular render mode (main-screen output in terminal scrollback). */
+  regular?: boolean
 }
 
 /**
@@ -48,6 +50,8 @@ function tuiCommand(): Command {
     .option('--no-session', 'do not persist this run')
     .option('--model <provider/model>', 'override the default model for this session')
     .option('--workspace <dir>', 'working directory for the agent (default: the invoking directory)')
+    .option('--regular', 'regular render mode: main-screen output that stays in the terminal scrollback (default; DESIGN.md regular memo)')
+    .option('--fullscreen', 'fullscreen viewport mode (alternate screen; the pre-2026-08-20 default)')
     .addHelpText('after', `
 Examples:
   dsh --profile tui                      start a fresh interactive session
@@ -68,7 +72,7 @@ export function apply(ctx: Context): void {
   const program = tuiCommand()
   program.action(() => {
     // commander renders `--no-session` as the negated boolean `session`.
-    const options = program.opts<{ resume?: string; model?: string; workspace?: string; browse?: boolean; session?: boolean; continue?: boolean }>()
+    const options = program.opts<{ resume?: string; model?: string; workspace?: string; browse?: boolean; session?: boolean; continue?: boolean; regular?: boolean; fullscreen?: boolean }>()
     ctx.provide(TUI_STARTUP_SERVICE, {
       ...options.resume === undefined ? {} : { resume: options.resume },
       ...options.continue === true ? { resume: '__latest__' } : {},
@@ -76,6 +80,9 @@ export function apply(ctx: Context): void {
       ...options.workspace === undefined ? {} : { workspace: options.workspace },
       ...options.browse === true ? { browse: true } : {},
       ...options.session === false ? { noSession: true } : {},
+      // 默认 regular（2026-08-20）；--fullscreen 显式切回 alt-screen 视口。
+      ...(options.regular === true && options.fullscreen !== true ? { regular: true } : {}),
+      ...options.fullscreen === true ? { regular: false } : {},
     } satisfies TuiStartupValues)
   })
   parseCmdline(ctx, program)

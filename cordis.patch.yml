@@ -28,3 +28,4 @@
         resume: !!js ctx.tuiStartup.resume
         model: !!js ctx.tuiStartup.model
         workspace: !!js ctx.tuiStartup.workspace
+        regular: !!js ctx.tuiStartup.regular

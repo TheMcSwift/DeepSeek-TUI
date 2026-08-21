@@ -49,6 +49,7 @@ export const apply = ctx => globalThis.__tuiStartupApply(ctx)
     '    workspace: !!js ctx.tuiStartup.workspace',
     '    browse: !!js ctx.tuiStartup.browse',
     '    noSession: !!js ctx.tuiStartup.noSession',
+    '    regular: !!js ctx.tuiStartup.regular',
     '- id: tui-startup',
     `  name: ${pathToFileURL(join(dir, 'startup.mjs')).href}`,
     '',
@@ -88,6 +89,18 @@ describe('tui command-line provider', () => {
     const { values, observed } = await bootStartup(['-c', '-r', '--no-session'])
     expect(values).toEqual({ resume: '__latest__', browse: true, noSession: true })
     expect(observed.runnerConfig).toEqual({ resume: '__latest__', browse: true, noSession: true })
+  })
+
+  it('maps --regular into the runner config', async () => {
+    const { values, observed } = await bootStartup(['--regular'])
+    expect(values).toEqual({ regular: true })
+    expect(observed.runnerConfig).toEqual({ regular: true })
+  })
+
+  it('maps --fullscreen into the runner config (regular: false)', async () => {
+    const { values, observed } = await bootStartup(['--fullscreen'])
+    expect(values).toEqual({ regular: false })
+    expect(observed.runnerConfig).toEqual({ regular: false })
   })
 
   it('runs with no flags at all (fresh interactive session)', async () => {

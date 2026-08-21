@@ -8,7 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { billedInputTokens, cacheHitPercent, formatTokens, sessionStats } from './projection/stats.ts'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -34,6 +36,7 @@ import { PiTuiApp, piTuiInternals } from './app/pi-tui-app.ts'
 import { applyPalette } from './app/pi/color.ts'
 import { detectThemeLive, resolveThemeVariant } from './app/pi/theme-detect.ts'
 import { installApprovals } from './control/approvals.ts'
+import { DEFAULT_SESSION_MODES, nextSessionMode } from './control/session-modes.ts'
 import { emptyDocument, transcriptText } from './document/document.ts'
 import { resolveLanguage, setStrings, strings } from './view/strings.ts'
 import { fold, replay } from './projection/fold.ts'
@@ -42,6 +45,7 @@ import type { FeedbackRecord } from './session/feedback.ts'
 import { approvalContext, findToolCall, relTime, trajectorySummary } from './control/summaries.ts'
 import { isKeymapId, KEYMAPS, keymapById } from './app/pi/keymaps.ts'
 import type { KeymapId } from './app/pi/keymaps.ts'
+import { permissionDisplayName } from './app/pi/command-match.ts'
 import { isThemePresetId, THEME_PRESETS } from './app/pi/theme-presets.ts'
 import type { ThemePresetId } from './app/pi/theme-presets.ts'
 import type { ViewDocument } from './document/document.ts'
@@ -184,8 +188,37 @@ async function rateLastReply(app: TerminalApp, session: Session, doc: ViewDocume
 }
 
 /** Flush the session and reveal its durable jsonl artifact path (T1⑦). */
-async function exportSessionLog(ctx: Context, sessions: SessionStore, session: Session, doc: ViewDocument): Promise<ViewDocument> {
+/** 导出会话日志（B12）：`jsonl` = 展示持久化路径（web 语义）；`md` = 写
+ *  Markdown 分节导出（CC 语义，`/export md` 触发），notice 展示路径。 */
+async function exportSessionLog(
+  ctx: Context,
+  sessions: SessionStore,
+  session: Session,
+  doc: ViewDocument,
+  format: 'jsonl' | 'md' = 'jsonl',
+  cwd?: string,
+): Promise<ViewDocument> {
   await sessions.flush(session)
+  if (format === 'md') {
+    const target = cwd ?? process.cwd()
+    const file = `dsh-tui-export-${Date.now()}.md`
+    const path = join(target, file)
+    try {
+      writeFileSync(path, exportMarkdown(doc, session), 'utf8')
+      return {
+        ...doc,
+        entries: [...doc.entries, { kind: 'notice' as const, id: `notice:export:${session.id}`, text: `已导出会话 Markdown：${path}`, tone: 'info' as const }],
+      }
+    } catch (error) {
+      return {
+        ...doc,
+        entries: [...doc.entries, {
+          kind: 'notice' as const, id: `notice:export:${session.id}`,
+          text: `Markdown 导出失败：${error instanceof Error ? error.message : String(error)}`, tone: 'error' as const,
+        }],
+      }
+    }
+  }
   const location = ctx.get('sessionPersistence')?.locate(session.header)
   const text = location?.path !== undefined
     ? `会话日志已导出（jsonl）：${location.path}`
@@ -195,6 +228,64 @@ async function exportSessionLog(ctx: Context, sessions: SessionStore, session: S
     entries: [...doc.entries, { kind: 'notice' as const, id: `notice:export:${session.id}`, text, tone: 'info' as const }],
   }
 }
+
+/** B12: 把文档流转成 Markdown 分节导出（用户/思考/助手/工具），CC 的 /export 语义。 */
+function exportMarkdown(doc: ViewDocument, session: Session): string {
+  const lines: string[] = ['# dsh-tui 会话导出', '']
+  lines.push(`- 会话：${session.id}`)
+  lines.push(`- 导出时间：${new Date().toISOString()}`)
+  lines.push('')
+  for (const entry of doc.entries) {
+    switch (entry.kind) {
+      case 'user':
+        lines.push(`## 用户\n\n${entry.text}`)
+        break
+      case 'assistant':
+        lines.push(`## 助手\n\n${entry.text}`)
+        break
+      case 'tool': {
+        const blocks = entry.output?.blocks ?? []
+        const output = blocks.map(block => {
+          if (block.type === 'text' && 'text' in block) return String((block as { text: unknown }).text)
+          if (block.type === 'tool-result') {
+            const result = block as { result?: { output?: unknown; isError?: boolean } }
+            return `${result.result?.isError === true ? '错误' : '输出'}：${typeof result.result?.output === 'string' ? result.result.output : JSON.stringify(result.result?.output ?? '')}`
+          }
+          return ''
+        }).filter(text => text !== '').join('\n')
+        lines.push(`## 工具：${entry.name}\n\n参数：\`\`\`json\n${entry.arguments}\n\`\`\`\n\n${output}`)
+        break
+      }
+      default:
+        break // notice/status/goal/todo 等不进入导出
+    }
+    lines.push('')
+  }
+  return lines.join('\n')
+}
+
+/** B13: 当前目录的 git 分支（best-effort；非 git 仓库返回空）。 */
+function gitBranch(cwd: string): string {
+  try {
+    const result = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8', timeout: 2000 })
+    if (result.status !== 0) return ''
+    const branch = (result.stdout ?? '').trim()
+    return branch === '' ? '' : branch
+  } catch {
+    return ''
+  }
+}
+
+/** B13: /init 写入的 AGENTS.md 模板骨架。 */
+const AGENTS_TEMPLATE = `# 项目
+
+## 约定
+
+- 运行与构建：见 README 或包脚本。
+- 测试：\`pnpm test\`。
+- 提交规范：见仓库 CONTRIBUTING 或 AGENTS.md 指南。
+`
+
 import type { SurfaceMeta, TerminalApp, TerminalAppHandlers, ModelChoice, PluginsRow, ProjectionRow, SettingsRow, TrajectoryRow } from './app/terminal-app.ts'
 
 /** Stable Cordis plugin name. */
@@ -215,11 +306,13 @@ export interface Config {
   browse?: boolean
   /** Skip persisting the session on quit (T5⑦). */
   noSession?: boolean
+  /** regular 渲染模式（主屏输出留在 scrollback；--regular / DSH_TUI_REGULAR=1）。 */
+  regular?: boolean
 }
 
 /** Surface factory seam; tests replace it with a fake. */
 export const internals: {
-  createApp: (themePreset: ThemePresetId, variant: 'dark' | 'light') => TerminalApp
+  createApp: (themePreset: ThemePresetId, variant: 'dark' | 'light', regular?: boolean) => TerminalApp
   /** Whether stdin/stdout are a usable interactive terminal. */
   isTty: () => boolean
   /** Settle window between the two quit/swap flushes (tests shorten it). */
@@ -248,7 +341,7 @@ export const internals: {
   writeStdout: (text: string) => { process.stdout.write(text) },
   forceExitMs: 2_000,
   forceExit: (code: number) => { process.exit(code) },
-  createApp: (themePreset: ThemePresetId, variant: 'dark' | 'light') => {
+  createApp: (themePreset: ThemePresetId, variant: 'dark' | 'light', regular?: boolean) => {
     // Language resolves before any view is built: DSH_TUI_LANG=en picks the
     // English dictionary, default zh (T9 i18n).
     setStrings(resolveLanguage(process.env.DSH_TUI_LANG))
@@ -259,6 +352,8 @@ export const internals: {
       historyFile: join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'tui-history.json'),
       // 快捷键预设：env 优先，其次 $DSH_HOME/tui-keymap.txt 持久化值，缺省 cc。
       keymap: isKeymapId(process.env.DSH_TUI_KEYMAP ?? '') ? process.env.DSH_TUI_KEYMAP as KeymapId : loadPersistedKeymap() ?? 'cc',
+      // regular 显式 false（--fullscreen）也要透传，否则 PiTuiApp 默认解析回 regular。
+      ...(regular === undefined ? {} : { regular }),
     })
   },
   isTty: () => Boolean(process.stdout.isTTY && process.stdin.isTTY),
@@ -280,12 +375,14 @@ function fail(exit: (code: number) => void, error: unknown): void {
   exit(1)
 }
 
-/** tui 命名空间的组合默认（settings.yaml `tui:` 段的 base 层）。 */
-const TUI_SETTINGS_DEFAULTS = { enterBehavior: 'queue', anim: 'on' } as const
+/** tui 命名空间的组合默认（settings.yaml `tui:` 段的 base 层）。
+ *  enterBehavior 默认 'auto' = 按预设解析（cc=steer、其他=queue，BACKLOG-CC-PARITY B1）；
+ *  用户显式设置 steer/queue 后写对应值并覆盖预设默认。 */
+const TUI_SETTINGS_DEFAULTS = { enterBehavior: 'auto', anim: 'on' } as const
 
 /** tui 命名空间 schema：写入即校验；手改非法值在注册/写入点失败（平台惯例）。 */
 const TuiSettingsSchema = z.object({
-  enterBehavior: z.union([z.const('queue'), z.const('steer')]),
+  enterBehavior: z.union([z.const('auto'), z.const('queue'), z.const('steer')]),
   anim: z.union([z.const('on'), z.const('off')]),
 })
 
@@ -336,7 +433,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     : loadPersistedThemePreset() ?? 'web'
   const bootKeymap: KeymapId = isKeymapId(process.env.DSH_TUI_KEYMAP ?? '') ? process.env.DSH_TUI_KEYMAP as KeymapId : loadPersistedKeymap() ?? 'cc'
   let activeKeymap: KeymapId = bootKeymap
-  const app = internals.createApp(activeThemePreset, themeVariant)
+  const app = internals.createApp(activeThemePreset, themeVariant, config.regular)
   /** 应用视觉主题预设：palette 热切换 + 视图重建 + 持久化 + toast。 */
   const applyThemePreset = (preset: ThemePresetId): void => {
     activeThemePreset = preset
@@ -349,6 +446,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   let cmdSeq = 0
   let handle: AgentHandle | undefined
   let currentSessionId = ''
+  /** Shift+Tab 会话模式循环的当前档（B8；default 起步）。 */
+  let currentModeId = 'default'
   let quitting = false
   /** 会话 picker 打开期间用户是否已输入过滤（H5 搜索接管行后不再标题回填）。 */
   let pickerFiltered = false
@@ -375,6 +474,25 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   }
 
   const modelRef: ModelSelectionRef = { current: selection, assembled: undefined }
+  /** 把当前 selection 的 reasoning effort 显示名回填到 footer meta（best
+   *  effort）：未选或模型不支持时清空；解析失败退回 effort id 本身。 */
+  const refreshEffortLabel = (): void => {
+    const current = modelRef.current ?? selection
+    if (current.reasoningEffort === undefined) {
+      meta.effort = undefined
+      return
+    }
+    void ctx.get('llm')?.resolveModelInfo?.(current.provider, current.model).then((info) => {
+      const found = info?.reasoning?.efforts.find(item => item.id === current.reasoningEffort)
+      meta.effort = found?.name ?? String(current.reasoningEffort)
+      app.render(doc)
+    }).catch(() => {
+      meta.effort = String(current.reasoningEffort)
+      app.render(doc)
+    })
+  }
+  // 启动即回填：持久化选择可能已带 reasoningEffort（/effort 已存）。
+  refreshEffortLabel()
   /** Runtime workspace override (Ctrl+W); boot resolves it into meta.cwd. */
   const workspaceRef: { current: string | undefined } = { current: undefined }
   const setup = (agentCtx: Context): void => {
@@ -433,6 +551,29 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     refreshProjections()
   }
 
+  // ---- Warp 通知（OSC 777）：turn 完成 / 审批请求 / 工具失败 → Warp 原生
+  // 通知。协议是跨终端事实标准（Warp 官方文档公开格式
+  // `ESC ] 777 ; notify ; <title> ; <body> BEL`；Ghostty/WezTerm 同实现），
+  // 非 Warp 终端对未知 OSC 序列静默忽略。DSH_TUI_WARP_NOTIFY=off 关闭。
+  const warpNotify = (title: string, body: string): void => {
+    if (process.env.DSH_TUI_WARP_NOTIFY === 'off') return
+    // `;` 是协议分隔符，BEL/ESC 是控制字符：正文一律清洗掉。
+    const clean = (text: string): string => text.replace(/[\x07\x1b;]/g, ' ').replace(/\s+/g, ' ').trim()
+    internals.writeStdout(`\x1b]777;notify;${clean(title)};${clean(body)}\x07`)
+  }
+
+  /** 通知摘要：最后一条已提交助手文本的首行，截断到一屏。 */
+  const warpSummary = (): string => {
+    for (let i = doc.entries.length - 1; i >= 0; i--) {
+      const entry = doc.entries[i]
+      if (entry.kind === 'assistant' && entry.state !== 'streaming' && entry.text.trim() !== '') {
+        const firstLine = entry.text.split('\n')[0]?.trim() ?? ''
+        return firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine
+      }
+    }
+    return ''
+  }
+
   // Subscribe before the first turn can commit: every event of the active
   // session folds through the projection into a render. The listener rides
   // the runner's fiber, so tree disposal removes it automatically.
@@ -441,6 +582,19 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     doc = fold(event, doc)
     if (process.env.DSH_TUI_DEBUG !== undefined) {
       process.stderr.write(`dsh tui event: ${event.type} seq=${event.seq} busy=${String(doc.busy)}\n`)
+    }
+    // Warp 通知事件映射（fold 之后取最新 doc 摘要）。
+    if (event.type === 'turn/end') {
+      if (event.data.reason.kind === 'completed') {
+        warpNotify(strings().warpNotifyTitle, strings().warpTurnComplete(warpSummary()))
+      } else if (event.data.reason.kind === 'error') {
+        const code = (event.data.reason as { error?: { code?: string } }).error?.code ?? 'UNKNOWN'
+        warpNotify(strings().warpNotifyTitle, strings().warpTurnFailed(code))
+      }
+    } else if (event.type === 'approval/asked') {
+      warpNotify(strings().warpNotifyTitle, strings().warpApproval(event.data.toolName))
+    } else if (event.type === 'tool/result' && event.data.error !== undefined) {
+      warpNotify(strings().warpNotifyTitle, strings().warpToolError(event.data.error.name))
     }
     app.render(doc)
     // Queue drain: one pending message per settled turn, in FIFO order.
@@ -483,6 +637,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     // restores, print the plain transcript once.
     if (doc.entries.length > 0) {
       internals.writeStdout(`\n${transcriptText(doc)}\n`)
+    }
+    // B19: 退出时打印恢复命令（远程 CC 复刻的退出提示；--no-session 不适用）。
+    if (!config.noSession && meta.session !== '' && meta.session !== undefined) {
+      internals.writeStdout(`${strings().resumeHint}: dsh --profile tui --resume ${meta.session}\n`)
     }
     exit(0)
     // The launcher's natural-completion path sets process.exitCode and relies
@@ -527,12 +685,16 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
    * Fork the current session at `seq` (T2①) and swap the surface to the child.
    * `fallbackLast` falls back to the last completed turn when the anchor finds
    * none — the host's omitted-atSeq `/clone` semantics (T5⑦).
+   * `cutOverride`（B7 rewind）：直接以给定的事件 index 为种子边界（回退到
+   * 消息所属轮次起点之前），跳过 turn/end 锚定。
    */
-  const forkSession = async (session: Session, seq: number, fallbackLast: boolean, label: string): Promise<void> => {
+  const forkSession = async (session: Session, seq: number, fallbackLast: boolean, label: string, cutOverride?: number): Promise<void> => {
     const events = session.events
-    const boundary = events.find(event => event.type === 'turn/end' && event.seq >= seq)
-      ?? (fallbackLast ? events.findLast(event => event.type === 'turn/end') : undefined)
-    if (boundary === undefined) {
+    const boundary = cutOverride === undefined
+      ? (events.find(event => event.type === 'turn/end' && event.seq >= seq)
+        ?? (fallbackLast ? events.findLast(event => event.type === 'turn/end') : undefined))
+      : undefined
+    if (boundary === undefined && cutOverride === undefined) {
       doc = { ...doc, entries: [...doc.entries, {
         kind: 'notice' as const, id: `notice:fork:${cmdSeq++}`,
         text: '该消息所在轮次尚未完成，无法分支', tone: 'error' as const,
@@ -540,7 +702,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       app.render(doc)
       return
     }
-    let cut = events.indexOf(boundary) + 1
+    let cut = cutOverride ?? events.indexOf(boundary!) + 1
     // Extend through trailing out-of-band appends up to the next turn/start
     // (mirrors the host fork: balanced seed, inherited title).
     while (cut < events.length && events[cut]?.type !== 'turn/start') cut++
@@ -573,6 +735,29 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     refreshProjections()
   }
 
+  /**
+   * B7: rewind 时间回溯——回退到所选用户消息**所属回合起点之前**（fork 分支 +
+   * 回放），并把原消息放回输入框供修改重发（远程 dsh-TUI 的 /rewind 语义）。
+   * 不能回退到第一条消息（种子为空）；busy 时 forkSession 的 whenIdle 会等待落定。
+   */
+  const rewindTo = async (session: Session, seq: number, text: string): Promise<void> => {
+    const events = session.events
+    const turnStart = [...events].reverse().find(event => event.type === 'turn/start' && event.seq < seq)
+    if (turnStart === undefined) {
+      app.toast(strings().rewindNoTarget, 'error')
+      return
+    }
+    const cut = events.indexOf(turnStart)
+    // 不能回退到第一条消息：种子（回退后的历史）里没有任何 user/message，
+    // 回退结果是空对话（事件流里可能有 inbox 等非对话事件，不能只看 cut）。
+    if (!events.slice(0, cut).some(event => event.type === 'user/message')) {
+      app.toast(strings().rewindNoTarget, 'error')
+      return
+    }
+    await forkSession(session, seq, false, strings().rewindNotice, cut)
+    if (handle !== undefined) app.setComposerText(text)
+  }
+
   /** The full command catalog: registered commands plus TUI-native specials. */
   const commandCatalog = (agent: Agent): Array<{ value: string; label: string; description?: string }> => {
     const commands = ctx.get('commands')
@@ -595,13 +780,30 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     // The web's /export rides a browser-only download plugin; the TUI ships
     // native equivalents for the browser-specific commands. Aliases make
     // synonymous invocations resolve to the same command (K1).
-    push('__export', '/export · 导出会话日志', 'flush 并显示会话 jsonl 路径')
+    push('__export', '/export [md]', '导出会话：无参=jsonl 路径（web），md=Markdown 分节文件（CC）')
     push('__rate', '/rate · 评价最近回复', '👍/👎 最近一条助手回复（可选备注）')
     push('__new', '/new · 新会话', '原地开启新会话', ['clear'])
     push('__quit', '/quit · 退出 TUI', 'flush 会话并退出', ['exit'])
     push('__help', '/hotkeys · 快捷键', '全部快捷键一览', ['?'])
     push('__clone', '/clone · 复制当前会话', '以最后完成的轮次为种子开新会话')
     push('__resume', '/resume · 恢复会话', '列出历史会话并切换（会话选择器，Ctrl+R 同功能）', ['r'])
+    push('__rewind', '/rewind · 时间回溯', '回退到一条用户消息：fork 分支 + 原消息回填输入框（空输入双击 Esc 同入口）')
+    push('__status', '/status · 会话信息', '模型/状态/会话/目录/分支/tokens/上下文/标题')
+    push('__tokens', '/tokens · token 明细', '输入/缓存读/缓存写/输出 + 缓存命中率')
+    push('__cost', '/cost · token 用量', '汇总 in/out 用量（/tokens 的紧凑视图）')
+    push('__doctor', '/doctor · 环境自检', '模型/目录/上下文窗口/API key 状态/配置路径')
+    push('__init', '/init · 创建 AGENTS.md', '在会话目录写入 AGENTS.md 模板骨架')
+    push('__agents', '/agents · 子代理列表', '本会话的子代理运行（◆ 徽标行）')
+    push('__skills', '/skills · 技能目录', '可用技能清单（名称 + 描述）')
+    push('__mcp', '/mcp · MCP 状态', 'MCP 连接说明与配置提示')
+    push('__permissions', '/permissions · 权限说明', '当前 DSH profile 的权限策略说明')
+    push('__login', '/login · 凭证状态', 'API 凭证配置状态说明')
+    push('__logout', '/logout · 登出说明', '凭证清理说明')
+    push('__add-dir', '/add-dir · 文件策略范围', '文件策略作用域说明')
+    push('__hooks', '/hooks · 钩子说明', 'DSH 无等价机制的占位说明')
+    push('__vim', '/vim · 说明', '无 Vim 模态编辑的占位说明')
+    push('__terminal-setup', '/terminal-setup · 终端设置', '扩展键盘协议与粘贴说明')
+    push('__connect', '/connect · 远程连接', '进程内客户端的远程连接说明')
     push('__effort', '/effort · 推理强度', '单独选择当前模型的 reasoning effort')
     push('__model', '/model <provider/model>', '切换模型：枚举选择，或直接指定 provider/model', ['m'])
     push('__permission', '/permission <preset>', '切换权限预设：枚举选择，或直接指定预设名', ['perm'])
@@ -651,6 +853,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     if (current.reasoningEffort !== undefined) next = { ...next, reasoningEffort: current.reasoningEffort }
     modelRef.current = next
     meta.model = `${next.provider}/${next.model}`
+    // 换模型保留 effort id，但其显示名可能随模型不同：重新解析（best effort）。
+    refreshEffortLabel()
     void defaultModel.saveSelection(next).catch(() => {})
     // Refresh the footer's context-window fact for the new model (best effort).
     void ctx.get('llm')?.resolveModelInfo?.(next.provider, next.model).then((info) => {
@@ -676,16 +880,19 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     return groups.flat()
   }
 
-  /** Apply one preset pick: Full access asks first (web copy); others switch. */
-  const switchPreset = async (value: string): Promise<void> => {
-    if (handle === undefined) return
+  /** Apply one preset pick: Full access asks first (web copy); others switch.
+   *  @returns 是否真的应用了（false = 取消确认 / 无权限预设服务）。 */
+  const switchPreset = async (value: string): Promise<boolean> => {
+    if (handle === undefined) return false
     const presets = ctx.get('permissionPresets')
-    if (presets === undefined) return
+    if (presets === undefined) return false
     const agent = handle.agent
-    const apply = (): void => {
+    const apply = (): boolean => {
       presets.set(agent.session, value)
-      app.toast(strings().presetSwitched(value), 'success')
+      // 显示名与 web PermissionSelect 同口径（Workspace Write / Full access）。
+      app.toast(strings().presetSwitched(permissionDisplayName(value)), 'success')
       app.render(doc)
+      return true
     }
     if (value.includes('full-access') && presets.current(agent.session.events) !== value) {
       const answer = await app.askDialog({
@@ -694,10 +901,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         options: [strings().fullAccessAcknowledge, strings().cancel],
         icon: '⚠',
       })
-      if (answer.reason === 'picked' && answer.picked === strings().fullAccessAcknowledge) apply()
-      return
+      if (answer.reason === 'picked' && answer.picked === strings().fullAccessAcknowledge) return apply()
+      return false
     }
-    apply()
+    return apply()
   }
 
   // ---- /config：web ui-settings 的终端对应（K2）。out-of-tree 约束下通过
@@ -743,6 +950,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
 
   if ((process.env.DSH_TUI_ENTER ?? '') === '') {
     const saved = tuiSettingsSection()?.enterBehavior
+    // 显式 steer/queue 回填 env；'auto'（默认）不写 env——cc 预设默认 steer、
+    // 其他预设默认 queue（B1，解析在 pi-tui-app 的 busyEnterIsSteer）。
     if (saved === 'steer' || saved === 'queue') process.env.DSH_TUI_ENTER = saved
   }
   if ((process.env.DSH_TUI_ANIM ?? '') === '') {
@@ -772,10 +981,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     app.render(doc)
   }
 
-  /** 应用 Enter 行为（settings 面板与行内循环共用）。 */
+  /** 应用 Enter 行为（settings 面板与行内循环共用）。显式 queue 也写入 env：
+   *  区分「用户显式选 queue」与「未设置（cc 预设默认 steer）」（B1）。 */
   const applyEnterBehavior = (steer: boolean): void => {
-    if (steer) process.env.DSH_TUI_ENTER = 'steer'
-    else delete process.env.DSH_TUI_ENTER
+    process.env.DSH_TUI_ENTER = steer ? 'steer' : 'queue'
     void settingsSeam()?.update?.('tui', { enterBehavior: steer ? 'steer' : 'queue' }).catch(() => {})
     app.toast(strings().enterSwitched(steer ? strings().enterSteer : strings().enterQueue), 'success')
   }
@@ -828,10 +1037,18 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     return strings().themeVariantDark
   }
 
+  /** busy Enter 生效语义（B1）：显式 env 优先；未显式按预设默认（cc=steer、其他=queue）。
+   *  与 pi-tui-app 的 busyEnterIsSteer 同规则（runner 侧读 activeKeymap）。 */
+  const effectiveEnterBehavior = (): 'steer' | 'queue' => {
+    const saved = process.env.DSH_TUI_ENTER
+    if (saved === 'steer' || saved === 'queue') return saved
+    return activeKeymap === 'cc' ? 'steer' : 'queue'
+  }
+
   /** /settings 面板行：现状值实时收集（面板是瞬态派生视图，不落文档）。
    * cc 语式下可循环行附带 cycle 数据（行内 ←/→ 切换而非弹选择器）。 */
   const settingsRows = async (): Promise<SettingsRow[]> => {
-    const enter = process.env.DSH_TUI_ENTER === 'steer' ? strings().enterSteer : strings().enterQueue
+    const enter = effectiveEnterBehavior() === 'steer' ? strings().enterSteer : strings().enterQueue
     const anim = piTuiInternals.animFrameMs > 0 ? strings().animOn : strings().animOff
     const config = await settingsFilePath().catch(() => 'settings.yaml')
     const inline = keymapById(activeKeymap).interaction.enum === 'inline-cycle'
@@ -840,7 +1057,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     return [
       { key: strings().settingsLanguage, current: resolveLanguage(process.env.DSH_TUI_LANG), target: '→ /lang', cycle: cycleOf(['zh', 'en'], resolveLanguage(process.env.DSH_TUI_LANG)) },
       { key: strings().settingsTheme, current: `${themeVariantLabel()} · ${activeThemePreset}`, tone: 'accent', target: '→ /theme', cycle: cycleOf(THEME_PRESETS.map(preset => preset.id), activeThemePreset) },
-      { key: strings().settingsEnter, current: enter, tone: 'info', target: '→ 切换', cycle: cycleOf(['queue', 'steer'], process.env.DSH_TUI_ENTER === 'steer' ? 'steer' : 'queue') },
+      { key: strings().settingsEnter, current: enter, tone: 'info', target: '→ 切换', cycle: cycleOf(['queue', 'steer'], effectiveEnterBehavior()) },
       { key: strings().settingsKeymap, current: activeKeymap, tone: 'accent', target: '→ /keymap', cycle: cycleOf(KEYMAPS.map(keymap => keymap.id), activeKeymap) },
       { key: strings().settingsAnim, current: anim, target: '→ 切换', cycle: cycleOf(['on', 'off'], piTuiInternals.animFrameMs > 0 ? 'on' : 'off') },
       { key: strings().settingsConfig, current: config, tone: 'muted', target: '→ /config' },
@@ -1077,12 +1294,13 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     if (agent === undefined) return
     const row = rows.length === 1 ? rows[0] : await pickProjection(rows)
     if (row === undefined || row === null) return
-    // permissions 投影直接复用权限预设 picker（含 full-access 确认）。
+    // permissions 投影直接复用权限预设 picker（含 full-access 确认）；
+    // 显示名与 web PermissionSelect 同口径。
     if (row.key === 'permissions') {
       if (!quitting) {
         app.showPermissionPicker(row.options.map(option => ({
           value: option.value,
-          label: option.name,
+          label: permissionDisplayName(option.name),
           description: option.description,
           current: option.value === row.currentValue,
         })))
@@ -1104,7 +1322,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       app.toast(strings().projectionUnwritable(row.key), 'error')
       return
     }
-    void commands.execute(agent, `/${row.key} ${picked}`, new AbortController().signal).then((execution) => {
+    void commands.execute(agent, `/${row.key} ${picked}`, [], new AbortController().signal).then((execution) => {
       const result = execution?.result
       const text = result === undefined || result.text === undefined || result.text === ''
         ? `/${row.key} ${picked} 已执行`
@@ -1168,7 +1386,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     for (const key of projectionKeys) {
       const value = snapshot?.values[key]
       if (isSelectProjection(value)) {
-        rows.push({ kind: 'item', action: `projection:${key}`, label: key, detail: value.currentValue, tone: 'accent' })
+        rows.push({ kind: 'item', action: `projection:${key}`, label: key,
+          detail: key === 'permissions' ? permissionDisplayName(value.currentValue) : value.currentValue, tone: 'accent' })
       } else {
         rows.push({ kind: 'item', action: `projection:${key}`, label: key, detail: strings().pluginsStructured, tone: 'muted' })
       }
@@ -1311,7 +1530,58 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         source: { kind: 'user' },
       }))
     },
-    onInterrupt: (): void => { handle?.agent.cancel({ kind: 'user' }) },
+    onInterrupt: (): void => {
+      // B6: Esc/Ctrl+C 中断——排队消息在回合落定后由 drain 自动重投（followup），
+      // 这里给一条反馈，避免用户以为队列丢了。
+      if (queue.length > 0) app.toast(strings().pendingReposted(queue.length), 'info')
+      handle?.agent.cancel({ kind: 'user' })
+    },
+    onInterruptSend: (text: string): void => {
+      if (quitting || handle === undefined) return
+      if (doc.readOnlyHint !== undefined) {
+        // E10: 只读的一次性子代理会话同样拒绝打断投递。
+        app.toast('🔒 一次性子代理会话为只读，无法发送消息', 'error')
+        return
+      }
+      // B5: Ctrl+Enter = 打断当前回合并立即投递（CC 三态投递）。busy 时先 cancel：
+      // harness 的 cancel-convergence 语义保证 cancel 后提交的输入排队到下一回合、
+      // 在 abort 收敛到 idle 后运行（见 dsh-agent runtime-types send 注释）。
+      if (doc.busy) handle.agent.cancel({ kind: 'user' })
+      handle.agent.followup(createUserMessage({
+        content: [{ type: 'text', text }],
+        source: { kind: 'user' },
+      }))
+    },
+    onCycleModeRequest: (): void => {
+      // B8: Shift+Tab 循环会话模式（默认 → 计划 → 完全访问）。plan 平面走
+      // /plan on|off 命令通道；sandbox 平面复用 switchPreset（full 档保留确认，
+      // 取消则整档放弃、模式不前进）。plan 平面以 currentModeId 为真相
+      // （doc.planMode 随事件异步更新，循环判断不能依赖它）。
+      const next = nextSessionMode(currentModeId)
+      const current = DEFAULT_SESSION_MODES.find(mode => mode.id === currentModeId)
+      void (async () => {
+        if (quitting || handle === undefined) return
+        if (next.sandbox !== undefined) {
+          const presets = ctx.get('permissionPresets')
+          const currentPreset = presets?.current(handle.agent.session.events)
+          if (currentPreset !== next.sandbox) {
+            const applied = await switchPreset(next.sandbox)
+            if (!applied) return // 确认取消：停留在当前档
+          }
+        }
+        if (next.plan !== undefined && next.plan !== current?.plan) {
+          const commands = ctx.get('commands')
+          if (commands !== undefined) {
+            await commands.execute(handle.agent, next.plan ? '/plan on' : '/plan off', [], new AbortController().signal).catch(() => {})
+          }
+        }
+        currentModeId = next.id
+        const modeLabel = next.id === 'plan' ? strings().modePlan
+          : next.id === 'full' ? strings().modeFull
+          : strings().modeDefault
+        app.toast(strings().sessionModeSwitched(modeLabel), 'success')
+      })().catch((error: unknown) => { fail(exit, error) })
+    },
     onQuit: (): void => {
       if (quitting) return
       quitting = true
@@ -1444,6 +1714,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
           if (picked === undefined) return
           const next: ModelSelection = { ...current, reasoningEffort: picked.id }
           modelRef.current = next
+          // footer 状态栏即时显示所选 effort 的显示名。
+          meta.effort = picked.name
           void defaultModel.saveSelection(next).catch(() => {})
           app.toast(`${strings().effort}：${picked.name}`, 'success')
           app.render(doc)
@@ -1488,7 +1760,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         if (!presets.names.includes(args)) {
           doc = { ...doc, entries: [...doc.entries, {
             kind: 'notice' as const, id: `notice:cmd:${cmdSeq++}`,
-            text: strings().unknownPreset(args, presets.names.join(', ')), tone: 'error' as const,
+            // 可用列表用显示名（与 picker 同口径）；用户输入原样回显便于对照。
+            text: strings().unknownPreset(args, presets.names.map(permissionDisplayName).join(', ')), tone: 'error' as const,
           }] }
           app.render(doc)
           return
@@ -1529,7 +1802,12 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         return
       }
       if (name === '__export') {
-        void exportSessionLog(ctx, sessions, handle.agent.session, doc).then((next) => {
+        // B12: `/export md`（或 --md）导出 Markdown 分节文件（CC 语义）；
+        // 无参保持 web 语义（展示 jsonl 路径 + flush）。
+        const arg = (rawInput?.trim() ?? '').toLowerCase()
+        const wantMd = arg === 'md' || arg === '--md'
+        const cwd = resolve(workspaceRef.current ?? config.workspace ?? '.')
+        void exportSessionLog(ctx, sessions, handle.agent.session, doc, wantMd ? 'md' : 'jsonl', cwd).then((next) => {
           doc = next
           app.render(doc)
         }).catch((error: unknown) => { process.stderr.write(`dsh tui: export failed: ${error instanceof Error ? error.message : String(error)}\n`) })
@@ -1649,6 +1927,118 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         handlers.onSessionPickerRequest?.()
         return
       }
+      if (name === '__rewind') {
+        // B7: 时间回溯（空输入双击 Esc 同入口）。
+        handlers.onRewindRequest?.()
+        return
+      }
+      // B13: CC 命令全集（状态/说明类）。报告经 notice + detail 展开体输出
+      // （聚焦 + Enter 展开全文，与 E12 注入行同机制）。
+      {
+        const cwd = resolve(workspaceRef.current ?? config.workspace ?? '.')
+        const note = (text: string, detail = '', tone: 'info' | 'error' = 'info'): void => {
+          doc = { ...doc, entries: [...doc.entries, { kind: 'notice' as const, id: `notice:cmd:${cmdSeq++}`, text, detail, tone }] }
+          app.render(doc)
+        }
+        if (name === '__status') {
+          const stats = sessionStats(doc)
+          const cacheHit = cacheHitPercent(stats)
+          const billed = billedInputTokens(stats)
+          const branch = gitBranch(cwd)
+          const usage = meta.contextWindow !== undefined && meta.contextWindow > 0 && billed > 0
+            ? `${Math.round(billed / meta.contextWindow * 100)}%`
+            : '—'
+          note(`状态 · ${meta.model}`, [
+            `${strings().statusModel}：${meta.model}${meta.effort !== undefined ? ` · effort ${meta.effort}` : ''}`,
+            `${strings().statusState}：${doc.busy ? strings().stateWorking : strings().stateIdle}`,
+            `${strings().statusSession}：${meta.session}${meta.parentSession !== undefined ? `（父 ${meta.parentSession}）` : ''}`,
+            `${strings().statusDirectory}：${cwd}${branch === '' ? '' : ` · ${branch}`}`,
+            `${strings().statusTokens}：in ${formatTokens(billed)} · out ${formatTokens(stats.outputTokens)}`,
+            cacheHit !== null ? `${strings().statusCacheHit}：${cacheHit}%` : '',
+            `${strings().statusContextUsage}：${usage}`,
+            doc.title !== undefined ? `${strings().statusTitle}：${doc.title}` : '',
+          ].filter(line => line !== '').join('\n'))
+          return
+        }
+        if (name === '__tokens' || name === '__cost') {
+          const stats = sessionStats(doc)
+          const cacheHit = cacheHitPercent(stats)
+          const billed = billedInputTokens(stats)
+          note(name === '__cost'
+            ? `Token 用量 · ${formatTokens(billed)} in / ${formatTokens(stats.outputTokens)} out`
+            : strings().tokensTitle, [
+            `${strings().tokensInput}：${stats.inputTokens}`,
+            `${strings().tokensCacheRead}：${stats.cacheReadTokens}`,
+            `${strings().tokensCacheWrite}：${stats.cacheWriteTokens}`,
+            `${strings().tokensOutput}：${stats.outputTokens}`,
+            cacheHit !== null ? `${strings().statusCacheHit}：${cacheHit}%` : '',
+          ].filter(line => line !== '').join('\n'))
+          return
+        }
+        if (name === '__doctor') {
+          void (async () => {
+            const apiKey = process.env.DEEPSEEK_API_KEY
+            const configPath = await settingsFilePath().catch(() => 'settings.yaml')
+            note(strings().doctorTitle, [
+            `${strings().statusModel}：${meta.model}`,
+            `${strings().statusDirectory}：${cwd}`,
+            `${strings().contextWindowLabel}：${meta.contextWindow ?? '—'}`,
+            `${strings().doctorApiKey}：${apiKey === undefined ? strings().doctorApiKeyMissing : strings().doctorApiKeySet}`,
+            `${strings().statusSession}：${meta.session}`,
+            `${strings().doctorConfig}：${configPath}`,
+            ].join('\n'))
+            return
+          })()
+          return
+        }
+        if (name === '__init') {
+          const target = join(cwd, 'AGENTS.md')
+          if (existsSync(target)) {
+            note(strings().initExists, '', 'error')
+            return
+          }
+          try {
+            writeFileSync(target, AGENTS_TEMPLATE, 'utf8')
+            note(strings().initCreated(target))
+          } catch (error) {
+            note(`${strings().initExists}（写入失败：${error instanceof Error ? error.message : String(error)}）`, '', 'error')
+          }
+          return
+        }
+        if (name === '__agents') {
+          const subs = doc.entries.filter(entry => entry.kind === 'notice' && entry.text.startsWith('◆ subagent'))
+          if (subs.length === 0) {
+            note(strings().agentsEmpty)
+            return
+          }
+          note(`${strings().agentsTitle}（${subs.length}）`, subs.map(entry => (entry.kind === 'notice' ? entry.text : '')).join('\n'))
+          return
+        }
+        if (name === '__skills') {
+          void (async () => {
+            const skills = skillsService()
+            const rows = skills === undefined ? [] : await Promise.resolve(skills.list()).catch(() => [])
+            if (rows.length === 0) {
+              note(strings().skillsEmpty)
+              return
+            }
+            note(`${strings().skillsTitle}（${rows.length}）`, (rows as Array<{ name?: string; description?: string }>)
+              .map(skill => skill?.name === undefined ? '' : `${skill.name}${skill.description !== undefined ? ` — ${skill.description}` : ''}`)
+              .filter(line => line !== '').join('\n'))
+          })()
+          return
+        }
+        // 说明类命令：占位/策略说明（远程同名命令的终端等价）。
+        if (name === '__mcp') { note(strings().noteMcp); return }
+        if (name === '__permissions') { note(strings().notePermissions); return }
+        if (name === '__login') { note(strings().noteLogin); return }
+        if (name === '__logout') { note(strings().noteLogout); return }
+        if (name === '__add-dir') { note(strings().noteAddDir); return }
+        if (name === '__hooks') { note(strings().noteHooks); return }
+        if (name === '__vim') { note(strings().noteVim); return }
+        if (name === '__terminal-setup') { note(strings().noteTerminalSetup); return }
+        if (name === '__connect') { note(strings().noteConnect); return }
+      }
       if (name === '__preset') {
         // 一键预设：键位 + 视觉主题同时切换（cc/pi/opencode 三档；web 主题
         // 只在 /theme 单切，因为 web 没有对应键位风格）。
@@ -1737,7 +2127,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
           if (answer.reason !== 'picked' || answer.picked === undefined) return
           args = answer.picked
         }
-        const execution = await commands.execute(agent, `/${name} ${args}`.trimEnd(), new AbortController().signal)
+        const execution = await commands.execute(agent, `/${name} ${args}`.trimEnd(), [], new AbortController().signal)
         const result = execution?.result
         const text = result === undefined || result.text === undefined || result.text === ''
           ? `/${name} 已执行`
@@ -1759,7 +2149,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       const commands = ctx.get('commands')
       const agent = handle?.agent
       if (commands === undefined || agent === undefined || !doc.planMode) return
-      void commands.execute(agent, '/plan off', new AbortController().signal).catch(() => {})
+      void commands.execute(agent, '/plan off', [], new AbortController().signal).catch(() => {})
     },
     onShellResult: (text: string, hidden: boolean): void => {
       if (handle === undefined) return
@@ -1834,6 +2224,32 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       if (seq === null || handle === undefined) return
       void forkSession(handle.agent.session, seq, false, `已从 seq ${seq} 分支新会话`).catch((error: unknown) => { fail(exit, error) })
     },
+    // B7: /rewind 与空输入双击 Esc——列出用户消息（newest-first），选中即回退。
+    onRewindRequest: (): void => {
+      if (handle === undefined) return
+      const points = doc.entries
+        .filter((entry): entry is Extract<typeof entry, { kind: 'user' }> => entry.kind === 'user')
+        .map((entry) => {
+          const seq = entry.seq ?? Number(entry.id.slice(1))
+          const preview = entry.text.split('\n')[0] ?? ''
+          return {
+            value: String(seq),
+            label: preview.length <= 40 ? preview : `${preview.slice(0, 39)}…`,
+            description: `user · seq ${seq}`,
+          }
+        })
+      if (points.length === 0) {
+        void app.askDialog({ title: strings().rewindEmpty, options: ['好'] }).then(() => {})
+        return
+      }
+      if (!quitting) app.showRewindPicker(points)
+    },
+    onRewindPicked: (seq: number | null): void => {
+      if (seq === null || handle === undefined) return
+      const entry = doc.entries.find(item => item.kind === 'user' && (item.seq ?? Number(item.id.slice(1))) === seq)
+      const text = entry?.kind === 'user' ? entry.text : ''
+      void rewindTo(handle.agent.session, seq, text).catch((error: unknown) => { fail(exit, error) })
+    },
     // B11/H31: 把当前会话的原始事件日志窗口化成轨迹视图（Inspect）。
     onTrajectoryRequest: (): void => {
       if (handle === undefined) return
@@ -1861,7 +2277,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             if (await pickTheme()) await refresh()
             break
           case 2: { // Enter 行为（queue/steer，settings seam 持久化到 settings.yaml）
-            const steerNow = process.env.DSH_TUI_ENTER === 'steer'
+            const steerNow = effectiveEnterBehavior() === 'steer'
             const picked = await new Promise<string | null>((resolve) => {
               app.showQueuePicker([
                 { value: 'queue', label: strings().enterQueue, current: !steerNow },
@@ -1974,7 +2390,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       const current = presets.current(handle.agent.session.events)
       const items = presets.names.map((name) => {
         const option = presets.optionOf(name)
-        return { value: name, label: option.name, description: option.description, current: name === current }
+        return { value: name, label: permissionDisplayName(option.name), description: option.description, current: name === current }
       })
       if (!quitting) app.showPermissionPicker(items)
     },

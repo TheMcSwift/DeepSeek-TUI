@@ -297,7 +297,7 @@ def scenario_approval() -> None:
     ensure_e2e_home()
     mock = start_mock(8771, "tool_call_success,success", "bash",
                       '{"command":"echo approved-by-e2e","description":"e2e approval run"}')
-    tui = TuiProcess(["--patch", PATCH_OVERLAY], base_url="http://127.0.0.1:8771/v1",
+    tui = TuiProcess(["--patch", PATCH_OVERLAY, "--fullscreen"], base_url="http://127.0.0.1:8771/v1",
                      env_extra={"DSH_HOME": E2E_HOME, "DSH_TUI_DEBUG": "1"})
     try:
         assert tui.wait_for("dsh tui", 30), "approval: banner did not render"
@@ -331,7 +331,7 @@ def scenario_questions() -> None:
     ensure_approval_fixtures()
     mock = start_mock(8772, "tool_call_success,success", "ask_user_question",
                       '{"questions":[{"id":"q1","question":"Which color?","options":[{"label":"red"},{"label":"blue"}]},{"id":"q2","question":"What is your name?"},{"id":"q3","question":"Pick flavors","multi_select":true,"options":[{"label":"vanilla"},{"label":"chocolate"},{"label":"strawberry"}]},{"id":"q4","question":"Skip me?","options":[{"label":"yes"},{"label":"no"}]}]}')
-    tui = TuiProcess(["--patch", PATCH_OVERLAY], base_url="http://127.0.0.1:8772/v1",
+    tui = TuiProcess(["--patch", PATCH_OVERLAY, "--fullscreen"], base_url="http://127.0.0.1:8772/v1",
                      env_extra={"DSH_TUI_DEBUG": "1", "DSH_HOME": E2E_HOME})
     try:
         if not tui.wait_for("dsh tui", 30):
@@ -385,7 +385,7 @@ def scenario_interactions() -> None:
         print(plain(tui.out.decode("utf-8", "replace"))[-4000:])
     ensure_e2e_home()
     mock = start_mock(8765, "success")
-    tui = TuiProcess([], env_extra={"DSH_HOME": E2E_HOME})
+    tui = TuiProcess(["--fullscreen"], env_extra={"DSH_HOME": E2E_HOME})
     try:
         assert tui.wait_for("dsh tui", 30), "interactions: banner did not render"
         tui.type("hello interactions\r")
@@ -398,7 +398,8 @@ def scenario_interactions() -> None:
             raise AssertionError("search dialog did not open")
         tui.type("mock response\r")
         if not tui.wait_for("搜索结果", 30):
-            dump_failure("search results")
+            print("[e2e-interactions] search-results dump (long):")
+            print(plain(tui.out.decode("utf-8", "replace"))[-20000:])
             raise AssertionError("search results did not open")
         tui.type("\r")
         if not tui.wait_for("▸ 助手回复", 30):
@@ -596,6 +597,39 @@ def scenario_trajectory() -> None:
         tui.kill()
         mock.terminate()
 
+def scenario_regular() -> None:
+    """Regular render mode (--regular / TuiMainScreen): main-screen output stays
+    in the terminal, composer works, Ctrl+F degrades (no in-app scrolling)."""
+    marker = f"e2e-regular-{int(time.time())}"
+    ensure_core_home()
+    mock = start_mock(8768, "success")
+    tui = TuiProcess([], base_url="http://127.0.0.1:8768/v1", env_extra={"DSH_HOME": CORE_HOME, "DSH_TUI_DEBUG": "1"})
+    try:
+        assert tui.wait_for("dsh tui", 30), "regular: banner did not render"
+        raw = tui.out.decode("utf-8", "replace")
+        if "\x1b[?1049h" in raw:
+            idx = raw.index("\x1b[?1049h")
+            print("[e2e-regular] 1049h context:", repr(raw[max(0, idx - 120):idx + 20]))
+        assert "\x1b[?1049h" not in raw, "regular: unexpectedly entered alternate screen"
+        tui.type(f"say {marker}\r")
+        assert tui.wait_for("mock response recovered", 60), "regular: reply missing"
+        screen = plain(tui.out.decode("utf-8", "replace"))
+        assert marker in screen, "regular: user text missing from main screen"
+        # Ctrl+F 降级提示（无应用滚动，终端原生 Cmd+F 替代）。
+        tui.type("\x06")
+        if not tui.wait_for("regular 模式无应用内滚动", 15):
+            print("[e2e-regular] search degrade hint missing, last output:")
+            print(plain(tui.out.decode("utf-8", "replace"))[-4000:])
+            raise AssertionError("regular search degrade hint missing")
+        time.sleep(1)
+        tui.type("/quit\r")
+        assert tui.wait_exit(30) == 0, "regular quit failed"
+        print("[e2e] regular: main-screen render, composer, search degrade all worked")
+    finally:
+        tui.kill()
+        mock.terminate()
+
+
 def main() -> int:
     check_resume = "--no-resume" not in sys.argv
     marker = f"e2e-ping-{int(time.time())}"
@@ -606,7 +640,7 @@ def main() -> int:
         ensure_core_home()
         core_mock = start_mock(8765, "success")
         time.sleep(2)
-        tui = TuiProcess([], env_extra={"DSH_TUI_DEBUG": "1", "DSH_HOME": CORE_HOME})
+        tui = TuiProcess(["--fullscreen"], env_extra={"DSH_TUI_DEBUG": "1", "DSH_HOME": CORE_HOME})
         try:
             if not tui.wait_for("dsh tui", 30):
                 print("[e2e-core] BANNER FAILED, last output:")
@@ -646,6 +680,10 @@ def main() -> int:
 
     if "--only-trajectory" in sys.argv:
         scenario_trajectory()
+        return 0
+
+    if "--only-regular" in sys.argv:
+        scenario_regular()
         return 0
 
     # 1. fresh session, one turn, quit (isolated home: the user's live
@@ -699,7 +737,7 @@ def main() -> int:
         return 0
 
     # 3. resume: history replays into the first render
-    tui = TuiProcess(["--resume", session_id], env_extra={"DSH_HOME": CORE_HOME})
+    tui = TuiProcess(["--fullscreen", "--resume", session_id], env_extra={"DSH_HOME": CORE_HOME})
     try:
         assert tui.wait_for("dsh tui", 30), "banner did not render on resume"
         assert tui.wait_for(marker, 30), "history did not replay into the resumed view"
@@ -727,6 +765,9 @@ def main() -> int:
 
     # 8. trajectory view (Ctrl+L + /trajectory)
     scenario_trajectory()
+
+    # 9. regular render mode (--regular, main-screen output)
+    scenario_regular()
 
     print("[e2e] ALL PASSED")
     return 0
