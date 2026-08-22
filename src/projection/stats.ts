@@ -9,6 +9,7 @@
  */
 
 import type { ViewDocument } from '../document/document.ts'
+import type { DecodeSample } from '../document/document.ts'
 import type { Strings } from '../view/strings.ts'
 
 export interface SessionStats {
@@ -104,6 +105,65 @@ export function billedInputTokens(stats: SessionStats): number {
 export function cacheHitPercent(stats: SessionStats): number | null {
   const denominator = billedInputTokens(stats)
   return denominator === 0 ? null : Math.round(stats.cacheReadTokens / denominator * 100)
+}
+
+// C1: streaming decode throughput helpers (pure, display-only estimates).
+// Tokens are approximated at ~4 chars/token; the gauge is qualitative and the
+// sparkline normalizes relative shapes, so the constant only sets magnitude.
+
+/** Approximate chars per token (display approximation for C1 gauges). */
+export const CHARS_PER_TOKEN = 4
+
+/** Sparkline glyph spectrum, lowest bar at index 0. */
+const SPARK_BARS = '▁▂▃▄▅▆▇█'
+
+/**
+ * Live streaming gauge (C1): the recent sample window's char throughput
+ * mapped onto `slots` filled cells (`▰` filled / `▱` empty) plus the
+ * estimated tok/s. Returns undefined when the window is too small/short to
+ * be stable (the caller then omits the gauge rather than flashing it).
+ */
+export function liveGauge(
+  samples: DecodeSample[] | undefined,
+  slots = 8,
+): { bars: number; tps: number } | undefined {
+  if (samples === undefined || samples.length < 2) return undefined
+  const window = samples.slice(-8)
+  const spanMs = window[window.length - 1].t - window[0].t
+  if (spanMs < 250) return undefined
+  const chars = window.reduce((sum, s) => sum + s.chars, 0)
+  const tps = Math.round(chars / CHARS_PER_TOKEN / (spanMs / 1000) * 10) / 10
+  const bars = Math.max(1, Math.min(slots, Math.ceil(tps / 50 * slots)))
+  return { bars, tps }
+}
+
+/** Render the live gauge glyphs (`▰▰▱▱▱▱▱▱`, `slots` cells). */
+export function gaugeGlyph(bars: number, slots = 8): string {
+  const filled = Math.max(0, Math.min(slots, bars))
+  return '▰'.repeat(filled) + '▱'.repeat(slots - filled)
+}
+
+/**
+ * Post-turn decode sparkline (C1): the last 12 samples' char counts
+ * min-max normalized onto `slots` glyph steps. Returns undefined when the
+ * data is too flat to draw (all samples equal) or too sparse.
+ */
+export function sparkline(
+  samples: DecodeSample[] | undefined,
+  slots = 8,
+): string | undefined {
+  const recent = (samples ?? []).slice(-12)
+  if (recent.length < 2) return undefined
+  let min = Infinity
+  let max = -Infinity
+  for (const s of recent) {
+    if (s.chars < min) min = s.chars
+    if (s.chars > max) max = s.chars
+  }
+  if (max <= min) return undefined
+  return recent
+    .map(s => SPARK_BARS[Math.round((s.chars - min) / (max - min) * (slots - 1))])
+    .join('')
 }
 
 /**

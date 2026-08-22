@@ -42,7 +42,7 @@ import { resolveLanguage, setStrings, strings } from './view/strings.ts'
 import { fold, replay } from './projection/fold.ts'
 import { feedbackSummary, readFeedback, writeFeedback } from './session/feedback.ts'
 import type { FeedbackRecord } from './session/feedback.ts'
-import { approvalContext, findToolCall, relTime, trajectorySummary } from './control/summaries.ts'
+import { approvalContext, contextReport, findToolCall, relTime, trajectorySummary } from './control/summaries.ts'
 import { isKeymapId, KEYMAPS, keymapById } from './app/pi/keymaps.ts'
 import type { KeymapId } from './app/pi/keymaps.ts'
 import { permissionDisplayName } from './app/pi/command-match.ts'
@@ -795,6 +795,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     push('__init', '/init · 创建 AGENTS.md', '在会话目录写入 AGENTS.md 模板骨架')
     push('__agents', '/agents · 子代理列表', '本会话的子代理运行（◆ 徽标行）')
     push('__skills', '/skills · 技能目录', '可用技能清单（名称 + 描述）')
+    push('__context', '/context · 已加载上下文', '系统提示/工作区指令/技能目录/工具清单注入明细')
+    push('__tips', '/tips · 使用提示', '快捷键/命令/工作流/个性化/避坑 五组提示')
     push('__mcp', '/mcp · MCP 状态', 'MCP 连接说明与配置提示')
     push('__permissions', '/permissions · 权限说明', '当前 DSH profile 的权限策略说明')
     push('__login', '/login · 凭证状态', 'API 凭证配置状态说明')
@@ -1784,6 +1786,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         app.showHotkeys()
         return
       }
+      if (name === '__tips') {
+        app.showTips()
+        return
+      }
       if (name === '__new') {
         if (!quitting) void swap(undefined).catch((error: unknown) => { fail(exit, error) })
         return
@@ -2026,6 +2032,11 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
               .map(skill => skill?.name === undefined ? '' : `${skill.name}${skill.description !== undefined ? ` — ${skill.description}` : ''}`)
               .filter(line => line !== '').join('\n'))
           })()
+          return
+        }
+        if (name === '__context') {
+          const report = contextReport(doc)
+          note(report.title, report.body)
           return
         }
         // 说明类命令：占位/策略说明（远程同名命令的终端等价）。

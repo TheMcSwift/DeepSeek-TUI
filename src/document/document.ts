@@ -52,6 +52,14 @@ export interface TurnOutcome {
   tone: 'info' | 'error'
 }
 
+/** Streaming decode sample: wall-clock time plus the segment's char length
+ *  (C1: live gauge while streaming, min-max sparkline after the turn;
+ *  chars approximate tokens at ~4 chars/token for display only). */
+export interface DecodeSample {
+  t: number
+  chars: number
+}
+
 export interface AssistantEntry {
   kind: 'assistant'
   id: EntryId
@@ -70,6 +78,8 @@ export interface AssistantEntry {
   state: 'streaming' | 'committed'
   /** First text/reasoning chunk timestamp (internal streaming marker). */
   firstChunkAt?: number
+  /** Streaming decode sample window (C1: gauge/sparkline; last 24 kept). */
+  decodeSamples?: DecodeSample[]
   /** Wall-time metrics computed at assistant/message (T1②). */
   stats?: AssistantStats
   /** Token accounting from the assembled message, when reported (cache

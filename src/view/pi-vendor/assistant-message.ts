@@ -35,6 +35,9 @@ export class AssistantMessageComponent extends Container {
 	 */
 	private autoCollapseThinking = false;
 	private hasThinking = false;
+	/** V3: thinking 折叠行的实时时钟窗口（startedAt=首 chunk；endedAt=commit）。 */
+	private thinkingStartedAt?: number;
+	private thinkingEndedAt?: number;
 	/** V2: fullscreen 消息归属标签（`Claude`，内容上方一行）。 */
 	private label?: string;
 	/** Optional one-line footer under the message (T1② stats). */
@@ -101,6 +104,15 @@ export class AssistantMessageComponent extends Container {
 
 	setHiddenThinkingLabel(label: string): void {
 		this.hiddenThinkingLabel = label;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
+	/** V3: 设置 thinking 折叠行的时钟窗口（startedAt、endedAt 各可缺省）。 */
+	setThinkingClock(startedAt?: number, endedAt?: number): void {
+		this.thinkingStartedAt = startedAt;
+		this.thinkingEndedAt = endedAt;
 		if (this.lastMessage) {
 			this.updateContent(this.lastMessage);
 		}
@@ -208,9 +220,18 @@ export class AssistantMessageComponent extends Container {
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
 				if (this.isThinkingCollapsed()) {
-					// Show one static label for each run of thinking blocks when hidden.
+					// V3: collapsed thinking shows the CC-style live clock —
+					// `Thinking for Ns` (real-time while streaming, frozen at
+					// the commit time once settled). Falls back to the static
+					// label when no clock window is known.
+					let label = this.hiddenThinkingLabel;
+					if (this.thinkingStartedAt !== undefined) {
+						const end = this.thinkingEndedAt ?? Date.now();
+						const seconds = Math.max(0, Math.floor((end - this.thinkingStartedAt) / 1000));
+						label = `Thinking for ${seconds}s`;
+					}
 					this.contentContainer.addChild(
-						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0),
+						new Text(theme.italic(theme.fg("thinkingText", label)), this.outputPad, 0),
 					);
 				} else {
 					// Render each thinking block with a descending intensity

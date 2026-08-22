@@ -6,7 +6,7 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { ToolEntry, ViewEntry } from '../document/document.ts'
+import type { ToolEntry, ViewDocument, ViewEntry } from '../document/document.ts'
 import { strings } from '../view/strings.ts'
 
 /** Human-friendly age for the session picker (T3⑤). */
@@ -35,9 +35,38 @@ export function findToolCall(entries: readonly ViewEntry[], callId: string): Too
   return undefined
 }
 
+/**
+ * A3 `/context` 报告：注入行（`notice` 且 id 以 `inject:` 开头）按 kind
+ * 分组（skill-catalog / agent-instructions / goal / plugin / …），组内取
+ * 正文首行截断预览；无注入时返回空态文案。纯函数（fold 产物输入）。
+ */
+export function contextReport(doc: Pick<ViewDocument, 'entries'>): { title: string; body: string } {
+  const injections = doc.entries.filter(
+    (entry): entry is Extract<ViewEntry, { kind: 'notice' }> =>
+      entry.kind === 'notice' && entry.id.startsWith('inject:'),
+  )
+  if (injections.length === 0) return { title: strings().ctxTitle, body: strings().ctxEmpty }
+  const groups = new Map<string, string[]>()
+  for (const entry of injections) {
+    // text 形如 `注入 · <label> — <preview>`；label 首段即注入 kind。
+    const sep = entry.text.indexOf(' — ')
+    const label = (sep === -1 ? entry.text : entry.text.slice(0, sep)).replace(/^注入 · /, '')
+    const kind = label.split(' · ')[0] ?? 'inject'
+    const body = entry.detail ?? entry.text
+    const firstLine = body.split('\n').find(line => line.trim() !== '') ?? ''
+    const preview = firstLine.length <= 60 ? firstLine : `${firstLine.slice(0, 59)}…`
+    const lines = groups.get(kind) ?? []
+    lines.push(preview)
+    groups.set(kind, lines)
+  }
+  const body = [...groups.entries()]
+    .map(([kind, lines]) => `【${kind}】\n${lines.map(line => `  ${line}`).join('\n')}`)
+    .join('\n\n')
+  return { title: `${strings().ctxTitle}（${injections.length}）`, body }
+}
+
 /** 文档工具调用 → 审批弹窗富化数据（CC-02）。 */
-export function approvalContext(entry: ToolEntry | undefined): { commandText?: string; impactLines?: string[] } {
-  if (entry === undefined) return {}
+export function approvalContext(entry: ToolEntry | undefined): { commandText?: string; impactLines?: string[] } {  if (entry === undefined) return {}
   let args: Record<string, unknown> = {}
   try {
     const parsed: unknown = JSON.parse(entry.arguments)

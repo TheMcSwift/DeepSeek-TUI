@@ -74,6 +74,22 @@ describe('keyboard expand/collapse (no mouse listening)', () => {
     expect(plain.isThinkingExpanded()).toBe(false)
   })
 
+  it('V3: collapsed thinking shows the CC-style live clock (Thinking for Ns)', () => {
+    // Live: clock window open while streaming (Date.now()-driven frame).
+    const live = new AssistantMessageComponent(thinkingMessage(), true)
+    live.setThinkingClock(1_000, undefined)
+    expect(strip(live.render(80))).toMatch(/Thinking for \d+s/)
+    // Frozen: endedAt pins the seconds (3500 - 1000 = 2.5s → floor 2).
+    const frozen = new AssistantMessageComponent(thinkingMessage(), true)
+    frozen.setThinkingClock(1_000, 3_500)
+    const text = strip(frozen.render(80))
+    expect(text).toContain('Thinking for 2s')
+    expect(text).not.toContain('secret reasoning')
+    // No clock window: the static label stays.
+    const plain = new AssistantMessageComponent(thinkingMessage(), true, undefined, 'Thinking…')
+    expect(strip(plain.render(80))).toContain('Thinking…')
+  })
+
   it('toggles the tool card result view with Enter', () => {
     const card = toolCard()
     expect(card.isExpanded).toBe(false)

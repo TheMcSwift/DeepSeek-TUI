@@ -110,6 +110,19 @@ describe('projection', () => {
     expect(assistant[0].thinking).toEqual(['thinking…'])
   })
 
+  it('records decode samples for text deltas only (C1)', () => {
+    const t0 = 1_000_000
+    const doc = replay([
+      event('turn/start', { turn: 1 }),
+      event('step/start', { turn: 1, step: 1 }),
+      { seq: seq++, type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'Hi' } }, time: t0 } as never,
+      reasoningDelta(1, 1, 'thinking…'),
+      { seq: seq++, type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: ' there' } }, time: t0 + 500 } as never,
+    ])
+    const assistant = entriesOf(doc, 'assistant') as AssistantEntry[]
+    expect(assistant[0].decodeSamples).toEqual([{ t: t0, chars: 2 }, { t: t0 + 500, chars: 6 }])
+  })
+
   it('commits the assembled message authoritatively, replacing streamed text', () => {
     const doc = replay([
       event('turn/start', { turn: 1 }),

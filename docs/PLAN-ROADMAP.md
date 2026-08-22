@@ -21,13 +21,13 @@
 | # | 项 | 优先级/量 | 边界 | 前置 | 验收要点 |
 |---|---|---|---|---|---|
 | 1 | tui 手册技能随插件注册 | P0 / S | 内部（唯一例外） | 无 | ✅ 已落地（2026-08-22）：`--dump-config` 见 customSkillDirs；`/skills` 出现 tui（custom 源）；任意 cwd 可用。**专项规划：[PLAN-BUNDLED-SKILL.md](PLAN-BUNDLED-SKILL.md)** |
-| 2 | C1 TPS 仪表（流式 1/8 格 gauge + 回合 min-max sparkline，12 样本，语义色） | P1 / M | 内部 | stats.ts tok/s 窗口序列 | 流式时仪表出现；回合后 sparkline；≥50 绿/≥20 黄/<20 红；纯渲染单测 |
-| 3 | C2 缓存命中率进状态行（1 位小数常驻） | P1 / S | 内部 | stats.ts | footer/状态行常驻显示；切语言文案双语 |
-| 4 | A3 `/context` loaded-context 明细（system prompt 分节/工作区指令/动态上下文/技能目录/工具清单，各自截断） | P2 / M | 内部 | 注入行数据源（E12） | `/context` 报告视图；非交互轮也一致；E2E 场景 |
-| 5 | A18 `/tips` 提示面板（精简 5 组：快捷键/命令/工作流/个性化/避坑，中英双语） | P2 / S | 内部 | strings.ts | 面板渲染 + 空态 splash 首屏轮换；快照测试 |
-| 6 | V3 thinking `Thinking for Ns` 实时计数 + CC 式 ≤10 行折叠 | P1 / M | 内部 | 现有 thinking 渲染 | 计数实时跳；折叠 ≤10 行摘要；Ctrl+O 展开；重放时无计数（定格） |
-| 7 | V4 输入框 `❯` 前缀 + 权限语义边框色（pi `borderColor`，cc 预设） | P1 / M | 内部 | pi Editor seam（borderColor 已确认可用） | cc 预览下 `❯` 出现；边框色随权限（workspace-write 蓝/full-access 红）；IME 输入不破坏；pi 预设无变化 |
-| 8 | V5 `↓ N tokens` 后缀（busy 行，usage.outputTokens 累计） | P1 / M | 内部 | 流式 outputTokens 可用性评估 | busy 行 `✳ Deep diving... (2秒) · ↓ N tokens`；无 usage 时省略 |
+| 2 | C1 TPS 仪表（流式 1/8 格 gauge + 回合 min-max sparkline，12 样本，语义色） | P1 / M | 内部 | stats.ts tok/s 窗口序列 | ✅ 已落地（2026-08-22）：`decodeSamples` + `liveGauge`/`sparkline` 纯函数（chars≈4 tok 近似），busy 行 `▰▰▱▱… N tok/s`（≥50 success/≥20 warning/<20 error），回合后条目 footer 加 sparkline |
+| 3 | C2 缓存命中率进状态行（1 位小数常驻） | P1 / S | 内部 | stats.ts | ✅ 已覆盖（E2 统计条，2026-08-22 判定）：web `StatsLine` 为整数口径（`roundedIntegerPercent`），本地统计条含 `缓存命中 N%`，保持 web 对齐、不改为 1 位小数 |
+| 4 | A3 `/context` loaded-context 明细（system prompt 分节/工作区指令/动态上下文/技能目录/工具清单，各自截断） | P2 / M | 内部 | 注入行数据源（E12） | ✅ 已落地（2026-08-22）：`contextReport` 纯函数按 kind 分组注入行 + `/context` 命令（notice + Enter 展开全文） |
+| 5 | A18 `/tips` 提示面板（精简 5 组：快捷键/命令/工作流/个性化/避坑，中英双语） | P2 / S | 内部 | strings.ts | ✅ 已落地（2026-08-22）：`TipsPanel` 覆盖面板 + `/tips` 命令；splash 首屏轮换缓做（装饰性，避免快照脆化） |
+| 6 | V3 thinking `Thinking for Ns` 实时计数 + CC 式 ≤10 行折叠 | P1 / M | 内部 | 现有 thinking 渲染 | ✅ 已落地（2026-08-22）：折叠行 `Thinking for Ns`（流式实时/committed 定格，`setThinkingClock` 时钟窗口）；≤10 行摘要保持现有单行折叠 + 分级着色（记录于 BACKLOG-CC-VISUAL） |
+| 7 | V4 输入框 `❯` 前缀 + 权限语义边框色（pi `borderColor`，cc 预设） | P1 / M | 内部 | pi Editor seam（borderColor 已确认可用） | ✅ 部分落地（2026-08-22）：边框色随权限语义（cc 预设，`editor.borderColor` 运行时赋值；pi 还原主题边框）；**`❯` 前缀与 B15 同受限**（无 prompt 槽，包装影响 editor 宽度/光标锚定） |
+| 8 | V5 `↓ N tokens` 后缀（busy 行，usage.outputTokens 累计） | P1 / M | 内部 | 流式 outputTokens 可用性评估 | ✅ 已落地（2026-08-22）：cc 预设 busy 行 ` · ↓ N tokens`（decodeSamples 字符累计/4 近似——流式无逐 token usage，评估结论：近似展示） |
 
 ## 阶段 2 · 会话与输入
 

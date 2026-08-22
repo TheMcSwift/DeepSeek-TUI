@@ -108,12 +108,16 @@ function commitStreaming(doc: ViewDocument): ViewDocument {
 function appendStreaming(doc: ViewDocument, turn: number, step: number, text: string, thinking: string, at: number): ViewDocument {
   const id = `${turn}:${step}`
   const existing = doc.entries.find(entry => entry.id === id && entry.kind === 'assistant')
+  // C1: keep the last 24 decode samples (text deltas only; reasoning deltas
+  // are not decode throughput) for the live gauge and post-turn sparkline.
+  const sample = text === '' ? undefined : { t: at, chars: text.length }
   if (existing === undefined || existing.kind !== 'assistant') {
     const entry: AssistantEntry = {
       kind: 'assistant', id, turn, step, text,
       thinking: thinking === '' ? [] : [thinking],
       state: 'streaming',
       firstChunkAt: at,
+      ...sample === undefined ? {} : { decodeSamples: [sample] },
     }
     return { ...doc, entries: [...doc.entries, entry] }
   }
@@ -123,7 +127,14 @@ function appendStreaming(doc: ViewDocument, turn: number, step: number, text: st
     else nextThinking[nextThinking.length - 1] += thinking
   }
   return updateById(doc, id, entry => entry.kind === 'assistant'
-    ? { ...entry, text: entry.text + text, thinking: nextThinking }
+    ? {
+        ...entry,
+        text: entry.text + text,
+        thinking: nextThinking,
+        ...sample === undefined
+          ? {}
+          : { decodeSamples: [...(entry.decodeSamples ?? []).slice(-23), sample] },
+      }
     : entry)
 }
 

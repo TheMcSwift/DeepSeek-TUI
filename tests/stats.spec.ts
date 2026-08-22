@@ -10,11 +10,15 @@ import {
   cacheHitPercent,
   formatDuration,
   formatTokens,
+  gaugeGlyph,
+  liveGauge,
   sessionStats,
+  sparkline,
   statsStrip,
 } from '../src/projection/stats.ts'
 import { setStrings, strings } from '../src/view/strings.ts'
 import type { ViewDocument, ViewEntry } from '../src/document/document.ts'
+import type { DecodeSample } from '../src/document/document.ts'
 
 afterEach(() => { setStrings('zh') })
 
@@ -105,5 +109,46 @@ describe('web StatsLine parity (session stats strip)', () => {
     ]))
     expect(billedInputTokens(stats)).toBe(10)
     expect(cacheHitPercent(stats)).toBe(0)
+  })
+
+  describe('C1 decode gauge/sparkline', () => {
+    const samples = (pairs: Array<[number, number]>): DecodeSample[] =>
+      pairs.map(([t, chars]) => ({ t, chars }))
+
+    it('omits the live gauge while the window is too short or unstable', () => {
+      expect(liveGauge(undefined)).toBeUndefined()
+      expect(liveGauge(samples([[0, 10]]))).toBeUndefined()
+      // span under 250ms: too jittery to show.
+      expect(liveGauge(samples([[0, 10], [100, 12]]))).toBeUndefined()
+    })
+
+    it('estimates tps from the recent window and clamps the bars', () => {
+      // 8 samples at 200ms spacing, 10 chars each: span 1400ms,
+      // 80 chars ≈ 20 tokens → 14.3 tok/s → bars ceil(14.3/50*8)=3.
+      const window = Array.from({ length: 8 }, (_, i) => [1000 + i * 200, 10] as [number, number])
+      const gauge = liveGauge(samples(window))
+      expect(gauge).toBeDefined()
+      expect(gauge!.tps).toBe(14.3)
+      expect(gauge!.bars).toBe(3)
+      // A very fast window clamps to the full bar count.
+      const fast = Array.from({ length: 8 }, (_, i) => [2000 + i * 200, 500] as [number, number])
+      expect(liveGauge(samples(fast))!.bars).toBe(8)
+    })
+
+    it('renders the gauge glyphs with fixed slot count', () => {
+      expect(gaugeGlyph(3)).toBe('▰▰▰▱▱▱▱▱')
+      expect(gaugeGlyph(0)).toBe('▱▱▱▱▱▱▱▱')
+      expect(gaugeGlyph(9)).toBe('▰▰▰▰▰▰▰▰')
+    })
+
+    it('sparkline: min-max normalizes the last 12 samples and stays flat-silent', () => {
+      const flat = samples(Array.from({ length: 6 }, (_, i) => [i * 100, 8]))
+      expect(sparkline(flat)).toBeUndefined()
+      expect(sparkline(undefined)).toBeUndefined()
+      expect(sparkline(samples([[0, 1]]))).toBeUndefined()
+      const shaped = samples([[0, 1], [100, 2], [200, 4]])
+      // min-max over 7 steps: (1-1)/3*7=0 → ▁; (2-1)/3*7≈2.3 → ▃; (4-1)/3*7=7 → █.
+      expect(sparkline(shaped)).toBe('▁▃█')
+    })
   })
 })

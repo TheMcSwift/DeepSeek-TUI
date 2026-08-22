@@ -220,6 +220,8 @@ export interface TerminalApp {
   setCommands(items: readonly CommandChoice[]): void
   /** Open the sectioned /hotkeys reference panel (G38 re-layout). */
   showHotkeys(): void
+  /** Open the /tips reference panel (A18). */
+  showTips(): void
   /** Ask the human one question through an overlay dialog. */
   askDialog(question: ApprovalQuestion): Promise<ApprovalAnswer>
   /** Show the pending message queue length + 队首预览 while a turn runs (T1⑤). */

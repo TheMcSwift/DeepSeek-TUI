@@ -26,6 +26,12 @@ export interface HotkeySection {
   rows: HotkeyRow[]
 }
 
+/** One /tips group: a heading plus free-form hint lines (A18). */
+export interface TipGroup {
+  title: string
+  lines: string[]
+}
+
 /** The full copy surface; zh and en implement the same shape. */
 export interface Strings {
   ok: string
@@ -58,6 +64,11 @@ export interface Strings {
   hotkeysSections: readonly HotkeySection[]
   /** 面板底部提示行。 */
   hotkeysHint: string
+  /** /tips 面板标题与底部提示行（A18）。 */
+  tipsTitle: string
+  tipsHint: string
+  /** /tips 的分组内容（快捷键/命令/工作流/个性化/避坑）。 */
+  tipGroups: readonly TipGroup[]
   queueFirst: (count: number, preview: string) => string
   interrupted: string
   stopped: string
@@ -254,6 +265,9 @@ export interface Strings {
   agentsEmpty: string
   skillsTitle: string
   skillsEmpty: string
+  /** /context 报告（A3）：注入上下文的标题/空态。 */
+  ctxTitle: string
+  ctxEmpty: string
   noteMcp: string
   notePermissions: string
   noteLogin: string
@@ -356,6 +370,57 @@ const zh: Strings = {
     },
   ],
   hotkeysHint: '↑/↓ 滚动 · PgUp/PgDn 翻页 · Esc 关闭',
+  tipsTitle: '使用提示',
+  tipsHint: '↑/↓ 滚动 · PgUp/PgDn 翻页 · Esc 关闭',
+  tipGroups: [
+    {
+      title: '快捷键',
+      lines: [
+        'Esc / Ctrl+C 中断当前回合；空闲时 Ctrl+C 再按一次退出（3 秒窗口）',
+        'Ctrl+Enter 打断当前回合并立即发送；busy 时 Tab（有输入）= 回合后处理',
+        'Alt+Up 取回排队消息 · Alt+Enter 插话（steer） · Ctrl+T 显隐思考',
+        'Ctrl+R 会话 · Ctrl+G 模型 · Ctrl+P 权限 · Ctrl+F 搜索 · Ctrl+B 分支',
+        'Ctrl+O jobs 展开/收起 · Ctrl+L 轨迹 · Ctrl+K 折叠 · Ctrl+Z 撤销/重做',
+      ],
+    },
+    {
+      title: '命令',
+      lines: [
+        '/settings 聚合设置（语言/主题/Enter 行为/键位/动画/配置）',
+        '/keymap 交互预设（cc/pi/opencode）· /theme 视觉预设（web/cc/pi/opencode）',
+        '/status /tokens /cost /doctor 状态与诊断 · /queue 排队消息',
+        '/rewind 回退到一条用户消息（fork 分支 + 回填输入框） · /trajectory 轨迹',
+        '/export [md] 导出会话 · /rate 反馈评分 → / 看全量命令',
+      ],
+    },
+    {
+      title: '工作流',
+      lines: [
+        '/plan 进入计划模式（Ctrl+E 退出）；计划审批可批准/拒绝/去讨论',
+        '/goal 创建目标并多轮自动推进（/goal blocked 说明阻塞）',
+        'Ctrl+B 分支点选择器把历史 fork 成新会话（/clone 同约束）',
+        'busy 时 Enter 默认排队；/settings 或 DSH_TUI_ENTER=steer 改为插话',
+        '子代理会话只读（提交拦截）；/quit 等命令仍可用',
+      ],
+    },
+    {
+      title: '个性化',
+      lines: [
+        '/theme 四套视觉预设 + DSH_TUI_THEME 明暗（自动跟随终端背景）',
+        'DSH_TUI_KEYMAP / DSH_TUI_ENTER / DSH_TUI_LANG / DSH_TUI_ANIM=0',
+        '/lang 随时双语切换；/keymap 与 /theme 独立切换',
+      ],
+    },
+    {
+      title: '避坑',
+      lines: [
+        'Shift+Enter 换行；IME 组合输入不会误发',
+        '粘贴超过 30 行会先弹确认',
+        '输入框聚焦时 Home/End 移动光标；焦点环上滚动转录',
+        'cc 预设 Ctrl+X 用 $EDITOR 编辑当前输入（/compose 通用）',
+      ],
+    },
+  ],
   // pi 预设面板（Ctrl+C 中断 / Ctrl+G 撰写 / Ctrl+P 模型；权限走 /permission）
   hotkeysSectionsPi: [
     {
@@ -664,6 +729,8 @@ const zh: Strings = {
   agentsEmpty: '本会话没有子代理',
   skillsTitle: '技能目录',
   skillsEmpty: '无可用技能',
+  ctxTitle: '已加载上下文',
+  ctxEmpty: '本次会话暂无注入上下文',
   noteMcp: 'MCP 未配置：在 cordis.patch.yml 插入 @deepseek-ai/dsh-mcp-client 行后，工具以 mcp__<服务器>__<工具> 注册。',
   notePermissions: '文件/shell/sandbox/审批策略由当前 DSH profile 决定；/permission 切换预设（full-access 有确认）。',
   noteLogin: '凭证来自环境变量（如 DEEPSEEK_API_KEY）或 provider 配置；/provider 可添加提供方。',
@@ -766,6 +833,57 @@ const en: Strings = {
     },
   ],
   hotkeysHint: '↑/↓ scroll · PgUp/PgDn page · Esc close',
+  tipsTitle: 'Usage tips',
+  tipsHint: '↑/↓ scroll · PgUp/PgDn page · Esc close',
+  tipGroups: [
+    {
+      title: 'Shortcuts',
+      lines: [
+        'Esc / Ctrl+C interrupt the turn; idle Ctrl+C twice to quit (3s window)',
+        'Ctrl+Enter interrupts and sends now; busy Tab (with input) = follow-up',
+        'Alt+Up fetch queued · Alt+Enter steer · Ctrl+T toggle thinking',
+        'Ctrl+R sessions · Ctrl+G model · Ctrl+P permissions · Ctrl+F search · Ctrl+B fork',
+        'Ctrl+O jobs · Ctrl+L trajectory · Ctrl+K fold · Ctrl+Z undo/redo',
+      ],
+    },
+    {
+      title: 'Commands',
+      lines: [
+        '/settings aggregated panel (language/theme/enter/keymap/animation/config)',
+        '/keymap interaction presets (cc/pi/opencode) · /theme visual presets (web/cc/pi/opencode)',
+        '/status /tokens /cost /doctor status & diagnostics · /queue queued messages',
+        '/rewind back to a user message (fork + refill) · /trajectory event log',
+        '/export [md] export · /rate feedback — type / for the full catalog',
+      ],
+    },
+    {
+      title: 'Workflow',
+      lines: [
+        '/plan plan mode (Ctrl+E exits); approve/reject/discuss the plan review',
+        '/goal create a goal with automatic rounds (blocked reason via /goal)',
+        'Ctrl+B fork-point picker clones history into a new session (/clone same rules)',
+        'busy Enter queues by default; /settings or DSH_TUI_ENTER=steer switches to steer',
+        'subagent sessions are read-only (submit blocked; /quit still works)',
+      ],
+    },
+    {
+      title: 'Personalization',
+      lines: [
+        '/theme four visual presets + DSH_TUI_THEME light/dark (auto follows terminal)',
+        'DSH_TUI_KEYMAP / DSH_TUI_ENTER / DSH_TUI_LANG / DSH_TUI_ANIM=0',
+        '/lang toggles zh/en anytime; /keymap and /theme switch independently',
+      ],
+    },
+    {
+      title: 'Gotchas',
+      lines: [
+        'Shift+Enter inserts a newline; IME composition never sends mid-typing',
+        'Pastes over 30 lines ask for confirmation first',
+        'Home/End move the caret while the composer is focused; scroll on the focus ring',
+        'cc preset Ctrl+X edits the current input via $EDITOR (/compose everywhere)',
+      ],
+    },
+  ],
   // pi-preset panel (Ctrl+C interrupt / Ctrl+G compose / Ctrl+P model)
   hotkeysSectionsPi: [
     {
@@ -1073,6 +1191,8 @@ const en: Strings = {
   agentsEmpty: 'No subagents in this session',
   skillsTitle: 'Skill catalog',
   skillsEmpty: 'No skills available',
+  ctxTitle: 'Loaded context',
+  ctxEmpty: 'No injected context in this session yet',
   noteMcp: 'MCP not configured: insert an @deepseek-ai/dsh-mcp-client row in cordis.patch.yml; tools register as mcp__<server>__<tool>.',
   notePermissions: 'File/shell/sandbox/approval policy comes from the current DSH profile; /permission switches presets (full access confirms).',
   noteLogin: 'Credentials come from environment variables (e.g. DEEPSEEK_API_KEY) or provider config; /provider adds providers.',

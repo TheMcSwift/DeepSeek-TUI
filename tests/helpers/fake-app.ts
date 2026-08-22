@@ -82,6 +82,12 @@ export class FakeApp implements TerminalApp {
     this.hotkeysShown++
   }
 
+  /** Number of /tips panel opens (A18). */
+  tipsShown = 0
+  showTips(): void {
+    this.tipsShown++
+  }
+
   notifyQueue(count: number, messages?: readonly string[]): void {
     this.queues.push(count)
     this.queuedMessages.push(messages === undefined ? [] : [...messages])

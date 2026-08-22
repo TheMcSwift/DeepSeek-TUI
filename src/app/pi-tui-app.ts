@@ -30,8 +30,8 @@ import {
 } from '@earendil-works/pi-tui'
 import { emptyDocument, transcriptText } from '../document/document.ts'
 import { AtFileAutocompleteProvider, resolveAtPath } from './at-file-autocomplete.ts'
-import type { AssistantEntry, TurnOutcome, ViewDocument, ViewEntry } from '../document/document.ts'
-import { statsStrip } from '../projection/stats.ts'
+import type { AssistantEntry, DecodeSample, TurnOutcome, ViewDocument, ViewEntry } from '../document/document.ts'
+import { CHARS_PER_TOKEN, gaugeGlyph, liveGauge, sparkline, statsStrip } from '../projection/stats.ts'
 import { BrandView, shouldShowBrand, BRAND, ICE, gradientText } from '../view/brand.ts'
 import type { CommandChoice, ModelChoice, PermissionChoice, PluginsRow, ProjectionRow, SessionChoice, SettingsRow, SurfaceMeta, TerminalApp, TerminalAppHandlers, TrajectoryRow } from './terminal-app.ts'
 import { FilterablePickerPanel } from '../view/components/filterable-picker.ts'
@@ -59,6 +59,7 @@ import { FocusableFrame } from '../view/components/focus-frame.ts'
 import { SlashMenu, SLASH_MENU_ROWS } from '../view/components/slash-menu.ts'
 import type { SlashMenuItem, SlashMenuStyle } from '../view/components/slash-menu.ts'
 import { HotkeysPanel } from '../view/components/hotkeys-panel.ts'
+import { TipsPanel } from '../view/components/tips-panel.ts'
 import { PluginsPanel } from '../view/components/plugins-panel.ts'
 import { SettingsPanel } from '../view/components/settings-panel.ts'
 import { TrajectoryPanel } from '../view/components/trajectory-panel.ts'
@@ -326,7 +327,7 @@ function clockFooter(at: number | undefined): string | undefined {
 
 /** One dim stats footer for an assistant entry (T1②) + produced files (T4②). */
 function statsFooter(
-  entry: { turn?: number; stats?: { runMs: number; ttftMs: number; tokensPerSecond?: number }; usage?: { inputTokens: number; outputTokens: number }; outcome?: TurnOutcome },
+  entry: { turn?: number; stats?: { runMs: number; ttftMs: number; tokensPerSecond?: number }; usage?: { inputTokens: number; outputTokens: number }; outcome?: TurnOutcome; decodeSamples?: DecodeSample[] },
   doc: ViewDocument,
 ): string | undefined {
   const parts: string[] = []
@@ -337,6 +338,9 @@ function statsFooter(
     // ('{throughput} tok/s'); like Deep diving..., it stays unlocalized.
     if (entry.stats.tokensPerSecond !== undefined) parts.push(`${entry.stats.tokensPerSecond} tok/s`)
   }
+  // C1: post-turn decode sparkline (min-max over the last 12 samples).
+  const spark = sparkline(entry.decodeSamples)
+  if (spark !== undefined) parts.push(spark)
   // Files the same turn's tools produced (write/edit diff meta paths).
   if (entry.turn !== undefined) {
     const paths = new Set<string>()
@@ -384,6 +388,27 @@ function assistantFooter(entry: AssistantEntry, doc: ViewDocument): string | und
     ? fg('thinkingText')('⏺ ● ○ ○')
     : ''
   return [base ?? '', pulse].filter(part => part !== '').join(' · ')
+}
+
+/** The last assistant entry when the doc is mid-decode (C1/V5 consumers). */
+function streamingEntry(doc: ViewDocument): Extract<ViewEntry, { kind: 'assistant' }> | undefined {
+  for (let i = doc.entries.length - 1; i >= 0; i -= 1) {
+    const entry = doc.entries[i]
+    if (entry.kind !== 'assistant') continue
+    return entry.state === 'streaming' ? entry : undefined
+  }
+  return undefined
+}
+
+/** C1 live gauge text for the busy slot: `▰▰▰▱▱▱▱▱ 45 tok/s`, tone-coded
+ *  (≥50 success / ≥20 warning / <20 error); omitted while unstable/short. */
+function liveGaugeText(doc: ViewDocument): string | undefined {
+  const streaming = streamingEntry(doc)
+  if (streaming === undefined) return undefined
+  const gauge = liveGauge(streaming.decodeSamples)
+  if (gauge === undefined) return undefined
+  const tone = gauge.tps >= 50 ? 'success' : gauge.tps >= 20 ? 'warning' : 'error'
+  return ` · ${fg(tone)(gaugeGlyph(gauge.bars))} ${gauge.tps} tok/s`
 }
 
 /** Frame-wrap a message view unless it is already keyboard-focusable (T3④). */
@@ -1474,6 +1499,21 @@ export class PiTuiApp implements TerminalApp {
     tui.setFocus(panel)
   }
 
+  /** Open the /tips reference panel (grouped hint lines, A18). */
+  showTips(): void {
+    const tui = this.tui
+    if (tui === undefined) return
+    const panel = new TipsPanel(strings().tipGroups, () => {
+      this.overlayOpen = false
+      handle.hide()
+    })
+    this.overlayOpen = true
+    const handle = tui.showOverlay(panel, {
+      anchor: 'bottom-left', offsetY: -6, maxHeight: '50%', width: this.overlayWidth - 8,
+    })
+    tui.setFocus(panel)
+  }
+
   /** Open the trajectory (Inspect) view over the raw event log (B11/H31). */
   showTrajectory(rows: readonly TrajectoryRow[]): void {
     const tui = this.tui
@@ -1593,6 +1633,8 @@ export class PiTuiApp implements TerminalApp {
         )
         // cc 语式：思考结束后自动收起成一行（Claude Code 对齐）。
         inner.setAutoCollapseThinking(this.ccAutoCollapse && entry.state !== 'streaming')
+        // V3: 折叠行 CC 式实时时钟 `Thinking for Ns`（流式中跳秒、结束后定格）。
+        inner.setThinkingClock(entry.firstChunkAt, entry.state === 'streaming' ? undefined : entry.at)
         inner.setFooter(assistantFooter(entry, this.current))
         return frameOrSelf(maybeCollapse(inner, entry.text, entry.state !== 'streaming'), '助手回复')
       }
@@ -1786,6 +1828,13 @@ export class PiTuiApp implements TerminalApp {
   private applyState(doc: ViewDocument): void {
     const editor = this.editor
     if (this.tui === undefined || editor === undefined) return
+    // V4: cc 预设输入框边框色随权限语义（workspace-write 蓝 / full-access
+    // 红 / read-only 灰；pi/opencode 保持主题默认边框）。
+    if (this.keymap === 'cc' && doc.permissionPreset !== undefined) {
+      editor.borderColor = permissionTone(doc.permissionPreset)
+    } else if (this.keymap !== 'cc') {
+      editor.borderColor = getEditorTheme().borderColor
+    }
 
     if (this.header !== undefined) {
       const session = this.meta.session === ''
@@ -1912,9 +1961,20 @@ export class PiTuiApp implements TerminalApp {
       // cc 预设的耗时带括号（对齐 CC `✻ Herding… (8m 39s · ↓ N tokens)` 语式段）；
       // 其他预设保持 web 的空格拼接。
       const busyText = clock === '' ? diving : isCC ? `${diving} (${clock})` : `${diving} ${clock}`
+      // C1: live decode gauge (streaming entry's recent sample window).
+      let gauge = liveGaugeText(doc)
+      // V5: cc 预设 busy 行追加 `↓ N tokens`（CC 语式尾部；流式中无逐
+      // token usage，用 decodeSamples 的字符累计近似，与 C1 同口径）。
+      if (isCC) {
+        const streaming = streamingEntry(doc)
+        if (streaming?.decodeSamples !== undefined && streaming.decodeSamples.length > 0) {
+          const chars = streaming.decodeSamples.reduce((sum, s) => sum + s.chars, 0)
+          gauge = `${gauge ?? ''}${gauge === undefined ? '' : ' '}· ↓ ${Math.round(chars / CHARS_PER_TOKEN)} tokens`
+        }
+      }
       // 排队不只给数量：队首消息预览让用户知道自己排了什么（/queue dock 看全量）。
       const queued = this.queueCount > 0 ? ` · ${strings().queueFirst(this.queueCount, queuePreview(this.queueMessages))}` : ''
-      slot.setMessage(`${busyText}${queued}${endHint}`)
+      slot.setMessage(`${busyText}${gauge ?? ''}${queued}${endHint}`)
     } else {
       slot.setMessage(strings().diving)
     }

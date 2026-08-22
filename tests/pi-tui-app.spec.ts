@@ -11,6 +11,7 @@ import type { Terminal } from '@earendil-works/pi-tui'
 import { PiTuiApp, piTuiInternals } from '../src/app/pi-tui-app.ts'
 import type { PiTuiAppOptions } from '../src/app/pi-tui-app.ts'
 import { fg } from '../src/app/pi/color.ts'
+import { permissionTone } from '../src/app/pi/command-match.ts'
 import { mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -21,6 +22,10 @@ import { FakeTerminal } from './helpers/fake-terminal.ts'
 /** Build a document snapshot for render tests. */
 function doc(entries: ViewEntry[], busy = false): ViewDocument {
   return { entries, busy }
+}
+
+function docWithPermission(entries: ViewEntry[], preset: string): ViewDocument {
+  return { entries, busy: false, permissionPreset: preset }
 }
 
 interface Mounted {
@@ -1311,6 +1316,18 @@ describe('pi-tui surface', () => {
     expect(test.terminal.plain()).toContain('Thinking…')
   })
 
+  it('V3: 折叠行显示 CC 式时钟 Thinking for Ns（committed 定格）', async () => {
+    const test = mount()
+    await settle()
+    // committed + 自动收起：以 commit 时间定格（3500 - 1000 = 2.5s → floor 2）。
+    test.app.render(doc([
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'answer', thinking: ['secret'], state: 'committed', firstChunkAt: 1_000, at: 3_500 },
+    ]))
+    await settle()
+    expect(test.terminal.plain()).toContain('Thinking for 2s')
+    // 无时钟窗口的回退在组件级测试覆盖（keyboard-toggle.spec）。
+  })
+
   it('cc 语式：工具执行结束后自动收起为摘要行，Enter 展开完整输出', async () => {
     const test = mount()
     await settle()
@@ -1446,6 +1463,44 @@ describe('pi-tui surface', () => {
     expect(test.terminal.output).toContain('·')
     expect(test.terminal.output).toContain('\x1b[38;2;86;134;254')
     expect(test.terminal.plain()).toContain('Deep diving...')
+  })
+
+  it('V5: cc 预设 busy 行追加 `↓ N tokens`（字符近似累计）', async () => {    const test = mount() // 默认 keymap=cc
+    await settle()
+    test.app.render({
+      entries: [
+        { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'Hel', thinking: [], state: 'streaming',
+          firstChunkAt: Date.now() - 3_000, decodeSamples: [{ t: Date.now() - 3_000, chars: 20 }, { t: Date.now() - 500, chars: 80 }] },
+      ],
+      busy: true,
+    })
+    await settle()
+    // 100 chars / 4 ≈ 25 tokens；cc 预设才有（pi 预设无此后缀）。
+    expect(test.terminal.plain()).toContain('↓ 25 tokens')
+    const pi = mount(undefined, { keymap: 'pi' })
+    await settle()
+    pi.app.render({
+      entries: [
+        { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'Hel', thinking: [], state: 'streaming', firstChunkAt: Date.now() - 3_000, decodeSamples: [{ t: Date.now() - 3_000, chars: 20 }, { t: Date.now() - 500, chars: 80 }] },
+      ],
+      busy: true,
+    })
+    await settle()
+    expect(pi.terminal.plain()).not.toContain('↓ 25 tokens')
+  })
+
+  it('V4: cc 预设输入框边框随权限语义着色（full-access 红），pi 预设还原', async () => {
+    const test = mount() // 默认 keymap=cc
+    await settle()
+    test.app.render(docWithPermission([], 'full-access'))
+    await settle()
+    const red = permissionTone('full-access')('─')
+    expect(test.terminal.output).toContain(red)
+    const pi = mount(undefined, { keymap: 'pi' })
+    await settle()
+    pi.app.render(docWithPermission([], 'full-access'))
+    await settle()
+    expect(pi.terminal.output).not.toContain(red)
   })
 
   it('badges a turn outcome on the assistant message footer (P0)', async () => {
