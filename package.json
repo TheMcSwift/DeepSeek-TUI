@@ -25,6 +25,7 @@
   "files": [
     "lib",
     "!lib/**/*.js.map",
+    "skills",
     "cordis.patch.yml"
   ],
   "scripts": {

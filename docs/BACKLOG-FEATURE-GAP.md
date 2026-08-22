@@ -3,6 +3,8 @@
 > 来源：[docs/COMMUNITY-COMPARISON.md](COMMUNITY-COMPARISON.md)（ccch1mneyyy/dsh-TUI v0.8.5 对比，2026-08-20）。
 > 范围：**远程有而我们没有 / 我们有但不如它**的功能，逐项给出实现方案。
 > cc 预设与 Claude Code 的广义交互差距单独跟踪：[BACKLOG-CC-PARITY.md](BACKLOG-CC-PARITY.md)。
+> 能力边界判定（哪些本分留内部 / 哪些过于增强应独立）：[BOUNDARY-DESIGN.md](BOUNDARY-DESIGN.md)。
+> 全量实现规划（批次/阶段/验收/依赖）：[PLAN-ROADMAP.md](PLAN-ROADMAP.md)。
 > 优先级：P0 交互缺陷（影响日常使用）· P1 高价值（对齐主流体验）· P2 打磨 · P3 评估/远期。
 > 工作量：S（≤1 批）· M（1–2 批）· L（多批/需专项设计）。
 > 类型：缺失（远程有我们没有）· 弱化（我们有但明显不如）。
@@ -41,7 +43,7 @@
 | A18 | `/tips` 提示面板 | P2 / S / 缺失 | — | 精简 tips 池（5 组：快捷键/命令/工作流/个性化/避坑）中英双语 + 面板；空态 splash 首屏轮换 | strings.ts 双语 |
 | A19 | `/debug-prompt` | P3 / S / 缺失 | — | llm/stream 边界捕获最后请求上下文快照（≤8 个），命令原子写 `.dsh-prompt-debug.json`（0600）；当前轮未结束拒绝 | **约束**：捕获点需在 llm 服务 seam，结构读取可行性需验证 |
 | A20 | `/update` 自更新 | P3 / L / ⛔ 不做 | — | **决策（2026-08-20）：不做**——记录为定位边界（需 npm 发布流程） | 定位边界 |
-| A21 | 打包技能（7 个） | P2 / L / 缺失 | 无打包技能（DSH 侧技能经 / 菜单可达） | 设计本地技能集（audit/bug/review/practice/pr_comments/release-notes/vuln-check 或按本地风格裁剪），`skills/<name>/SKILL.md` 随包注册（需确认 out-of-tree 下注册缝隙；不可行则文档级技能说明） | **约束**：技能注册路径需验证（本地无 plugin 挂载 skills 目录的机制，可能仅能文档化） |
+| A21 | 打包技能（7 个） | P2 / L / 缺失 | 无打包技能（DSH 侧技能经 / 菜单可达） | 设计本地技能集（audit/bug/review/practice/pr_comments/release-notes/vuln-check 或按本地风格裁剪），`skills/<name>/SKILL.md` 随包注册（需确认 out-of-tree 下注册缝隙；不可行则文档级技能说明） | **约束 ✅ 已验证（2026-08-22）**：技能注册走用户级 `~/.dsh/skills/<名>/`（或 `<cwd>/.dsh/skills/`），安装单元自带 skills/ 目录可经 `skill-filesystem` 的 `customSkillDirs`（`!!js` + `baseUrl`）注册进宿主 registry（官方 agent.cordis.yml 先例）。**本项只管 7 个 agent 工作流技能**；tui 操作手册技能是自描述能力、唯一例外，改由 TUI 插件注册（见 BOUNDARY-DESIGN.md §6.2），不随本项 |
 | A22 | `/export` Markdown 导出 | P2 / M / 弱化 | /export 展示 jsonl 路径 + flush（web 语义） | 加 `--md` 或双命令：导出 `dsh-tui-export-<ts>.md`（用户/思考/助手/工具分节 + 模型/会话/目录/时间），写入会话 cwd | 文档流已有全文（transcriptText 机制可复用） |
 | A23 | `/login /logout /permissions /add-dir /hooks` 状态类 | P2 / S 各 / 缺失 | — | 各打印说明行（凭证状态脱敏 / 权限策略 / 文件策略作用域 / hooks 占位说明），不改行为 | 组合服务结构读取，无则提示不可用 |
 

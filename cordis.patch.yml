@@ -14,6 +14,15 @@
   config:
     mode: !!js process.env.DSH_TOOLS_MODE
 
+# Bundle-registered skill: the tui manual is self-describing content (the only
+# skill shipped by this bundle; see docs/BOUNDARY-DESIGN.md §6.2). The
+# expression resolves this bundle's own `skills/` dir from the profile's
+# node_modules layout (same resolution the loader uses for the bundle itself).
+- id: skill-filesystem
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(new URL('package.json', ctx.baseUrl)).resolve('@mcswift/dsh-tui/package.json')) + '/skills'"
+
 - insert:
     - id: code-runtime
       name: '@deepseek-ai/dsh-code-runtime-worker-thread'

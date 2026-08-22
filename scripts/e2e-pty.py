@@ -630,6 +630,36 @@ def scenario_regular() -> None:
         mock.terminate()
 
 
+def scenario_skills() -> None:
+    """Bundled tui manual: the skill registered by this bundle's own patch
+    (skill-filesystem customSkillDirs) shows up in the local /skills catalog
+    regardless of cwd — the E2E cwd is the workspace, but the custom root is
+    the bundle's own skills/ dir, not a project/user root."""
+    ensure_core_home()
+    mock = start_mock(8766, "success")
+    tui = TuiProcess(["--fullscreen"], env_extra={"DSH_HOME": CORE_HOME})
+    try:
+        assert tui.wait_for("dsh tui", 30), "banner did not render"
+        # Typing the command letter-by-letter renders the filter narrowing:
+        # the `/s` frame lists the bundled manual with its whenToUse detail
+        # (the keyword is unique; banner text contains "tui" but not it).
+        tui.type("/skills\r")
+        assert tui.wait_for("当用户询问本 TUI 界面", 20), "bundled tui skill missing from slash menu"
+        assert tui.wait_for("技能目录", 10), "skills catalog did not render"
+        tui.type("/quit\r")
+        tui.type("/quit\r")
+        try:
+            assert tui.wait_exit(30) == 0
+        except TimeoutError:
+            print("[e2e-skills] TIMEOUT, last output:")
+            print(plain(tui.out.decode("utf-8", "replace"))[-6000:])
+            raise
+        print("[e2e-skills] bundled skill registered")
+    finally:
+        tui.kill()
+        mock.terminate()
+
+
 def main() -> int:
     check_resume = "--no-resume" not in sys.argv
     marker = f"e2e-ping-{int(time.time())}"
@@ -684,6 +714,10 @@ def main() -> int:
 
     if "--only-regular" in sys.argv:
         scenario_regular()
+        return 0
+
+    if "--only-skills" in sys.argv:
+        scenario_skills()
         return 0
 
     # 1. fresh session, one turn, quit (isolated home: the user's live
