@@ -1396,6 +1396,44 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     await swap(undefined)
   }
 
+  /** A14: /workspace open 的路径解析（绝对/相对/`~`/file:// URI）。 */
+  const resolveWorkspaceTarget = (target: string): string => {
+    let path = target
+    if (path.startsWith('file://')) {
+      const rest = path.slice('file://'.length)
+      path = decodeURIComponent(rest.startsWith('localhost/') ? rest.slice('localhost'.length) : rest)
+    } else if (path.startsWith('~/')) {
+      path = join(homedir(), path.slice(2))
+    } else if (path === '~') {
+      path = homedir()
+    }
+    return resolve(path)
+  }
+
+  /** A14: /workspace rename（复用 /rename workspace 的单段名校验 + fs.rename）。 */
+  const renameWorkspaceDir = async (): Promise<void> => {
+    const answer = await app.askDialog({ title: strings().wsRenamePrompt, options: [] })
+    if (answer.reason !== 'picked' || answer.picked === undefined) return
+    const newName = answer.picked.trim()
+    if (newName === '') return
+    if (newName.includes('/') || newName.includes('\\') || newName === '.' || newName === '..') {
+      app.toast(strings().wsRenameInvalid, 'error')
+      return
+    }
+    const current = resolve(workspaceRef.current ?? config.workspace ?? '.')
+    const next = resolve(dirname(current), newName)
+    if (next === current) return
+    try {
+      renameSync(current, next)
+      workspaceRef.current = next
+      meta.workspace = next
+      app.setWorkspace(next)
+      app.toast(strings().wsRenamed(next), 'success')
+    } catch (error) {
+      app.toast(strings().wsRenameFailed(error instanceof Error ? error.message : String(error)), 'error')
+    }
+  }
+
   /** /plugins 能力清单（M3，H20/H21 代理视图：命令/技能/投影三区）。 */
   const openPlugins = async (): Promise<void> => {
     const agent = handle?.agent
@@ -1886,25 +1924,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             target = pick.picked === strings().renameWorkspace ? 'workspace' : 'session'
           }
           if (target === 'workspace') {
-            // H11: 重命名当前工作区目录（单段名校验后 fs.rename）。
-            const newName = await askName(strings().wsRenamePrompt)
-            if (newName === undefined) return
-            if (newName.includes('/') || newName.includes('\\') || newName === '.' || newName === '..') {
-              app.toast(strings().wsRenameInvalid, 'error')
-              return
-            }
-            const current = resolve(workspaceRef.current ?? config.workspace ?? '.')
-            const next = resolve(dirname(current), newName)
-            if (next === current) return
-            try {
-              renameSync(current, next)
-              workspaceRef.current = next
-              meta.workspace = next
-              app.setWorkspace(next)
-              app.toast(strings().wsRenamed(next), 'success')
-            } catch (error) {
-              app.toast(strings().wsRenameFailed(error instanceof Error ? error.message : String(error)), 'error')
-            }
+            // H11/A14: 重命名当前工作区目录（单段名校验后 fs.rename）。
+            await renameWorkspaceDir()
             return
           }
           // 会话标题（原语义）：sessionTitle.rename 固定标题，自动生成停止。
@@ -1971,7 +1992,38 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         return
       }
       if (name === '__workspace') {
-        openWorkspace()
+        // A14: 子命令 resume/rename/open；无参带说明打开最近列表（保留便捷）。
+        const workspaceUsageNotice = (): void => {
+          doc = { ...doc, entries: [...doc.entries, {
+            kind: 'notice' as const, id: `notice:ws-usage:${cmdSeq++}`,
+            text: strings().workspaceUsage, tone: 'info' as const,
+          }] }
+          app.render(doc)
+        }
+        const arg = (rawInput ?? '').trim()
+        const [sub, ...rest] = arg.split(/\s+/)
+        const target = rest.join(' ').trim()
+        if (sub === 'resume' || arg === '') {
+          if (arg !== '') openWorkspace()
+          else {
+            workspaceUsageNotice()
+            openWorkspace()
+          }
+          return
+        }
+        if (sub === 'rename') {
+          void renameWorkspaceDir().catch((error: unknown) => { fail(exit, error) })
+          return
+        }
+        if (sub === 'open') {
+          if (target === '') {
+            workspaceUsageNotice()
+            return
+          }
+          void applyWorkspacePath(resolveWorkspaceTarget(target)).catch((error: unknown) => { fail(exit, error) })
+          return
+        }
+        workspaceUsageNotice()
         return
       }
       if (name === '__resume') {

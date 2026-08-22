@@ -765,6 +765,25 @@ describe('tui runner', () => {
     }
   })
 
+  it('A14: /workspace open 解析 file:// URI 并新建会话', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'dsh-tui-ws-open-'))
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('sessionQuery', {
+        listSessions: async () => [],
+        readTitle: async () => undefined,
+      })
+    })
+    try {
+      await test.started
+      test.app.handlers?.onCommandPicked('__workspace', `open file://${tmp}`)
+      await settle(200)
+      expect(test.app.workspaces).toContain(tmp)
+      await test.ctx.fiber.dispose()
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
   it('opens the session picker from the /resume command and backfills titles into the cache', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-tui-resume-home-'))
     const previousHome = process.env.DSH_HOME

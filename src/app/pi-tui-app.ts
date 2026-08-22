@@ -285,9 +285,13 @@ function queuePreview(messages: readonly string[]): string {
 function entrySearchText(entry: ViewEntry): string {
   switch (entry.kind) {
     case 'user':
-    case 'assistant':
-    case 'notice':
       return entry.text
+    case 'notice':
+      // detail（注入全文/local 输出）也命中（B6）。
+      return `${entry.text}\n${entry.detail ?? ''}`
+    case 'assistant':
+      // 思考块进搜索面（B6）：text + thinking。
+      return `${entry.text}\n${(entry.thinking ?? []).join('\n')}`
     case 'tool': {
       const output = entry.output?.blocks
         .filter(block => block.type === 'text' && typeof block.text === 'string')
@@ -472,6 +476,11 @@ export class PiTuiApp implements TerminalApp {
   private footerLine = new FooterLine()
   /** -1 = composer; >= 0 = index into focusableCards (focus traversal). */
   private focusIndex = -1
+  /** B7: Shift+Up 消息选择模式（焦点环 + ↑/↓ 逐条移动）。 */
+  private selectionMode = false
+  /** B6: 最近一次搜索结果与跳转游标（Ctrl+N/Alt+N 循环跳转）。 */
+  private searchHits: Array<{ entryId: string; preview: string }> = []
+  private searchCursor = 0
   /** An overlay (picker/dialog) owns the keyboard while open. */
   private overlayOpen = false
   /** Ctrl+T toggles whether reasoning blocks render at all. */
@@ -722,6 +731,35 @@ export class PiTuiApp implements TerminalApp {
       this.exportTranscriptToScrollback()
       return { consume: true }
     }
+    // B7: Shift+Up 进入/前移消息选择（= 焦点环入口，聚焦最后一条可聚焦消息；
+    // 选择模式下 ↑/↓ 逐条移动、Enter 交互展开、Esc 退出——与 Tab 焦点环同机制）。
+    if (matchesKey(data, 'shift+up') && !this.overlayOpen) {
+      const items = this.focusableItems
+      if (items.length === 0) return undefined
+      if (!this.selectionMode) {
+        this.selectionMode = true
+        this.setFocusIndex(items.length - 1)
+        this.toast(strings().messagePickHint, 'info')
+      } else {
+        this.moveFocus(+1)
+      }
+      return { consume: true }
+    }
+    if (this.selectionMode && this.focusIndex >= 0) {
+      if (matchesKey(data, 'up')) {
+        this.moveFocus(+1)
+        return { consume: true }
+      }
+      if (matchesKey(data, 'down')) {
+        this.moveFocus(-1)
+        return { consume: true }
+      }
+      if (matchesKey(data, 'enter')) {
+        // 交给聚焦条目组件处理展开/收起，选择模式退出（焦点保留）。
+        this.selectionMode = false
+        return undefined
+      }
+    }
     // cc 预设的 CC 语义例外（B4）：busy 且输入非空时 Tab = follow-up（排入当前
     // 回合之后），输入为空仍走焦点环。
     if (matchesKey(data, 'tab') && !this.overlayOpen) {
@@ -739,6 +777,7 @@ export class PiTuiApp implements TerminalApp {
       }
     }
     if (matchesKey(data, 'escape') && !this.overlayOpen && this.focusIndex >= 0) {
+      this.selectionMode = false
       this.setFocusIndex(-1)
       return { consume: true }
     }
@@ -873,6 +912,18 @@ export class PiTuiApp implements TerminalApp {
       case 'search':
         void this.startSearch()
         return { consume: true }
+      case 'searchNextHit':
+        if (!this.overlayOpen && this.searchHits.length > 0) {
+          this.jumpToHit(1)
+          return { consume: true }
+        }
+        return undefined
+      case 'searchPrevHit':
+        if (!this.overlayOpen && this.searchHits.length > 0) {
+          this.jumpToHit(-1)
+          return { consume: true }
+        }
+        return undefined
       case 'fork':
         this.handlers?.onForkPickerRequest?.()
         return { consume: true }
@@ -1130,6 +1181,9 @@ export class PiTuiApp implements TerminalApp {
     this.wasBusy = false
     this.queueCount = 0
     this.queueMessages = []
+    this.selectionMode = false
+    this.searchHits = []
+    this.searchCursor = 0
     this.editor?.setText('')
     this.applyState(this.current)
   }
@@ -1837,6 +1891,14 @@ export class PiTuiApp implements TerminalApp {
     this.tui?.requestRender()
   }
 
+  /** B7: 选择模式内沿条目顺序移动焦点（clamp 到两端）。 */
+  private moveFocus(delta: number): void {
+    const items = this.focusableItems
+    if (items.length === 0) return
+    const next = Math.max(0, Math.min(items.length - 1, this.focusIndex + delta))
+    if (this.focusIndex !== next) this.setFocusIndex(next)
+  }
+
   /** Recompute the fixed status rows under the input line. */
   private refreshFooter(): void {
     this.footerLine.set(this.current, this.meta.workspace ?? process.cwd(),
@@ -2183,12 +2245,28 @@ export class PiTuiApp implements TerminalApp {
       await this.askDialog({ title: '无匹配', options: [strings().ok] })
       return
     }
+    this.searchHits = matches
+    this.searchCursor = 0
     this.showChoicePicker(`搜索结果 · ${matches.length} 处`, matches.map(match => ({
       value: match.entryId,
       label: match.preview,
     })), (value) => {
-      if (value !== null) this.jumpToEntry(value)
+      if (value !== null) {
+        const index = matches.findIndex(match => match.entryId === value)
+        if (index !== -1) this.searchCursor = index
+        this.jumpToEntry(value)
+        this.toast(strings().searchHitPosition(this.searchCursor + 1, matches.length), 'info')
+      }
     })
+  }
+
+  /** B6: 结果间循环跳转（Ctrl+N 下一个 / Alt+N 上一个）。 */
+  private jumpToHit(delta: number): void {
+    if (this.searchHits.length === 0) return
+    const n = this.searchHits.length
+    this.searchCursor = (this.searchCursor + delta + n) % n
+    this.jumpToEntry(this.searchHits[this.searchCursor].entryId)
+    this.toast(strings().searchHitPosition(this.searchCursor + 1, n), 'info')
   }
 
   /** Search every renderable entry's visible text; returns entry-scoped hits. */

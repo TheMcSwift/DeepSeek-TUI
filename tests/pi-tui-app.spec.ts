@@ -301,6 +301,31 @@ describe('pi-tui surface', () => {
     await settle()
   })
 
+  it('B6: 搜索覆盖思考与工具输出，Ctrl+N 循环跳转', async () => {
+    const test = mount()
+    await settle()
+    test.app.render(doc([
+      { kind: 'assistant', id: 'a1', turn: 1, step: 1, text: 'answer one', thinking: ['secret needle thought'], state: 'committed' },
+      { kind: 'tool', id: 'c1', callId: 'c1', name: 'bash', arguments: '{"command":"grep tool-needle"}', state: 'done', turn: 2, step: 1, output: { blocks: [{ type: 'text', text: 'tool result needle' }] } },
+      { kind: 'user', id: 'u1', text: 'plain text' },
+    ]))
+    await settle()
+    test.terminal.feed('\x06')
+    await settle()
+    test.terminal.feed('needle\r')
+    await settle()
+    expect(test.terminal.plain()).toContain('搜索结果 · 2 处')
+    test.terminal.feed('\r') // pick the first hit (thinking)
+    await settle()
+    expect(test.terminal.plain()).toContain('搜索结果 1/2')
+    test.terminal.feed('\x0e') // Ctrl+N → next hit (tool output)
+    await settle()
+    expect(test.terminal.plain()).toContain('搜索结果 2/2')
+    test.terminal.feed('\x0e') // wraps back to the first
+    await settle()
+    expect(test.terminal.plain()).toContain('搜索结果 1/2')
+  })
+
   it('runs !command and reports its output (T5①)', async () => {
     const test = mount()
     await settle()
@@ -1489,8 +1514,7 @@ describe('pi-tui surface', () => {
     expect(pi.terminal.plain()).not.toContain('↓ 25 tokens')
   })
 
-  it('V4: cc 预设输入框边框随权限语义着色（full-access 红），pi 预设还原', async () => {
-    const test = mount() // 默认 keymap=cc
+  it('V4: cc 预设输入框边框随权限语义着色（full-access 红），pi 预设还原', async () => {    const test = mount() // 默认 keymap=cc
     await settle()
     test.app.render(docWithPermission([], 'full-access'))
     await settle()
@@ -1501,6 +1525,34 @@ describe('pi-tui surface', () => {
     pi.app.render(docWithPermission([], 'full-access'))
     await settle()
     expect(pi.terminal.output).not.toContain(red)
+  })
+
+  it('B7: Shift+Up 进入消息选择（焦点环入口），↑/↓ 移动、Enter 退出、Esc 复位', async () => {
+    const test = mount()
+    await settle()
+    test.app.render(doc([
+      { kind: 'assistant', id: '1:1', turn: 1, step: 1, text: 'first', thinking: [], state: 'committed' },
+      { kind: 'tool', id: 'c1', callId: 'c1', name: 'bash', arguments: '{}', state: 'done', turn: 2, step: 1 },
+      { kind: 'assistant', id: '2:1', turn: 2, step: 1, text: 'second', thinking: [], state: 'committed' },
+    ]))
+    await settle()
+    // 进入选择模式：聚焦最后一条（second），并提示。
+    test.terminal.feed('\x1b[1;2A')
+    await settle()
+    expect(test.terminal.plain()).toContain('消息选择')
+    // ↑ 前移 / ↓ 回移（clamp 不崩）；Enter 交给条目组件后选择模式退出。
+    test.terminal.feed('\x1b[A')
+    await settle()
+    test.terminal.feed('\x1b[B')
+    await settle()
+    test.terminal.feed('\r')
+    await settle()
+    // Esc 复位焦点到输入框。
+    test.terminal.feed('\x1b')
+    await settle()
+    test.terminal.feed('typing after esc')
+    await settle()
+    expect(test.terminal.plain()).toContain('typing after esc')
   })
 
   it('badges a turn outcome on the assistant message footer (P0)', async () => {

@@ -75,6 +75,10 @@ export interface Strings {
   /** 可展开 notice（注入行/本地输出）聚焦提示行。 */
   expandHint: string
   localHint: string
+  /** B7 Shift+Up 消息选择模式进入提示。 */
+  messagePickHint: string
+  /** B6 搜索结果位置提示（第 N / 共 M 处）。 */
+  searchHitPosition: (index: number, total: number) => string
   queueFirst: (count: number, preview: string) => string
   interrupted: string
   stopped: string
@@ -228,6 +232,7 @@ export interface Strings {
   slashPopupHint: string
   workspaceTitle: string
   workspaceCurrent: string
+  workspaceUsage: string
   workspaceSessions: (n: number) => string
   // /rename（会话标题 + 工作区目录两种目标）
   renameSession: string
@@ -383,6 +388,8 @@ const zh: Strings = {
   historyEmpty: '暂无输入历史',
   expandHint: '注入内容 · ⏎ 展开/收起 · Esc 返回输入',
   localHint: '本地输出 · ⏎ 展开/收起 · Esc 返回输入',
+  messagePickHint: '消息选择 · ↑/↓ 移动 · Enter 展开 · Esc 退出',
+  searchHitPosition: (index: number, total: number): string => `搜索结果 ${index}/${total}`,
   tipGroups: [
     {
       title: '快捷键',
@@ -707,6 +714,7 @@ const zh: Strings = {
   slashPopupHint: '↑/↓ 选择 · PgUp/PgDn 翻页 · Enter 执行 · Ctrl+P 面板',
   workspaceTitle: '工作区',
   workspaceCurrent: '当前',
+  workspaceUsage: '用法：/workspace [resume|rename|open <路径>] · resume=最近列表 · rename=重命名当前目录 · open=绝对/相对路径或 file:// URI（新建会话）',
   workspaceSessions: (n: number): string => `${n} 个会话`,
 
   // TUI-native (no web equivalent; bilingual for consistency)
@@ -853,6 +861,8 @@ const en: Strings = {
   historyEmpty: 'No input history yet',
   expandHint: 'Injected content · ⏎ expand/collapse · Esc back',
   localHint: 'Local output · ⏎ expand/collapse · Esc back',
+  messagePickHint: 'Message pick · ↑/↓ move · Enter expand · Esc exit',
+  searchHitPosition: (index: number, total: number): string => `Search hit ${index}/${total}`,
   tipGroups: [
     {
       title: 'Shortcuts',
@@ -1176,6 +1186,7 @@ const en: Strings = {
   slashPopupHint: '↑/↓ select · PgUp/PgDn page · Enter run · Ctrl+P palette',
   workspaceTitle: 'Workspace',
   workspaceCurrent: 'current',
+  workspaceUsage: 'Usage: /workspace [resume|rename|open <path>] · resume=recent list · rename=rename current dir · open=absolute/relative path or file:// URI (new session)',
   workspaceSessions: (n: number): string => `${n} sessions`,
 
   // TUI-native

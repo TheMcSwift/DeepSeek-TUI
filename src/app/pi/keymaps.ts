@@ -43,6 +43,9 @@ export type KeyAction =
   | 'steer'       // Alt+Enter 并入当前轮
   | 'retrieve'    // Alt+Up 取回排队消息
   | 'historySearch' // Alt+R 输入历史搜索（B5；Ctrl+R 为会话/重命名已占用）
+  | 'messagePick'  // Shift+Up 消息选择模式（B7 = 焦点环入口）
+  | 'searchNextHit' // Ctrl+N 下一个搜索结果（B6）
+  | 'searchPrevHit' // Alt+N 上一个搜索结果（B6）
   | 'jobs'        // jobs 折叠/展开
   | 'trajectory'  // 轨迹视图
   | 'fold'        // 折叠旧消息
@@ -132,6 +135,9 @@ export const CC_KEYMAP: Keymap = {
     { action: 'steer', keys: ['\x1b\r', 'alt+enter'] },
     { action: 'retrieve', keys: ['\x1b\x1b[A', 'alt+up'] },
     { action: 'historySearch', keys: ['\x1br', 'alt+r'] },
+    { action: 'messagePick', keys: ['\x1b[1;2A', 'shift+up'] },
+    { action: 'searchNextHit', keys: ['\x0e', 'ctrl+n'] },
+    { action: 'searchPrevHit', keys: ['\x1bn', 'alt+n'] },
     { action: 'jobs', keys: ['\x0f', 'ctrl+o'] },
     { action: 'trajectory', keys: ['\x0c', 'ctrl+l'] },
     { action: 'fold', keys: ['ctrl+k'] },
@@ -162,6 +168,9 @@ export const PI_KEYMAP: Keymap = {
     { action: 'steer', keys: ['\x1b\r', 'alt+enter'] },
     { action: 'retrieve', keys: ['\x1b\x1b[A', 'alt+up'] },
     { action: 'historySearch', keys: ['\x1br', 'alt+r'] },
+    { action: 'messagePick', keys: ['\x1b[1;2A', 'shift+up'] },
+    { action: 'searchNextHit', keys: ['\x0e', 'ctrl+n'] },
+    { action: 'searchPrevHit', keys: ['\x1bn', 'alt+n'] },
     { action: 'jobs', keys: ['\x0f', 'ctrl+o'] },
     { action: 'trajectory', keys: ['\x0c', 'ctrl+l'] },
     { action: 'fold', keys: ['ctrl+k'] },
@@ -203,6 +212,9 @@ export const OPENCODE_KEYMAP: Keymap = {
     { action: 'steer', keys: ['\x1b\r', 'alt+enter'] },
     { action: 'retrieve', keys: ['\x1b\x1b[A', 'alt+up'] },
     { action: 'historySearch', keys: ['\x1br', 'alt+r'] },
+    { action: 'messagePick', keys: ['\x1b[1;2A', 'shift+up'] },
+    { action: 'searchNextHit', keys: ['\x0e', 'ctrl+n'] },
+    { action: 'searchPrevHit', keys: ['\x1bn', 'alt+n'] },
     { action: 'jobs', keys: ['\x0f', 'ctrl+o'] },
     { action: 'fold', keys: ['ctrl+k'] },
   ],
