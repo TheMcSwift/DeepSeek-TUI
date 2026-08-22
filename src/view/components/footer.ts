@@ -38,6 +38,10 @@ function compact(count: number): string {
   return `${Math.round(count / 1000)}k`
 }
 
+/** Footer 显示档位（F3/V8）：full=两行全量 · compact=去掉路径与计数 ·
+ *  minimal=仅统计条行（无统计时留白）。 */
+export type FooterMode = 'full' | 'compact' | 'minimal'
+
 export class FooterLine implements Component {
   private line = ''
 
@@ -46,8 +50,9 @@ export class FooterLine implements Component {
    * @param statsLine - the session stats strip (web composer.dock parity),
    *   computed by the caller from `statsStrip(doc, strings())`; may be
    *   empty before any turn settles.
+   * @param mode - F3/V8 footer 档位（full/compact/minimal）。
    */
-  set(doc: ViewDocument, workspace: string, statsLine: string, context: FooterContext = {}): boolean {
+  set(doc: ViewDocument, workspace: string, statsLine: string, context: FooterContext = {}, mode: FooterMode = 'full'): boolean {
     let input = 0
     let output = 0
     let cacheRead = 0
@@ -121,7 +126,14 @@ export class FooterLine implements Component {
       facts += `${fg(tone)(`ctx ${pct}%`)} ${bar} · `
     }
     facts += `${fg('muted')(workspace)} · ${fg('text')(`${messages} msgs`)} · ${fg('text')(`in ${compact(input)}`)} ${fg('text')(`out ${compact(output)}`)}`
-    const next = statsLine === '' ? facts : `${fg('dim')(statsLine)}\n${facts}`
+    // F3/V8: compact 档去掉路径与计数（保留模型/权限/ctx）；minimal 档仅统计条行。
+    if (mode === 'compact') {
+      const leading = facts.indexOf(workspace)
+      facts = leading > 0 ? facts.slice(0, leading - 3) : facts
+    } else if (mode === 'minimal') {
+      facts = ''
+    }
+    const next = statsLine === '' ? facts : `${fg('dim')(statsLine)}${facts === '' ? '' : `\n${facts}`}`
     if (next === this.line) return false
     this.line = next
     return true

@@ -92,3 +92,24 @@ describe('footer permission preset', () => {
     expect(bare.render(200).map(stripAnsi).at(-1)).not.toContain('Full access')
   })
 })
+
+describe('footer mode (F3/V8)', () => {
+  const entries = [{ kind: 'user', id: 'u1', text: 'hi' }] as never
+  const context = { model: 'pi-ai/deepseek-v4', effort: 'high', contextWindow: 65_536 } as never
+
+  it('compact drops the workspace/path and counters, minimal keeps the stats line only', () => {
+    const compact = new FooterLine()
+    compact.set({ entries, busy: false, permissionPreset: 'workspace-write' } as never, '/ws', '1 轮 · 1 步', context, 'compact')
+    const compactFacts = compact.render(200).map(stripAnsi).at(-1)!
+    expect(compactFacts).toContain('pi-ai/deepseek-v4')
+    expect(compactFacts).not.toContain('/ws')
+    expect(compactFacts).not.toContain('msgs')
+
+    const minimal = new FooterLine()
+    minimal.set({ entries, busy: false } as never, '/ws', '1 轮 · 1 步', context, 'minimal')
+    const minimalText = minimal.render(200).map(stripAnsi).join('\n')
+    expect(minimalText).toContain('1 轮 · 1 步')
+    expect(minimalText).not.toContain('/ws')
+    expect(minimalText).not.toContain('pi-ai')
+  })
+})

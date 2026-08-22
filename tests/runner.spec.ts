@@ -351,8 +351,10 @@ describe('tui runner', () => {
       await settle()
       expect(test.app.sessions?.map(item => item.value)).toEqual(['session-old', 'session-new'])
       expect(test.app.sessions?.[0].label).toBe('session-old')
-      // Relative time replaces the raw ISO timestamp (T3⑤).
-      expect(test.app.sessions?.[0].description).toBe('persisted · 1970-01-01')
+      // Relative time replaces the raw ISO timestamp (T3⑤); D1 行元数据：
+      // 子会话计数（session-old 有 1 个 child；session-new 无 parent 计数）。
+      expect(test.app.sessions?.[0].description).toBe('persisted · 1970-01-01 · 1 个子会话')
+      expect(test.app.sessions?.[1].description).toBe('persisted · 1970-01-01')
       // Subagent child sessions indent under their parent (T1⑥).
       expect(test.app.sessions?.[1].label).toBe('↳ session-new')
       await test.ctx.fiber.dispose()

@@ -222,6 +222,8 @@ export interface TerminalApp {
   showHotkeys(): void
   /** Open the /tips reference panel (A18). */
   showTips(): void
+  /** F3/V8: footer 档位（full/compact/minimal），应用后即时重绘。 */
+  setFooterMode(mode: 'full' | 'compact' | 'minimal'): void
   /** Ask the human one question through an overlay dialog. */
   askDialog(question: ApprovalQuestion): Promise<ApprovalAnswer>
   /** Show the pending message queue length + 队首预览 while a turn runs (T1⑤). */

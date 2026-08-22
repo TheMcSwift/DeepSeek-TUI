@@ -79,6 +79,9 @@ export interface Strings {
   messagePickHint: string
   /** B6 搜索结果位置提示（第 N / 共 M 处）。 */
   searchHitPosition: (index: number, total: number) => string
+  /** D1 /resume 行元数据：agent preset 与子会话计数。 */
+  sessionPreset: (preset: string) => string
+  sessionChildren: (count: number) => string
   queueFirst: (count: number, preview: string) => string
   interrupted: string
   stopped: string
@@ -177,6 +180,11 @@ export interface Strings {
   settingsKeymap: string
   settingsAnim: string
   settingsConfig: string
+  /** F3/V8 footer 档位（full/compact/minimal）。 */
+  settingsFooter: string
+  footerFull: string
+  footerCompact: string
+  footerMinimal: string
   themeVariantDark: string
   themeVariantLight: string
   themeVariantAuto: string
@@ -390,6 +398,8 @@ const zh: Strings = {
   localHint: '本地输出 · ⏎ 展开/收起 · Esc 返回输入',
   messagePickHint: '消息选择 · ↑/↓ 移动 · Enter 展开 · Esc 退出',
   searchHitPosition: (index: number, total: number): string => `搜索结果 ${index}/${total}`,
+  sessionPreset: (preset: string): string => `preset ${preset}`,
+  sessionChildren: (count: number): string => `${count} 个子会话`,
   tipGroups: [
     {
       title: '快捷键',
@@ -668,6 +678,10 @@ const zh: Strings = {
   settingsKeymap: '快捷键预设',
   settingsAnim: '动画',
   settingsConfig: '配置文件',
+  settingsFooter: 'Footer 档位',
+  footerFull: '完整',
+  footerCompact: '紧凑',
+  footerMinimal: '极简',
   themeVariantDark: '暗色',
   themeVariantLight: '亮色',
   themeVariantAuto: '跟随终端',
@@ -863,6 +877,8 @@ const en: Strings = {
   localHint: 'Local output · ⏎ expand/collapse · Esc back',
   messagePickHint: 'Message pick · ↑/↓ move · Enter expand · Esc exit',
   searchHitPosition: (index: number, total: number): string => `Search hit ${index}/${total}`,
+  sessionPreset: (preset: string): string => `preset ${preset}`,
+  sessionChildren: (count: number): string => `${count} child sessions`,
   tipGroups: [
     {
       title: 'Shortcuts',
@@ -1141,6 +1157,10 @@ const en: Strings = {
   settingsKeymap: 'Hotkey preset',
   settingsAnim: 'Animations',
   settingsConfig: 'Config file',
+  settingsFooter: 'Footer mode',
+  footerFull: 'Full',
+  footerCompact: 'Compact',
+  footerMinimal: 'Minimal',
   themeVariantDark: 'Dark',
   themeVariantLight: 'Light',
   themeVariantAuto: 'Follow terminal',

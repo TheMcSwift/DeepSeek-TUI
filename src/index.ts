@@ -415,12 +415,13 @@ function fail(exit: (code: number) => void, error: unknown): void {
 /** tui 命名空间的组合默认（settings.yaml `tui:` 段的 base 层）。
  *  enterBehavior 默认 'auto' = 按预设解析（cc=steer、其他=queue，BACKLOG-CC-PARITY B1）；
  *  用户显式设置 steer/queue 后写对应值并覆盖预设默认。 */
-const TUI_SETTINGS_DEFAULTS = { enterBehavior: 'auto', anim: 'on' } as const
+const TUI_SETTINGS_DEFAULTS = { enterBehavior: 'auto', anim: 'on', footerMode: 'full' } as const
 
 /** tui 命名空间 schema：写入即校验；手改非法值在注册/写入点失败（平台惯例）。 */
 const TuiSettingsSchema = z.object({
   enterBehavior: z.union([z.const('auto'), z.const('queue'), z.const('steer')]),
   anim: z.union([z.const('on'), z.const('off')]),
+  footerMode: z.union([z.const('full'), z.const('compact'), z.const('minimal')]),
 })
 
 /**
@@ -980,10 +981,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   // 写入真正落盘），启动时若 env 未显式设置则从 settings.yaml 回填。
 
   /** tui 命名空间的持久化段（结构化只读）。 */
-  const tuiSettingsSection = (): { enterBehavior?: string; anim?: string } | undefined => {
+  const tuiSettingsSection = (): { enterBehavior?: string; anim?: string; footerMode?: string } | undefined => {
     const section = settingsSeam()?.get?.('tui')
     return typeof section === 'object' && section !== null
-      ? section as { enterBehavior?: string; anim?: string }
+      ? section as { enterBehavior?: string; anim?: string; footerMode?: string }
       : undefined
   }
 
@@ -998,6 +999,18 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     if (saved === 'off') piTuiInternals.animFrameMs = 0
     else if (saved === 'on') piTuiInternals.animFrameMs = 60
   }
+
+  // F3/V8: footer 档位（读 tui 命名空间；启动应用一次，/settings 面板切换即时生效）。
+  const footerMode = (): 'full' | 'compact' | 'minimal' => {
+    const saved = tuiSettingsSection()?.footerMode
+    return saved === 'compact' || saved === 'minimal' ? saved : 'full'
+  }
+  const applyFooterMode = (mode: 'full' | 'compact' | 'minimal'): void => {
+    void settingsSeam()?.update?.('tui', { footerMode: mode }).catch(() => {})
+    app.setFooterMode(mode)
+  }
+  // F3/V8: 启动时应用持久化的 footer 档位。
+  app.setFooterMode(footerMode())
 
   const llmDirectory = (): ConfigurableProviderEntry[] =>
     (ctx.get('llm') as LlmDirectorySeam | undefined)?.listConfigurableProviders?.() ?? []
@@ -1093,12 +1106,17 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     const inline = keymapById(activeKeymap).interaction.enum === 'inline-cycle'
     const cycleOf = (options: string[], current: string): { options: string[]; current: string } | undefined =>
       inline ? { options, current } : undefined
+    const footerModeLabel = (): string => {
+      const mode = footerMode()
+      return mode === 'compact' ? strings().footerCompact : mode === 'minimal' ? strings().footerMinimal : strings().footerFull
+    }
     return [
       { key: strings().settingsLanguage, current: resolveLanguage(process.env.DSH_TUI_LANG), target: '→ /lang', cycle: cycleOf(['zh', 'en'], resolveLanguage(process.env.DSH_TUI_LANG)) },
       { key: strings().settingsTheme, current: `${themeVariantLabel()} · ${activeThemePreset}`, tone: 'accent', target: '→ /theme', cycle: cycleOf(THEME_PRESETS.map(preset => preset.id), activeThemePreset) },
       { key: strings().settingsEnter, current: enter, tone: 'info', target: '→ 切换', cycle: cycleOf(['queue', 'steer'], effectiveEnterBehavior()) },
       { key: strings().settingsKeymap, current: activeKeymap, tone: 'accent', target: '→ /keymap', cycle: cycleOf(KEYMAPS.map(keymap => keymap.id), activeKeymap) },
       { key: strings().settingsAnim, current: anim, target: '→ 切换', cycle: cycleOf(['on', 'off'], piTuiInternals.animFrameMs > 0 ? 'on' : 'off') },
+      { key: strings().settingsFooter, current: footerModeLabel(), target: '→ 切换', cycle: cycleOf(['full', 'compact', 'minimal'], footerMode()) },
       { key: strings().settingsConfig, current: config, tone: 'muted', target: '→ /config' },
     ]
   }
@@ -1703,10 +1721,20 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         const ordered = [...records].sort(
           (left, right) => (mru[right.header.id] ?? 0) - (mru[left.header.id] ?? 0),
         )
+        // D1 轻量子集：子会话计数（仅 header 字段，不深读日志）。
+        const childCount = new Map<string, number>()
+        for (const record of ordered) {
+          const parent = record.header.parentSession as string | undefined
+          if (parent !== undefined) childCount.set(parent, (childCount.get(parent) ?? 0) + 1)
+        }
         const items = ordered.map(record => ({
           value: record.header.id,
           label: labelOf(record, record.header.id === currentSessionId ? doc.title : cache[record.header.id]?.title),
-          description: `${record.persisted ? 'persisted' : 'live'} · ${relTime(record.header.createdAt)}`,
+          description: [
+            `${record.persisted ? 'persisted' : 'live'} · ${relTime(record.header.createdAt)}`,
+            ...(record.header.agentPreset === undefined ? [] : [strings().sessionPreset(String(record.header.agentPreset))]),
+            ...(childCount.has(record.header.id) ? [strings().sessionChildren(childCount.get(record.header.id) ?? 0)] : []),
+          ].join(' · '),
         }))
         if (!quitting) app.showSessionPicker(items)
         void fillTitlesLazily(query, ordered, items, cache)
@@ -2409,7 +2437,20 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             await refresh()
             break
           }
-          case 5: // 配置文件
+          case 5: { // F3/V8: footer 档位（full/compact/minimal）
+            const picked = await new Promise<string | null>((resolve) => {
+              app.showQueuePicker([
+                { value: 'full', label: strings().footerFull, current: footerMode() === 'full' },
+                { value: 'compact', label: strings().footerCompact, current: footerMode() === 'compact' },
+                { value: 'minimal', label: strings().footerMinimal, current: footerMode() === 'minimal' },
+              ], resolve, strings().settingsFooter)
+            })
+            if (picked === null) return
+            if (picked === 'full' || picked === 'compact' || picked === 'minimal') applyFooterMode(picked)
+            await refresh()
+            break
+          }
+          case 6: // 配置文件
             handlers.onCommandPicked('__config', '')
             break
           default:
@@ -2448,6 +2489,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
           case 4: // 动画
             applyAnim(next === 'off')
             break
+          case 5: { // F3/V8: footer 档位
+            if (next === 'full' || next === 'compact' || next === 'minimal') applyFooterMode(next)
+            break
+          }
           default:
             break
         }

@@ -49,7 +49,7 @@ import { mermaidTransformer } from '../view/pi-vendor/mermaid-transformer.ts'
 import { getEditorTheme, getMarkdownTheme, getSelectListTheme } from '../view/pi-vendor/../theme/theme.ts'
 import { CapabilityPanel } from '../view/components/panels.ts'
 import type { JobRow } from '../view/components/panels.ts'
-import { FooterLine } from '../view/components/footer.ts'
+import { FooterLine, type FooterMode } from '../view/components/footer.ts'
 import { ExpandableNoticeView, NoticeEntryView, convergeNotices } from '../view/components/notice-view.ts'
 import { fileLink } from '../view/components/file-link.ts'
 import { FocusableToolCard } from '../view/components/tool-card.ts'
@@ -474,6 +474,8 @@ export class PiTuiApp implements TerminalApp {
   private lastEntry = new Map<string, ViewEntry>()
   private capabilityPanel = new CapabilityPanel()
   private footerLine = new FooterLine()
+  /** F3/V8: footer 档位（full/compact/minimal，settings 持久化）。 */
+  private footerMode: FooterMode = 'full'
   /** -1 = composer; >= 0 = index into focusableCards (focus traversal). */
   private focusIndex = -1
   /** B7: Shift+Up 消息选择模式（焦点环 + ↑/↓ 逐条移动）。 */
@@ -1907,7 +1909,15 @@ export class PiTuiApp implements TerminalApp {
         model: this.meta.model,
         effort: this.meta.effort,
         breakdown: this.meta.contextBreakdown,
-      })
+      }, this.footerMode)
+  }
+
+  /** F3/V8: 切换 footer 档位并即时重绘（settings 面板/启动应用）。 */
+  setFooterMode(mode: FooterMode): void {
+    if (this.footerMode === mode) return
+    this.footerMode = mode
+    this.refreshFooter()
+    this.tui?.requestRender()
   }
 
   /** Reconcile the mounted views with one document snapshot (incremental by entry identity). */

@@ -88,6 +88,12 @@ export class FakeApp implements TerminalApp {
     this.tipsShown++
   }
 
+  /** F3/V8: last footer mode applied. */
+  footerMode: 'full' | 'compact' | 'minimal' = 'full'
+  setFooterMode(mode: 'full' | 'compact' | 'minimal'): void {
+    this.footerMode = mode
+  }
+
   notifyQueue(count: number, messages?: readonly string[]): void {
     this.queues.push(count)
     this.queuedMessages.push(messages === undefined ? [] : [...messages])
