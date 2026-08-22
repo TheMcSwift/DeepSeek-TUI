@@ -898,6 +898,13 @@ export class PiTuiApp implements TerminalApp {
           return { consume: true }
         }
         return undefined
+      case 'historySearch':
+        // B5: Alt+R 输入历史搜索——最近的输入先列，选中回填输入框。
+        if (!this.overlayOpen && this.focusIndex === -1) {
+          this.showHistorySearch()
+          return { consume: true }
+        }
+        return undefined
       case 'jobs':
         // Ctrl+O toggles the collapsed job row (Ctrl+J's byte \x0a is a newline
         // character the editor needs for multi-line paste, so it can't be a key).
@@ -1455,6 +1462,23 @@ export class PiTuiApp implements TerminalApp {
 
   showQueuePicker(rows: readonly PickerRow[], onPicked: (value: string | null) => void, title = '队列 · 选择一条排队消息'): void {
     this.showChoicePicker(title, rows, onPicked)
+  }
+
+  /** B5: Alt+R 历史搜索——最近的输入先列，选中条目回填输入框。 */
+  showHistorySearch(): void {
+    const rows = this.history.slice().reverse().map((line, index) => ({
+      value: `h${index}`,
+      label: line,
+    }))
+    if (rows.length === 0) {
+      this.toast(strings().historyEmpty, 'info')
+      return
+    }
+    this.showChoicePicker(strings().historyTitle, rows, (value) => {
+      if (value === null || this.editor === undefined) return
+      const picked = rows.find(row => row.value === value)
+      if (picked !== undefined) this.editor.setText(picked.label)
+    })
   }
 
   showPermissionPicker(items: readonly PermissionChoice[]): void {

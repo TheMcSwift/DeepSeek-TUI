@@ -69,6 +69,9 @@ export interface Strings {
   tipsHint: string
   /** /tips 的分组内容（快捷键/命令/工作流/个性化/避坑）。 */
   tipGroups: readonly TipGroup[]
+  /** B5 输入历史搜索弹层标题与空态。 */
+  historyTitle: string
+  historyEmpty: string
   queueFirst: (count: number, preview: string) => string
   interrupted: string
   stopped: string
@@ -333,6 +336,7 @@ const zh: Strings = {
       title: '会话与模型',
       rows: [
         { keys: 'Ctrl+R', action: '会话列表' },
+        { keys: 'Alt+R', action: '输入历史搜索' },
         { keys: 'Shift+Tab', action: '会话模式循环（默认/计划/完全访问）' },
         { keys: 'Ctrl+G', action: '选择模型' },
         { keys: 'Ctrl+P', action: '权限预设循环（行内切换）' },
@@ -372,6 +376,8 @@ const zh: Strings = {
   hotkeysHint: '↑/↓ 滚动 · PgUp/PgDn 翻页 · Esc 关闭',
   tipsTitle: '使用提示',
   tipsHint: '↑/↓ 滚动 · PgUp/PgDn 翻页 · Esc 关闭',
+  historyTitle: '输入历史',
+  historyEmpty: '暂无输入历史',
   tipGroups: [
     {
       title: '快捷键',
@@ -438,6 +444,7 @@ const zh: Strings = {
       title: '会话与模型',
       rows: [
         { keys: 'Ctrl+R', action: '会话列表' },
+        { keys: 'Alt+R', action: '输入历史搜索' },
         { keys: 'Ctrl+P', action: '选择模型' },
         { keys: 'Ctrl+G', action: '编辑器撰写消息' },
         { keys: 'Ctrl+E', action: '退出 plan 模式' },
@@ -491,6 +498,7 @@ const zh: Strings = {
       title: '会话与分支',
       rows: [
         { keys: 'Ctrl+X l', action: '会话列表' },
+        { keys: 'Alt+R', action: '输入历史搜索' },
         { keys: 'Ctrl+X n', action: '新会话' },
         { keys: 'Ctrl+R', action: '重命名会话' },
         { keys: 'Ctrl+X g', action: '轨迹（时间线）' },
@@ -796,6 +804,7 @@ const en: Strings = {
       title: 'Session & model',
       rows: [
         { keys: 'Ctrl+R', action: 'Session list' },
+        { keys: 'Alt+R', action: 'Input history search' },
         { keys: 'Shift+Tab', action: 'Cycle session modes (default/plan/full access)' },
         { keys: 'Ctrl+G', action: 'Pick model' },
         { keys: 'Ctrl+P', action: 'Cycle permission preset (inline)' },
@@ -835,6 +844,8 @@ const en: Strings = {
   hotkeysHint: '↑/↓ scroll · PgUp/PgDn page · Esc close',
   tipsTitle: 'Usage tips',
   tipsHint: '↑/↓ scroll · PgUp/PgDn page · Esc close',
+  historyTitle: 'Input history',
+  historyEmpty: 'No input history yet',
   tipGroups: [
     {
       title: 'Shortcuts',
@@ -901,6 +912,7 @@ const en: Strings = {
       title: 'Session & model',
       rows: [
         { keys: 'Ctrl+R', action: 'Session list' },
+        { keys: 'Alt+R', action: 'Input history search' },
         { keys: 'Ctrl+P', action: 'Pick model' },
         { keys: 'Ctrl+G', action: 'Compose in editor' },
         { keys: 'Ctrl+E', action: 'Exit plan mode' },
@@ -954,6 +966,7 @@ const en: Strings = {
       title: 'Session & fork',
       rows: [
         { keys: 'Ctrl+X l', action: 'Session list' },
+        { keys: 'Alt+R', action: 'Input history search' },
         { keys: 'Ctrl+X n', action: 'New session' },
         { keys: 'Ctrl+R', action: 'Rename session' },
         { keys: 'Ctrl+X g', action: 'Trajectory (timeline)' },

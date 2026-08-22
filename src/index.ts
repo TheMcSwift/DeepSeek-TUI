@@ -130,6 +130,43 @@ function themePresetFile(): string {
   return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'tui-theme-preset.txt')
 }
 
+/** 会话 MRU sidecar（D2）：切换/打开时记录 epoch，picker 排序驱动。 */
+function mruFile(): string {
+  return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'tui-mru.json')
+}
+
+const MRU_LIMIT = 300
+
+/** 读取 MRU 表；缺失/损坏回退空表（picker 保持 listSessions 顺序）。 */
+function loadMru(): Record<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(mruFile(), 'utf8'))
+    if (typeof parsed !== 'object' || parsed === null) return {}
+    const mru: Record<string, number> = {}
+    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === 'number' && Number.isFinite(value)) mru[id] = value
+    }
+    return mru
+  } catch {
+    return {}
+  }
+}
+
+/** 记录一次使用并裁剪到上限（只读 home 静默降级）。 */
+function touchMru(id: string): void {
+  const mru = loadMru()
+  mru[id] = Date.now()
+  try {
+    const pruned: Record<string, number> = {}
+    const entries = Object.entries(mru).sort((a, b) => b[1] - a[1])
+    for (const [key, value] of entries.slice(0, MRU_LIMIT)) pruned[key] = value
+    mkdirSync(dirname(mruFile()), { recursive: true })
+    writeFileSync(mruFile(), JSON.stringify(pruned))
+  } catch {
+    // A read-only home must not break the surface.
+  }
+}
+
 function loadPersistedThemePreset(): ThemePresetId | undefined {
   try {
     const value = readFileSync(themePresetFile(), 'utf8').trim()
@@ -1592,6 +1629,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     onSessionPicked: (value: string | null): void => {
       pickerClosed = true
       if (value === null || value === currentSessionId) return
+      touchMru(value)
       void swap(value).then(() => {
         // CC-09: 切换成功的即时反馈（picker 只标记当前行，切换后无 banner）。
         app.toast(strings().resumedSession(meta.session), 'info')
@@ -1609,6 +1647,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       pickerFiltered = false
       pickerClosed = false
       pickerActivityAt = Date.now()
+      // D2: 打开即视当前会话为最近使用（排序优先级提升）。
+      touchMru(currentSessionId)
       void query.listSessions().then(async (records) => {
         // 面板立即可用：标题先查自家缓存（会话切换/退出/重命名时写入），
         // 命中直接显示名称；未命中用短 id 占位，空闲时逐个回填。平台侧
@@ -1619,13 +1659,19 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         const shortId = (id: string): string => (id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id)
         const labelOf = (record: { header: { id: string; parentSession?: string } }, title: string | undefined): string =>
           `${record.header.parentSession === undefined ? '' : '↳ '}${title ?? shortId(record.header.id)}`
-        const items = records.map(record => ({
+        const mru = loadMru()
+        // D2: 最近使用优先（稳定排序，MRU 外保持 listSessions 顺序）；
+        // 先排 records 再 map，fillTitlesLazily 的索引仍与记录对齐。
+        const ordered = [...records].sort(
+          (left, right) => (mru[right.header.id] ?? 0) - (mru[left.header.id] ?? 0),
+        )
+        const items = ordered.map(record => ({
           value: record.header.id,
           label: labelOf(record, record.header.id === currentSessionId ? doc.title : cache[record.header.id]?.title),
           description: `${record.persisted ? 'persisted' : 'live'} · ${relTime(record.header.createdAt)}`,
         }))
         if (!quitting) app.showSessionPicker(items)
-        void fillTitlesLazily(query, records, items, cache)
+        void fillTitlesLazily(query, ordered, items, cache)
       }).catch((error: unknown) => {
         process.stderr.write(`dsh tui: session listing failed: ${error instanceof Error ? error.message : String(error)}\n`)
       })

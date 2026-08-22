@@ -2270,11 +2270,16 @@ describe('pi-tui surface', () => {
     test.app.showHotkeys()
     await settle()
     const plain = test.terminal.plain()
-    // 窗口首屏可见的 pi 键位：Ctrl+P 选择模型（cc 预设下 Ctrl+P 是权限）。
-    expect(plain).toContain('Ctrl+P')
-    expect(plain).toContain('选择模型')
-    // 其余行在滚动窗口内。
+    // 首屏可见新行（Alt+R 输入历史搜索）；Alt+R 下移了窗口行数。
+    expect(plain).toContain('Alt+R')
     expect(plain).toContain('↓ 还有')
+    // 滚动后可见 pi 专属键位：Ctrl+P 选择模型（cc 预设下 Ctrl+P 是权限）。
+    test.terminal.feed('\x1b[B')
+    test.terminal.feed('\x1b[B')
+    await settle()
+    const scrolled = test.terminal.plain()
+    expect(scrolled).toContain('Ctrl+P')
+    expect(scrolled).toContain('选择模型')
   })
 
   it('compose 在 $EDITOR 中打开草稿，空草稿不发送（pi A3）', async () => {

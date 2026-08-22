@@ -42,6 +42,7 @@ export type KeyAction =
   | 'copy'        // 复制最近回复（OSC52）
   | 'steer'       // Alt+Enter 并入当前轮
   | 'retrieve'    // Alt+Up 取回排队消息
+  | 'historySearch' // Alt+R 输入历史搜索（B5；Ctrl+R 为会话/重命名已占用）
   | 'jobs'        // jobs 折叠/展开
   | 'trajectory'  // 轨迹视图
   | 'fold'        // 折叠旧消息
@@ -130,6 +131,7 @@ export const CC_KEYMAP: Keymap = {
     { action: 'editInput', keys: ['\x18', 'ctrl+x'] },
     { action: 'steer', keys: ['\x1b\r', 'alt+enter'] },
     { action: 'retrieve', keys: ['\x1b\x1b[A', 'alt+up'] },
+    { action: 'historySearch', keys: ['\x1br', 'alt+r'] },
     { action: 'jobs', keys: ['\x0f', 'ctrl+o'] },
     { action: 'trajectory', keys: ['\x0c', 'ctrl+l'] },
     { action: 'fold', keys: ['ctrl+k'] },
@@ -159,6 +161,7 @@ export const PI_KEYMAP: Keymap = {
     { action: 'copy', keys: ['\x18', 'ctrl+x'] },
     { action: 'steer', keys: ['\x1b\r', 'alt+enter'] },
     { action: 'retrieve', keys: ['\x1b\x1b[A', 'alt+up'] },
+    { action: 'historySearch', keys: ['\x1br', 'alt+r'] },
     { action: 'jobs', keys: ['\x0f', 'ctrl+o'] },
     { action: 'trajectory', keys: ['\x0c', 'ctrl+l'] },
     { action: 'fold', keys: ['ctrl+k'] },
@@ -199,6 +202,7 @@ export const OPENCODE_KEYMAP: Keymap = {
     { action: 'rate', keys: ['\x19', 'ctrl+y'] },
     { action: 'steer', keys: ['\x1b\r', 'alt+enter'] },
     { action: 'retrieve', keys: ['\x1b\x1b[A', 'alt+up'] },
+    { action: 'historySearch', keys: ['\x1br', 'alt+r'] },
     { action: 'jobs', keys: ['\x0f', 'ctrl+o'] },
     { action: 'fold', keys: ['ctrl+k'] },
   ],
