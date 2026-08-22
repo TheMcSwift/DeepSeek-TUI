@@ -8,6 +8,7 @@
 import { matchesKey, truncateToWidth } from '@earendil-works/pi-tui'
 import type { Component, Focusable } from '@earendil-works/pi-tui'
 import { fg } from '../../app/pi/color.ts'
+import { strings } from '../strings.ts'
 import type { NoticeEntry, ViewEntry } from '../../document/document.ts'
 
 /**
@@ -74,7 +75,10 @@ export class ExpandableNoticeView implements Component, Focusable {
   private expanded = false
   private readonly row: NoticeEntryView
 
-  constructor(private entry: NoticeEntry) {
+  constructor(
+    private entry: NoticeEntry,
+    private readonly hint?: string,
+  ) {
     this.row = new NoticeEntryView(entry)
   }
 
@@ -108,7 +112,7 @@ export class ExpandableNoticeView implements Component, Focusable {
       }
     }
     if (this.focused) {
-      lines.push(truncateToWidth(`${fg('accent')('  ▸')} ${fg('dim')('注入内容 · ⏎ 展开/收起 · Esc 返回输入')}`, width))
+      lines.push(truncateToWidth(`${fg('accent')('  ▸')} ${fg('dim')(this.hint ?? strings().expandHint)}`, width))
     }
     return lines
   }

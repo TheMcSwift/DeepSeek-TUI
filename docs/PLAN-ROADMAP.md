@@ -33,14 +33,14 @@
 
 | # | 项 | 优先级/量 | 边界 | 前置 | 验收要点 |
 |---|---|---|---|---|---|
-| 9 | D2 会话 MRU 持久化（`tui-mru.json`，LRU 裁剪） | P1 / S | 内部（TUI 私有偏好） | sidecar 模式现有 | picker 排序按 MRU；LRU 上限裁剪；重启保持 |
-| 10 | D1 `/resume` 浏览器核心子集（全屏布局 + 行元数据 时间/分支/大小/模型/子数 + Tab 预览 + 标题证据分级着色） | P1 / M | 内部 | sessionQuery/searchSessions | 宽屏 ①②⑥ 落地；③④⑤ 明确不做 |
-| 11 | A14 `/workspace resume\|rename\|open` 补齐（子命令解析 + `open` 绝对/相对/`file://` URI 并新建会话） | P1 / M | 内部 | workspace.ts 现有逻辑 | 三子命令解析；open 三种路径均建新会话；E2E |
-| 12 | B5 Ctrl+R 输入历史搜索（⌕ 搜索框 + 相对时间 + Enter 回填） | P2 / S | 内部 | tui-history.json | 搜索过滤；↑/↓ 导航；Enter 回填；Esc 关闭 |
-| 13 | B6 全文搜索扩展（用户/助手/思考/**工具参数与结果**/local 输出；n/N 跳转） | P2 / M | 内部 | 文档条目数据源 | 工具参数/结果可命中；n/N 跳转；性能不回归（长会话抽样） |
-| 14 | B7 Shift+Up 消息选择模式（↑/↓ 移动、Enter 展开单条、Esc 退出） | P1 / M | 内部 | 与 Tab 焦点环交互优先级定义 | 选择模式独立于焦点环；Enter 展开；E2E |
-| 15 | B12 `!` 本地命令行渲染（转录加 `local` 命令 echo + `local-output` 缩进 dim） | P2 / S | 内部 | 拦截逻辑已有 | `!cmd`/`!!cmd` 转录双行形态；投影回归测试 |
-| 16 | V7 会话标题 chip 落到输入区下方（确认而非改形态） | P2 / S | 内部 | — | 确认位置一致；无回归 |
+| 9 | D2 会话 MRU 持久化（`tui-mru.json`，LRU 裁剪） | P1 / S | 内部（TUI 私有偏好） | sidecar 模式现有 | ✅ 已落地（2026-08-22）：`tui-mru.json`（epoch、LRU 300 裁剪）；records 先按 MRU 排序再 map（回填索引对齐） |
+| 10 | D1 `/resume` 浏览器核心子集（全屏布局 + 行元数据 时间/分支/大小/模型/子数 + Tab 预览 + 标题证据分级着色） | P1 / M | 内部 | sessionQuery/searchSessions | 🕐 未开工（需分屏预览布局设计，涉 picker 宽屏模式） |
+| 11 | A14 `/workspace resume\|rename\|open` 补齐（子命令解析 + `open` 绝对/相对/`file://` URI 并新建会话） | P1 / M | 内部 | workspace.ts 现有逻辑 | 🕐 未开工 |
+| 12 | B5 Ctrl+R 输入历史搜索（⌕ 搜索框 + 相对时间 + Enter 回填） | P2 / S | 内部 | tui-history.json | ✅ 已落地（2026-08-22）：Alt+R（Ctrl+R 已被会话/重命名占用），showChoicePicker 弹层 + 回填输入框（最近优先）；相对时间略（历史行无时间戳） |
+| 13 | B6 全文搜索扩展（用户/助手/思考/**工具参数与结果**/local 输出；n/N 跳转） | P2 / M | 内部 | 文档条目数据源 | 🕐 未开工 |
+| 14 | B7 Shift+Up 消息选择模式（↑/↓ 移动、Enter 展开单条、Esc 退出） | P1 / M | 内部 | 与 Tab 焦点环交互优先级定义 | 🕐 未开工（选择状态机 + 条目 marker 渲染 + 与焦点环并存规则：Enter=转换焦点到该条目） |
+| 15 | B12 `!` 本地命令行渲染（转录加 `local` 命令 echo + `local-output` 缩进 dim） | P2 / S | 内部 | 拦截逻辑已有 | ✅ 已落地（2026-08-22）：`!!cmd` 行 `⚙ local <cmd> · N 行输出` + detail 全文（Enter 展开 `│` 缩进 dim，12 行封顶）；`!cmd` 发送路径不变 |
+| 16 | V7 会话标题 chip 落到输入区下方（确认而非改形态） | P2 / S | 内部 | — | ✅ 已确认（2026-08-22）：标题在 header 常驻（含父会话面包屑/plan 徽标），终端形态等价；不迁移到输入区（CC 布局特性） |
 | 17 | V8 footer/status line 对齐 CC（配置化 + 右对齐徽标） | P2 / M | 内部 | — | 与 F3 设置项联动；cc 预设视觉确认 |
 | 18 | F3 statusBar.* 15 项可配置（tui 命名空间 + /settings 行） | P2 / M | 内部 | settings seam | 15 项开关生效；/settings 面板行；持久化 |
 | 19 | F4 渲染选项（diffLayout/thinkingFold/toolBackground 三偏好进 /settings） | P2 / S | 内部 | settings seam | 三选项即时生效；与 E1 联动 |

@@ -2218,7 +2218,9 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       const lines = text.split('\n').length - 1
       doc = { ...doc, entries: [...doc.entries, {
         kind: 'notice' as const, id: `notice:shell:${cmdSeq++}`,
-        text: `⚙ ${firstLine} 已执行 · ${lines} 行输出（未发送给模型）`,
+        // B12：local 命令 echo 单行 + 完整输出进 detail（Enter 展开缩进 dim）。
+        text: `⚙ local ${firstLine.replace(/^\$\s*/, '')} · ${lines} 行输出（未发送给模型）`,
+        detail: text,
         tone: 'info' as const,
       }] }
       app.render(doc)

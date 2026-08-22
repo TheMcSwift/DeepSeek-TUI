@@ -1690,7 +1690,7 @@ export class PiTuiApp implements TerminalApp {
       case 'notice':
         return entry.detail === undefined
           ? new FocusableFrame(new NoticeEntryView(entry), '通知')
-          : new ExpandableNoticeView(entry)
+          : new ExpandableNoticeView(entry, entry.id.startsWith('notice:shell:') ? strings().localHint : undefined)
       case 'status':
         if (entry.status === 'retry') {
           const detail = entry.detail as { attempt: number; maxAttempts: number; delayMs: number; failure?: { code: string; message: string } }

@@ -72,6 +72,9 @@ export interface Strings {
   /** B5 输入历史搜索弹层标题与空态。 */
   historyTitle: string
   historyEmpty: string
+  /** 可展开 notice（注入行/本地输出）聚焦提示行。 */
+  expandHint: string
+  localHint: string
   queueFirst: (count: number, preview: string) => string
   interrupted: string
   stopped: string
@@ -378,6 +381,8 @@ const zh: Strings = {
   tipsHint: '↑/↓ 滚动 · PgUp/PgDn 翻页 · Esc 关闭',
   historyTitle: '输入历史',
   historyEmpty: '暂无输入历史',
+  expandHint: '注入内容 · ⏎ 展开/收起 · Esc 返回输入',
+  localHint: '本地输出 · ⏎ 展开/收起 · Esc 返回输入',
   tipGroups: [
     {
       title: '快捷键',
@@ -846,6 +851,8 @@ const en: Strings = {
   tipsHint: '↑/↓ scroll · PgUp/PgDn page · Esc close',
   historyTitle: 'Input history',
   historyEmpty: 'No input history yet',
+  expandHint: 'Injected content · ⏎ expand/collapse · Esc back',
+  localHint: 'Local output · ⏎ expand/collapse · Esc back',
   tipGroups: [
     {
       title: 'Shortcuts',
