@@ -50,6 +50,7 @@ import { getEditorTheme, getMarkdownTheme, getSelectListTheme } from '../view/pi
 import { CapabilityPanel } from '../view/components/panels.ts'
 import type { JobRow } from '../view/components/panels.ts'
 import { FooterLine, type FooterMode } from '../view/components/footer.ts'
+import { BtwPanel } from '../view/components/btw-panel.ts'
 import { ExpandableNoticeView, NoticeEntryView, convergeNotices } from '../view/components/notice-view.ts'
 import { fileLink } from '../view/components/file-link.ts'
 import { FocusableToolCard } from '../view/components/tool-card.ts'
@@ -476,6 +477,8 @@ export class PiTuiApp implements TerminalApp {
   private footerLine = new FooterLine()
   /** F3/V8: footer 档位（full/compact/minimal，settings 持久化）。 */
   private footerMode: FooterMode = 'full'
+  /** A12: /btw 侧问浮层实例（null = 未打开）。 */
+  private btwPanel?: BtwPanel
   /** -1 = composer; >= 0 = index into focusableCards (focus traversal). */
   private focusIndex = -1
   /** B7: Shift+Up 消息选择模式（焦点环 + ↑/↓ 逐条移动）。 */
@@ -976,12 +979,7 @@ export class PiTuiApp implements TerminalApp {
         return { consume: true }
       }
       case 'thinking':
-        this.hideThinking = !this.hideThinking
-        for (const view of this.entryViews.values()) {
-          const inner = view instanceof FocusableFrame ? view.inner : view
-          if (inner instanceof AssistantMessageComponent) inner.setHideThinkingBlock(this.hideThinking)
-        }
-        this.tui?.requestRender()
+        this.applyThinking(!this.hideThinking)
         return { consume: true }
       default:
         return undefined
@@ -1555,6 +1553,40 @@ export class PiTuiApp implements TerminalApp {
     }
   }
 
+  /** A12: 打开/重建 /btw 侧问浮层（瞬态，不落文档流）。 */
+  openBtw(question: string): void {
+    const tui = this.tui
+    if (tui === undefined) return
+    this.closeBtw()
+    const panel = new BtwPanel(question, () => {
+      this.overlayOpen = false
+      handle.hide()
+      this.btwPanel = undefined
+    })
+    panel.setCopyHandler(() => this.copyText(panel.copyText()))
+    this.btwPanel = panel
+    this.overlayOpen = true
+    const handle = tui.showOverlay(panel, {
+      anchor: 'bottom-left', offsetY: -6, maxHeight: '50%', width: this.overlayWidth - 8,
+    })
+    tui.setFocus(panel)
+  }
+
+  /** A12: 流式追加侧问正文。 */
+  appendBtw(delta: string): void {
+    if (this.btwPanel === undefined) return
+    this.btwPanel.append(delta)
+    this.tui?.requestRender()
+  }
+
+  /** A12: 关闭侧问浮层。 */
+  closeBtw(): void {
+    if (this.btwPanel === undefined) return
+    this.btwPanel = undefined
+    this.overlayOpen = false
+    this.tui?.requestRender()
+  }
+
   /** Open the sectioned /hotkeys reference panel (grouped, aligned columns). */
   showHotkeys(): void {
     const tui = this.tui
@@ -1917,6 +1949,25 @@ export class PiTuiApp implements TerminalApp {
     if (this.footerMode === mode) return
     this.footerMode = mode
     this.refreshFooter()
+    this.tui?.requestRender()
+  }
+
+  /** A16: thinking 显示/隐藏（/thinking 命令与 Ctrl+T 共用）。 */
+  setHideThinking(hide: boolean): void {
+    this.applyThinking(hide)
+  }
+
+  isThinkingHidden(): boolean {
+    return this.hideThinking
+  }
+
+  private applyThinking(hide: boolean): void {
+    if (this.hideThinking === hide) return
+    this.hideThinking = hide
+    for (const view of this.entryViews.values()) {
+      const inner = view instanceof FocusableFrame ? view.inner : view
+      if (inner instanceof AssistantMessageComponent) inner.setHideThinkingBlock(this.hideThinking)
+    }
     this.tui?.requestRender()
   }
 

@@ -10,6 +10,7 @@
 import { matchesKey, truncateToWidth } from '@earendil-works/pi-tui'
 import type { Component, Focusable } from '@earendil-works/pi-tui'
 import { bold, fg } from '../../app/pi/color.ts'
+import { matchTraceQuery } from '../../control/summaries.ts'
 import type { TrajectoryRow } from '../../app/terminal-app.ts'
 import { strings } from '../strings.ts'
 
@@ -45,10 +46,7 @@ export class TrajectoryPanel implements Component, Focusable {
 
   private filtered(): TrajectoryRow[] {
     if (this.query === '') return [...this.rows]
-    return this.rows.filter(row =>
-      String(row.seq).includes(this.query)
-      || row.type.toLowerCase().includes(this.query)
-      || row.summary.toLowerCase().includes(this.query))
+    return this.rows.filter(row => matchTraceQuery(this.query, row))
   }
 
   handleInput(data: string): void {
@@ -72,6 +70,23 @@ export class TrajectoryPanel implements Component, Focusable {
       this.scrollBy(VISIBLE_ROWS)
       return
     }
+    // A13: `[`/`]` 跳错误行、`{`/`}` 跳轮次边界（方向 -1 向前 / +1 向后）。
+    if (data === '[') {
+      this.jumpTo('error', -1)
+      return
+    }
+    if (data === ']') {
+      this.jumpTo('error', 1)
+      return
+    }
+    if (data === '{') {
+      this.jumpTo('turn', -1)
+      return
+    }
+    if (data === '}') {
+      this.jumpTo('turn', 1)
+      return
+    }
     if (matchesKey(data, 'backspace')) {
       this.query = this.query.slice(0, -1)
       this.offset = 0
@@ -89,6 +104,25 @@ export class TrajectoryPanel implements Component, Focusable {
       Math.max(0, this.offset + delta),
       Math.max(0, this.filtered().length - VISIBLE_ROWS),
     )
+  }
+
+  /** A13: 跳转到前/后一个错误行（[ ]）或轮次边界（{ }）。 */
+  private jumpTo(kind: 'error' | 'turn', direction: 1 | -1): void {
+    const rows = this.filtered()
+    if (rows.length === 0) return
+    const isTarget = (row: TrajectoryRow): boolean => {
+      if (kind === 'turn') return row.type === 'turn/start'
+      const lower = row.summary.toLowerCase()
+      return row.summary.includes('✗') || lower.includes('失败') || lower.includes('error')
+    }
+    let i = this.offset
+    for (let step = 0; step < rows.length; step++) {
+      i = (i + direction + rows.length) % rows.length
+      if (isTarget(rows[i])) {
+        this.offset = Math.min(i, Math.max(0, rows.length - VISIBLE_ROWS))
+        return
+      }
+    }
   }
 
   invalidate(): void {

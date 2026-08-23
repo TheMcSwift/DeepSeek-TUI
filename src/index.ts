@@ -482,6 +482,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   }
   let doc = emptyDocument()
   let cmdSeq = 0
+  /** A12: /btw 侧问的当前请求（再次触发时中止上一个）。 */
+  let btwController: AbortController | undefined
   let handle: AgentHandle | undefined
   let currentSessionId = ''
   /** Shift+Tab 会话模式循环的当前档（B8；default 起步）。 */
@@ -835,6 +837,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     push('__skills', '/skills · 技能目录', '可用技能清单（名称 + 描述）')
     push('__context', '/context · 已加载上下文', '系统提示/工作区指令/技能目录/工具清单注入明细')
     push('__tips', '/tips · 使用提示', '快捷键/命令/工作流/个性化/避坑 五组提示')
+    push('__thinking', '/thinking · 思考折叠', 'Enabled/Disabled 选择（不持久化）')
+    push('__btw', '/btw · 侧问', '无工具单轮回答（不进会话日志）')
     push('__mcp', '/mcp · MCP 状态', 'MCP 连接说明与配置提示')
     push('__permissions', '/permissions · 权限说明', '当前 DSH profile 的权限策略说明')
     push('__login', '/login · 凭证状态', 'API 凭证配置状态说明')
@@ -1900,6 +1904,73 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       }
       if (name === '__tips') {
         app.showTips()
+        return
+      }
+      if (name === '__thinking') {
+        // A16: /thinking 弹 Enabled/Disabled 选择（Ctrl+T 同语义，不持久化）。
+        const hidden = app.isThinkingHidden()
+        void (async () => {
+          const picked = await new Promise<string | null>((resolve) => {
+            app.showQueuePicker([
+              { value: 'enabled', label: strings().thinkingEnabled, current: !hidden },
+              { value: 'disabled', label: strings().thinkingDisabled, current: hidden },
+            ], resolve, strings().thinkingTitle)
+          })
+          if (picked === null) return
+          app.setHideThinking(picked === 'disabled')
+          app.toast(picked === 'disabled' ? strings().thinkingDisabled : strings().thinkingEnabled, 'info')
+        })()
+        return
+      }
+      if (name === '__btw') {
+        // A12: 无工具单轮侧问——当前模型直调 llm.stream，流式进浮层；
+        // 不写日志/不进文档流；busy 亦可触发不打断；再次触发中止上一个。
+        const llm = ctx.get('llm') as { stream?: (options: unknown) => AsyncIterable<unknown> } | undefined
+        if (llm?.stream === undefined) {
+          app.toast(strings().btwUnavailable, 'error')
+          return
+        }
+        const arg = (rawInput ?? '').trim()
+        void (async () => {
+          let question = arg
+          if (question === '') {
+            const answer = await app.askDialog({ title: strings().btwPrompt, options: [] })
+            if (answer.reason !== 'picked' || answer.picked === undefined) return
+            question = answer.picked.trim()
+            if (question === '') return
+          }
+          btwController?.abort()
+          const controller = new AbortController()
+          btwController = controller
+          app.openBtw(question)
+          const [provider, ...modelParts] = meta.model.split('/')
+          const model = modelParts.join('/')
+          const streamFn = llm.stream
+          if (streamFn === undefined) {
+            app.toast(strings().btwUnavailable, 'error')
+            return
+          }
+          try {
+            const stream = streamFn({
+              provider,
+              model,
+              messages: [{ role: 'user', content: [{ type: 'text', text: question }] }],
+              signal: controller.signal,
+            })
+            for await (const chunk of stream) {
+              const candidate = chunk as { type?: string; text?: string }
+              if (candidate.type === 'text-delta' && typeof candidate.text === 'string') {
+                app.appendBtw(candidate.text)
+              }
+            }
+          } catch (error) {
+            if (!controller.signal.aborted) {
+              app.toast(strings().btwFailed(error instanceof Error ? error.message : String(error)), 'error')
+            }
+          } finally {
+            if (btwController === controller) btwController = undefined
+          }
+        })()
         return
       }
       if (name === '__new') {

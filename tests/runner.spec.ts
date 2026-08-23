@@ -1071,7 +1071,7 @@ describe('tui runner', () => {
     await test.started
     test.app.handlers?.onCommandPickerRequest?.()
     await settle()
-    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__resume', '__rewind', '__status', '__tokens', '__cost', '__doctor', '__init', '__agents', '__skills', '__context', '__tips', '__mcp', '__permissions', '__login', '__logout', '__add-dir', '__hooks', '__vim', '__terminal-setup', '__connect', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__settings', '__plugins', '__workspace', '__compose'])
+    expect(test.app.commands?.map(item => item.value)).toEqual(['goal', 'compact', '__export', '__rate', '__new', '__quit', '__help', '__clone', '__resume', '__rewind', '__status', '__tokens', '__cost', '__doctor', '__init', '__agents', '__skills', '__context', '__tips', '__thinking', '__btw', '__mcp', '__permissions', '__login', '__logout', '__add-dir', '__hooks', '__vim', '__terminal-setup', '__connect', '__effort', '__model', '__permission', '__config', '__lang', '__rename', '__queue', '__trajectory', '__keymap', '__theme', '__preset', '__settings', '__plugins', '__workspace', '__compose'])
     expect(test.app.commands?.find(item => item.value === 'goal')?.label).toBe('/goal <objective>')
     expect(test.app.commands?.find(item => item.value === '__model')?.label).toBe('/model <provider/model>')
     expect(test.app.commands?.find(item => item.value === '__permission')?.label).toBe('/permission <preset>')
@@ -1106,6 +1106,28 @@ describe('tui runner', () => {
     await settle()
     expect(test.app.restored).toEqual(['audit'])
     await test.ctx.fiber.dispose()
+  })
+
+  it('A12: /btw streams a tool-less side answer into the transient panel', async () => {
+    const test = await bench({}, {}, (ctx) => {
+      ctx.provide('llm', {
+        stream: async function* () {
+          yield { type: 'text-delta', index: 0, text: 'side answer ' }
+          yield { type: 'text-delta', index: 0, text: 'here' }
+          yield { type: 'finish', reason: 'stop' }
+        },
+      } as never)
+    })
+    try {
+      await test.started
+      test.app.handlers?.onCommandPicked('__btw', 'why?')
+      await settle(200)
+      expect(test.app.btwText).toBe('side answer here')
+      await test.ctx.fiber.dispose()
+    } catch (error) {
+      await test.ctx.fiber.dispose().catch(() => {})
+      throw error
+    }
   })
 
   it('executes a picked command with dialog input and renders its result', async () => {

@@ -94,6 +94,25 @@ export class FakeApp implements TerminalApp {
     this.footerMode = mode
   }
 
+  /** A16: last thinking visibility switch. */
+  thinkingHidden = false
+  setHideThinking(hide: boolean): void {
+    this.thinkingHidden = hide
+  }
+  isThinkingHidden(): boolean {
+    return this.thinkingHidden
+  }
+
+  /** A12 /btw: accumulated side-answer text. */
+  btwText = ''
+  openBtw(question: string): void {
+    this.btwText = ''
+  }
+  appendBtw(delta: string): void {
+    this.btwText += delta
+  }
+  closeBtw(): void {}
+
   notifyQueue(count: number, messages?: readonly string[]): void {
     this.queues.push(count)
     this.queuedMessages.push(messages === undefined ? [] : [...messages])

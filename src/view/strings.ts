@@ -82,6 +82,16 @@ export interface Strings {
   /** D1 /resume 行元数据：agent preset 与子会话计数。 */
   sessionPreset: (preset: string) => string
   sessionChildren: (count: number) => string
+  /** A16 /thinking 弹层标题与选项（Enabled/Disabled，不持久化）。 */
+  thinkingTitle: string
+  thinkingEnabled: string
+  thinkingDisabled: string
+  /** A12 /btw 侧问（浮层标题/提示/错误）。 */
+  btwTitle: string
+  btwHint: string
+  btwPrompt: string
+  btwUnavailable: string
+  btwFailed: (message: string) => string
   queueFirst: (count: number, preview: string) => string
   interrupted: string
   stopped: string
@@ -400,6 +410,14 @@ const zh: Strings = {
   searchHitPosition: (index: number, total: number): string => `搜索结果 ${index}/${total}`,
   sessionPreset: (preset: string): string => `preset ${preset}`,
   sessionChildren: (count: number): string => `${count} 个子会话`,
+  thinkingTitle: '思考折叠',
+  thinkingEnabled: 'Enabled',
+  thinkingDisabled: 'Disabled',
+  btwTitle: '侧问',
+  btwHint: 'c 复制 · Esc 关闭',
+  btwPrompt: '侧问（无工具单轮，不进日志）？',
+  btwUnavailable: '侧问不可用（llm 服务未挂载）',
+  btwFailed: (message: string): string => `侧问失败：${message}`,
   tipGroups: [
     {
       title: '快捷键',
@@ -650,7 +668,7 @@ const zh: Strings = {
   // 轨迹视图（B11/H31）
   trajectoryTitle: '轨迹',
   trajectoryEvents: (n: number): string => `${n} 条事件`,
-  trajectoryFilterHint: '输入过滤 · ↑/↓ 滚动 · PgUp/PgDn 翻页 · Esc 关闭',
+  trajectoryFilterHint: '过滤（tool:<名>/kind:<类型>/turn:<n>/err: 与关键词 AND）· [ ] 跳错误 · { } 跳轮次 · ↑/↓ 滚动 · Esc 关闭',
   // /compose（pi A3，$EDITOR 撰写消息）
   composePlaceholder: '# 在此撰写消息，保存并退出后发送（删除本行可移除注释）',
   composeEmpty: '草稿为空，未发送',
@@ -879,6 +897,14 @@ const en: Strings = {
   searchHitPosition: (index: number, total: number): string => `Search hit ${index}/${total}`,
   sessionPreset: (preset: string): string => `preset ${preset}`,
   sessionChildren: (count: number): string => `${count} child sessions`,
+  thinkingTitle: 'Thinking fold',
+  thinkingEnabled: 'Enabled',
+  thinkingDisabled: 'Disabled',
+  btwTitle: 'Side question',
+  btwHint: 'c copy · Esc close',
+  btwPrompt: 'Side question (tool-less one-shot, no log)?',
+  btwUnavailable: 'Side question unavailable (llm service not mounted)',
+  btwFailed: (message: string): string => `Side question failed: ${message}`,
   tipGroups: [
     {
       title: 'Shortcuts',
@@ -1129,7 +1155,7 @@ const en: Strings = {
   // Trajectory view (B11/H31)
   trajectoryTitle: 'Trajectory',
   trajectoryEvents: (n: number): string => `${n} events`,
-  trajectoryFilterHint: 'Type to filter · ↑/↓ scroll · PgUp/PgDn page · Esc close',
+  trajectoryFilterHint: 'Filter (tool:<name>/kind:<type>/turn:<n>/err: AND keywords) · [ ] error · { } turn · ↑/↓ scroll · Esc close',
   // /compose (pi A3, compose in $EDITOR)
   composePlaceholder: '# Write your message here; save and exit to send (delete this line to drop the comment)',
   composeEmpty: 'Draft was empty, nothing sent',

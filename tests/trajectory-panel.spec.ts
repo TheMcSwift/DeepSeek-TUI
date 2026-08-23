@@ -58,4 +58,27 @@ describe('trajectory panel', () => {
     panel.handleInput('\x1b')
     expect(closed).toBe(1)
   })
+
+  it('A13: [ ] 跳错误行、{ } 跳轮次边界', () => {
+    const fixture: TrajectoryRow[] = [
+      { seq: 1, type: 'turn/start', at: 100, summary: 'turn 1 开始' },
+      { seq: 2, type: 'tool/call', at: 200, summary: 'bash {"command":"seq"}' },
+      { seq: 3, type: 'tool/result', at: 300, summary: '✗ error boom' },
+      { seq: 4, type: 'turn/start', at: 400, summary: 'turn 2 开始' },
+      { seq: 5, type: 'tool/result', at: 500, summary: 'ok fine' },
+    ]
+    const panel = new TrajectoryPanel(fixture, () => {})
+    // 从顶部（seq1）向后跳错误行 → seq3。
+    panel.handleInput(']')
+    let lines = panel.render(100).map(stripAnsi)
+    expect(lines.some(line => line.includes('#03'))).toBe(true)
+    // 再向后跳 → 无更多错误行，循环回 seq3（唯一错误行，保持）。
+    panel.handleInput(']')
+    lines = panel.render(100).map(stripAnsi)
+    expect(lines.some(line => line.includes('#03'))).toBe(true)
+    // { } 轮次边界：从 offset 向后跳 turn/start → seq4。
+    panel.handleInput('}')
+    lines = panel.render(100).map(stripAnsi)
+    expect(lines.some(line => line.includes('#04'))).toBe(true)
+  })
 })

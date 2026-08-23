@@ -65,6 +65,40 @@ export function contextReport(doc: Pick<ViewDocument, 'entries'>): { title: stri
   return { title: `${strings().ctxTitle}（${injections.length}）`, body }
 }
 
+/**
+ * A13 轨迹查询语言（前缀 AND + 关键词，可单测的纯函数）：
+ * `tool:<名>` / `kind:<类型>` / `turn:<n>` / `err:` 与普通关键词 AND 组合。
+ * `>10s`/`tok>1k` 不可行（行为行无结构化时长/token 字段，仅 summary 文本）。
+ */
+export function matchTraceQuery(
+  query: string,
+  row: { seq: number; type: string; summary: string },
+): boolean {
+  const q = query.toLowerCase()
+  const type = row.type.toLowerCase()
+  const summary = row.summary.toLowerCase()
+  const terms = q.split(/\s+/).filter(term => term !== '')
+  if (terms.length === 0) return true
+  return terms.every(term => {
+    if (term.startsWith('tool:')) {
+      const name = term.slice(5).trim()
+      return type.startsWith('tool') && (name === '' || summary.includes(name) || type.includes(name))
+    }
+    if (term.startsWith('kind:')) {
+      const kind = term.slice(5).trim()
+      return kind === '' || type.includes(kind)
+    }
+    if (term.startsWith('turn:')) {
+      const n = term.slice(5).trim()
+      return n === '' || summary.includes(`turn ${n}`)
+    }
+    if (term === 'err:') {
+      return summary.includes('✗') || summary.includes('失败') || summary.includes('error') || type.includes('error')
+    }
+    return type.includes(term) || summary.includes(term) || String(row.seq).includes(term)
+  })
+}
+
 /** 文档工具调用 → 审批弹窗富化数据（CC-02）。 */
 export function approvalContext(entry: ToolEntry | undefined): { commandText?: string; impactLines?: string[] } {  if (entry === undefined) return {}
   let args: Record<string, unknown> = {}

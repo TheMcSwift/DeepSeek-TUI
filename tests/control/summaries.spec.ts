@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { contextReport } from '../../src/control/summaries.ts'
+import { contextReport, matchTraceQuery } from '../../src/control/summaries.ts'
 import { setStrings } from '../../src/view/strings.ts'
 import type { ViewDocument } from '../../src/document/document.ts'
 
@@ -37,5 +37,34 @@ describe('contextReport (A3)', () => {
     const line = report.body.split('\n').find(line => line.includes('第一行内容很长'))
     expect(line).toBeDefined()
     expect(line!.trim().length).toBeLessThanOrEqual(60)
+  })
+})
+
+describe('matchTraceQuery (A13)', () => {
+  const rows = [
+    { seq: 1, type: 'turn/start', summary: 'turn 1 开始' },
+    { seq: 2, type: 'tool/call', summary: 'bash {"command":"echo hi"}' },
+    { seq: 3, type: 'tool/result', summary: '✗ error hi' },
+    { seq: 4, type: 'assistant/message', summary: 'answer · in 1200 out 800' },
+    { seq: 5, type: 'turn/start', summary: 'turn 2 开始' },
+  ]
+
+  it('prefix queries AND-normalized against type/summary fields', () => {
+    expect(matchTraceQuery('tool:bash', rows[1])).toBe(true)
+    expect(matchTraceQuery('tool:bash', rows[0])).toBe(false)
+    expect(matchTraceQuery('kind:tool', rows[2])).toBe(true)
+    expect(matchTraceQuery('turn:1', rows[0])).toBe(true)
+    expect(matchTraceQuery('turn:2', rows[0])).toBe(false)
+    expect(matchTraceQuery('err:', rows[2])).toBe(true)
+    expect(matchTraceQuery('err: ok', rows[2])).toBe(false) // AND: ok 不命中
+    expect(matchTraceQuery('kind:tool err:', rows[2])).toBe(true) // 前缀 AND
+    expect(matchTraceQuery('tool:bash err:', rows[2])).toBe(false) // bash 不在此行
+    expect(matchTraceQuery('', rows[0])).toBe(true) // 空查询全放行
+  })
+
+  it('falls back to plain keyword matching on seq/type/summary', () => {
+    expect(matchTraceQuery('answer', rows[3])).toBe(true)
+    expect(matchTraceQuery('4', rows[3])).toBe(true)
+    expect(matchTraceQuery('echo', rows[1])).toBe(true)
   })
 })

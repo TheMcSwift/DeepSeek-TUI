@@ -224,6 +224,13 @@ export interface TerminalApp {
   showTips(): void
   /** F3/V8: footer 档位（full/compact/minimal），应用后即时重绘。 */
   setFooterMode(mode: 'full' | 'compact' | 'minimal'): void
+  /** A16: thinking 显示/隐藏（/thinking 命令，不持久化；Ctrl+T 同语义）。 */
+  setHideThinking(hide: boolean): void
+  isThinkingHidden(): boolean
+  /** A12 /btw 侧问浮层（瞬态、不进文档流）。 */
+  openBtw(question: string): void
+  appendBtw(delta: string): void
+  closeBtw(): void
   /** Ask the human one question through an overlay dialog. */
   askDialog(question: ApprovalQuestion): Promise<ApprovalAnswer>
   /** Show the pending message queue length + 队首预览 while a turn runs (T1⑤). */

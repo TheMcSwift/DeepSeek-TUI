@@ -52,13 +52,13 @@
 
 | # | 项 | 优先级/量 | 边界 | **前置验证** | 验收要点 |
 |---|---|---|---|---|---|
-| 20 | A10 `/preset` Agent preset 选择器 | P1 / M | 内部 | ⚠️ 验证 `dsh-agent-presets` 服务可 `ctx.get` 结构读取；不可行→降级「选择持久化 + 提示」 | 枚举选择 + `<id>` 直切 + blank-only 锁；默认持久化到 tui 命名空间 |
-| 21 | A9 `/provider` 向导（**克制版**：直切 + 简单表单；数据层走 dsh settings 服务） | P1 / M | 内部（克制） | ⚠️ 确认 settings 服务可写 credentials（0600）；不可→保持 /config 现状并记录 | 简单表单添加；key 脱敏；写失败回滚提示 |
-| 22 | A13 `/trace` 核心子集（查询语言 tool:/kind:/turn:/err:/run:/>10s/tok>1k，AND + 命中高亮；`[`/`]` 跳失败点、`{`/`}` 跳轮次） | P1 / M | 内部 | 无 | 查询解析纯函数单测；跳转键与既有轨迹面板共存；不做全屏波形带 |
-| 23 | A16 `/thinking` 命令（Enabled/Disabled 选择，不持久化） | P2 / S | 内部 | 复用 Ctrl+T 逻辑 | 命令入口 + 弹选择；与 Ctrl+T 同语义 |
-| 24 | A12 `/btw` 侧问（无工具单轮 LLM + 浮层；不写日志、不计 token、busy 可触发不打断） | P1 / M | 内部 | ⚠️ 确认 llm 服务可 stream 且不污染 agent 循环 | 浮层显示答案（可滚动/c 复制/Esc 关）；再次触发中止上一个；会话日志无痕迹 |
-| 25 | D4 子 agent 会话折叠（默认折叠 + 计数 + 展开缩进） | P2 / M | 内部 | listSessions 元数据 | picker 折叠态；展开正常 |
-| 26 | D3 会话删除/清理 | P2 / M | 内部 | ⚠️ 验证 sessionQuery/persistence 删除缝隙；无→记录不做 | 确认行对话框；删除后列表消失 |
+| 20 | A10 `/preset` Agent preset 选择器 | P1 / M | 内部 | ⚠️ 验证 `dsh-agent-presets` 服务可 `ctx.get` 结构读取；不可行→降级「选择持久化 + 提示」 | 🕐 记录降级（2026-08-22 探针）：`agentPresets` 服务注册在 **agent 组合**（agent.cordis.yml），主组合（TUI profile）不可读；且 `/preset` 命令名已被「键位+主题一键切换」占用——不做新命令，保持现状+文档说明 |
+| 21 | A9 `/provider` 向导（**克制版**：直切 + 简单表单；数据层走 dsh settings 服务） | P1 / M | 内部（克制） | ⚠️ 确认 settings 服务可写 credentials（0600）；不可→保持 /config 现状并记录 | ✅ 判定已覆盖（2026-08-22 探针）：`/config` 的 `addProviderWizard`（K2）即克制版（路由→字段→settings.update 写入并热生效）；BACKLOG 的 9 步深度向导（探测/回滚/多选）不引入 |
+| 22 | A13 `/trace` 核心子集（查询语言 tool:/kind:/turn:/err:/run:/>10s/tok>1k，AND + 命中高亮；`[`/`]` 跳失败点、`{`/`}` 跳轮次） | P1 / M | 内部 | 无 | ✅ 已落地（2026-08-22）：`matchTraceQuery` 纯函数（`tool:`/`kind:`/`turn:`/`err:` 前缀 + 关键词 AND）；面板 `[`/`]`（错误行）与 `{`/`}`（轮次边界）跳转；**省略**：`>10s`/`tok>1k`（行为行无结构化时长/token 字段——探针记录）、命中高亮（回退文本匹配，打磨项） |
+| 23 | A16 `/thinking` 命令（Enabled/Disabled 选择，不持久化） | P2 / S | 内部 | 复用 Ctrl+T 逻辑 | ✅ 已落地（2026-08-22）：`/thinking` 弹层（Enabled/Disabled）+ `setHideThinking` 接口（与 Ctrl+T 共用 applyThinking） |
+| 24 | A12 `/btw` 侧问（无工具单轮 LLM + 浮层；不写日志、不计 token、busy 可触发不打断） | P1 / M | 内部 | ⚠️ 确认 llm 服务可 stream 且不污染 agent 循环 | ✅ 已落地（2026-08-22）：探针确认 llm.stream 可直调（`@deepseek-ai/dsh-llm` 在依赖树）；`/btw [问题]`（裸命令弹问句）→ 当前模型流式进 `BtwPanel` 浮层（`c` 复制/`Esc` 关）；再次触发中止上一个（AbortController）；不写日志（浮层瞬态，不进 fold） |
+| 25 | D4 子 agent 会话折叠（默认折叠 + 计数 + 展开缩进） | P2 / M | 内部 | listSessions 元数据 | 🕐 未开工 |
+| 26 | D3 会话删除/清理 | P2 / M | 内部 | ⚠️ 验证 sessionQuery/persistence 删除缝隙；无→记录不做 | ✅ 记录不做（2026-08-22 探针）：session-query/session-persistence 均**无公开删除 API**（coordinator 仅内部 livemap 清理）——与 BACKLOG 预判一致 |
 
 ## 阶段 4 · 渲染观察与主题
 
