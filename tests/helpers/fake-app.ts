@@ -113,6 +113,12 @@ export class FakeApp implements TerminalApp {
   }
   closeBtw(): void {}
 
+  /** A15: last activity frame set id. */
+  activityId: 'star' | 'moon' | 'dots' = 'star'
+  setActivityFrames(id: 'star' | 'moon' | 'dots'): void {
+    this.activityId = id
+  }
+
   notifyQueue(count: number, messages?: readonly string[]): void {
     this.queues.push(count)
     this.queuedMessages.push(messages === undefined ? [] : [...messages])

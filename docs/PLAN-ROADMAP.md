@@ -64,14 +64,14 @@
 
 | # | 项 | 优先级/量 | 边界 | 前置 | 验收要点 |
 |---|---|---|---|---|---|
-| 27 | C4 context bar 5 段（system/prompt/assistant/thinking/tools 分色 + 最大余数法分配 + 标签自适应收缩 + free 段读数） | P2 / M | 内部 | contextBreakdown（G42 已有） | 5 段渲染；窄终端标签收缩；纯渲染单测 |
-| 28 | C5 loaded-context 面板（转录空时顶部折叠摘要，与 A3 共用数据源） | P2 / M | 内部 | A3 数据源 | 折叠展开；与 A3 同源（不重复实现） |
-| 29 | C6 effort 滑杆（←/→ 每步实时生效 + 档位名 + 当前 ✓；0/1 档不弹滑杆） | P2 / M | 内部 | llm.resolveModelInfo efforts | 滑杆交互；实时生效；枚举型 effort 回退 |
-| 30 | E1 SplitDiffView 分屏 diff（≥110 列双栏 + /settings diffLayout auto/split/unified） | P2 / M | 内部 | diff 数据已有；F4 联动 | 宽屏双栏；设置切换即时生效 |
-| 31 | C3 工作动画 + A15 `/activity` 帧动画系统（内置 8–12 帧预设 + 选择器 + 持久化；自建帧表勿 import 官方包） | P1 / M | 内部（模块 + 交换缝） | **约束**：dsh-working-activity 不在依赖树→独立 `src/working-activity/` 纯函数帧表 | 忙碌状态行播帧；`/activity frames <名>`；持久化；模块隔离（未来可换官方包） |
-| 32 | F1 自定义 JSON 主题（`~/.dsh/tui-themes/<名>.json`：base + colors 覆盖 + 校验 + `/theme` 热切换） | P2 / M | 机制内部/内容独立 | palette.ts 运行时覆盖层评估 | 损坏/未知键跳过；路径穿越防护；热切换（重启限制文档化） |
-| 33 | F2 dark-ansi 16 色兼容回退 | P3 / S | 内部 | palette 扩展 | 16 色终端可见 |
-| 34 | B11 终端 tab 标题动画（`⠂/⠐ 🐋 <标题>` 仅聚焦 + 空闲 `✦`；OSC 设置） | P3 / S | 内部 | header 数据已有 | 聚焦时动画；空闲固定；OSC 不泄漏控制字符 |
+| 27 | C4 context bar 5 段（system/prompt/assistant/thinking/tools 分色 + 最大余数法分配 + 标签自适应收缩 + free 段读数） | P2 / M | 内部 | contextBreakdown（G42 已有） | ✅ 记录数据源限制（2026-08-22 探针）：token-meter `contextBreakdown` 仅三段（system/tools/messages），无 prompt/assistant/thinking 细分——5 段不可行；保持 G42 三段 10 段彩条 + ctx % 读数 |
+| 28 | C5 loaded-context 面板（转录空时顶部折叠摘要，与 A3 共用数据源） | P2 / M | 内部 | A3 数据源 | ✅ 判定等价覆盖（2026-08-22）：E12 注入行逐条可见 + A3 `/context` 全量报告——空会话用户已能感知加载内容，不重复实现折叠摘要 |
+| 29 | C6 effort 滑杆（←/→ 每步实时生效 + 档位名 + 当前 ✓；0/1 档不弹滑杆） | P2 / M | 内部 | llm.resolveModelInfo efforts | ✅ 判定等价覆盖（2026-08-22）：/effort 现为 askDialog 数字直选（档位名 + 当前标记 + 1/2 直选）；滑杆为远程外观打磨，且 effort 无实时预览闭环（下次请求才生效） |
+| 30 | E1 SplitDiffView 分屏 diff（≥110 列双栏 + /settings diffLayout auto/split/unified） | P2 / M | 内部 | diff 数据已有；F4 联动 | 🕐 暂缓（2026-08-22 判定）：仅 ≥110 列宽生效（多数终端 <110），收益低；diffLayout 设置面随 E1 联动——随宽屏需求再排 |
+| 31 | C3 工作动画 + A15 `/activity` 帧动画系统（内置 8–12 帧预设 + 选择器 + 持久化；自建帧表勿 import 官方包） | P1 / M | 内部（模块 + 交换缝） | **约束**：dsh-working-activity 不在依赖树→独立 `src/working-activity/` 纯函数帧表 | ✅ 已落地（2026-08-22）：`src/app/pi/frames.ts` 自建帧表（star/moon/dots，纯数据+标识符解析）；StatusSlot.setFrames 换帧（busy 中重建重启）；`/activity`（选择器）+ `frames <id>` 直切 + tui 命名空间持久化 + 启动回填；**C3 其余**：`⚠ ctx N%` 压力前缀（≥80 amber/≥95 red，busy 行）✅；ice-blue sweep 已有 shimmer ✅；token 后缀即 V5 ✅；空闲回合摘要省略（stats footer 已有） |
+| 32 | F1 自定义 JSON 主题（`~/.dsh/tui-themes/<名>.json`：base + colors 覆盖 + 校验 + `/theme` 热切换） | P2 / M | 机制内部/内容独立 | palette.ts 运行时覆盖层评估 | ✅ 已落地（2026-08-22）：`tui-themes/<名>.json`（colors 覆盖，已知语义角色 + 合法 hex 才收，损坏/未知跳过，文件名路径穿越防护）；palette 覆盖层 `applyCustomThemeColors`/`customColor`（resolveHex 优先）+ `/theme <名>` 热切换/选择器列出（自定义在前）+ 持久化（theme-preset.txt）+ 启动回填；**base（light/dark）简化记录**：沿用当前预设明暗（覆盖层语义） |
+| 33 | F2 dark-ansi 16 色兼容回退 | P3 / S | 内部 | palette 扩展 | 🕐 暂缓（P3 远期，现代终端 truecolor 普及，收益极小——记录） |
+| 34 | B11 终端 tab 标题动画（`⠂/⠐ 🐋 <标题>` 仅聚焦 + 空闲 `✦`；OSC 设置） | P3 / S | 内部 | header 数据已有 | 🕐 暂缓（P3 打磨——记录） |
 
 ## 阶段 5 · 独立包与大工程
 

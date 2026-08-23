@@ -5,12 +5,29 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { applyPalette, bg, fg, resolveHex } from '../../src/app/pi/color.ts'
+import { applyCustomThemeColors, customColor } from '../../src/app/pi/palette.ts'
 import { resolveThemeVariant, themeFromOsc11 } from '../../src/app/pi/theme-detect.ts'
 import { resolveLanguage, setStrings, strings } from '../../src/view/strings.ts'
 import { highlight, supportsLanguage } from '../../src/app/pi/highlight.ts'
 import { getMarkdownTheme } from '../../src/app/pi/theme.ts'
 
-afterEach(() => { applyPalette('web', 'dark') })
+afterEach(() => {
+  applyPalette('web', 'dark')
+  applyCustomThemeColors({})
+})
+
+describe('custom theme overlay (F1)', () => {
+  it('overrides a known semantic role and clears on reset', () => {
+    expect(customColor('accent')).toBeUndefined()
+    applyCustomThemeColors({ accent: '#ff00aa' })
+    expect(customColor('accent')).toBe('#ff00aa')
+    // resolveHex 经覆盖层解析到自定义值；fg 缓存随之失效（换肤路径重置）。
+    applyPalette('web', 'dark')
+    expect(resolveHex('accent')).toBe('#ff00aa')
+    applyCustomThemeColors({})
+    expect(resolveHex('accent')).not.toBe('#ff00aa')
+  })
+})
 
 describe('language (T9 i18n)', () => {
   it('resolves and switches between the zh/en dictionaries', () => {

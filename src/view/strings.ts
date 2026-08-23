@@ -92,6 +92,15 @@ export interface Strings {
   btwPrompt: string
   btwUnavailable: string
   btwFailed: (message: string) => string
+  /** A15 /activity 帧预设（标题/名称/用法/错误）。 */
+  activityTitle: string
+  activityFrameName: (id: string) => string
+  activityFrameSwitched: (name: string) => string
+  activityFrameInvalid: (id: string) => string
+  activityUsage: string
+  /** F1 自定义主题（选择器标签/切换提示）。 */
+  themeCustomLabel: (name: string) => string
+  themeCustomSwitched: (name: string) => string
   queueFirst: (count: number, preview: string) => string
   interrupted: string
   stopped: string
@@ -418,6 +427,13 @@ const zh: Strings = {
   btwPrompt: '侧问（无工具单轮，不进日志）？',
   btwUnavailable: '侧问不可用（llm 服务未挂载）',
   btwFailed: (message: string): string => `侧问失败：${message}`,
+  activityTitle: '动画帧',
+  activityFrameName: (id: string): string => id === 'moon' ? '月相' : id === 'dots' ? '圆点' : '星芒',
+  activityFrameSwitched: (name: string): string => `动画帧：${name}`,
+  activityFrameInvalid: (id: string): string => `未知帧预设：${id}`,
+  activityUsage: '用法：/activity（选择器）或 /activity frames <star|moon|dots>',
+  themeCustomLabel: (name: string): string => `${name}（自定义）`,
+  themeCustomSwitched: (name: string): string => `自定义主题：${name}`,
   tipGroups: [
     {
       title: '快捷键',
@@ -905,6 +921,13 @@ const en: Strings = {
   btwPrompt: 'Side question (tool-less one-shot, no log)?',
   btwUnavailable: 'Side question unavailable (llm service not mounted)',
   btwFailed: (message: string): string => `Side question failed: ${message}`,
+  activityTitle: 'Activity frames',
+  activityFrameName: (id: string): string => id === 'moon' ? 'Moon' : id === 'dots' ? 'Dots' : 'Star',
+  activityFrameSwitched: (name: string): string => `Activity frames: ${name}`,
+  activityFrameInvalid: (id: string): string => `Unknown frame set: ${id}`,
+  activityUsage: 'Usage: /activity (picker) or /activity frames <star|moon|dots>',
+  themeCustomLabel: (name: string): string => `${name} (custom)`,
+  themeCustomSwitched: (name: string): string => `Custom theme: ${name}`,
   tipGroups: [
     {
       title: 'Shortcuts',

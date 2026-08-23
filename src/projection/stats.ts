@@ -107,6 +107,18 @@ export function cacheHitPercent(stats: SessionStats): number | null {
   return denominator === 0 ? null : Math.round(stats.cacheReadTokens / denominator * 100)
 }
 
+/** C3: 上下文压力百分比（usage 求和近似，0–99；无窗口返回 undefined）。 */
+export function contextPercent(doc: ViewDocument, contextWindow: number | undefined): number | undefined {
+  if (contextWindow === undefined || contextWindow <= 0) return undefined
+  let used = 0
+  for (const entry of doc.entries) {
+    if (entry.kind !== 'assistant') continue
+    used += entry.usage?.inputTokens ?? 0
+    used += entry.usage?.outputTokens ?? 0
+  }
+  return Math.min(99, Math.round((used / contextWindow) * 100))
+}
+
 // C1: streaming decode throughput helpers (pure, display-only estimates).
 // Tokens are approximated at ~4 chars/token; the gauge is qualitative and the
 // sparkline normalizes relative shapes, so the constant only sets magnitude.

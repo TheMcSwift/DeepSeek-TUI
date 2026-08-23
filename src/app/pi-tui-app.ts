@@ -31,7 +31,7 @@ import {
 import { emptyDocument, transcriptText } from '../document/document.ts'
 import { AtFileAutocompleteProvider, resolveAtPath } from './at-file-autocomplete.ts'
 import type { AssistantEntry, DecodeSample, TurnOutcome, ViewDocument, ViewEntry } from '../document/document.ts'
-import { CHARS_PER_TOKEN, gaugeGlyph, liveGauge, sparkline, statsStrip } from '../projection/stats.ts'
+import { CHARS_PER_TOKEN, contextPercent, gaugeGlyph, liveGauge, sparkline, statsStrip } from '../projection/stats.ts'
 import { BrandView, shouldShowBrand, BRAND, ICE, gradientText } from '../view/brand.ts'
 import type { CommandChoice, ModelChoice, PermissionChoice, PluginsRow, ProjectionRow, SessionChoice, SettingsRow, SurfaceMeta, TerminalApp, TerminalAppHandlers, TrajectoryRow } from './terminal-app.ts'
 import { FilterablePickerPanel } from '../view/components/filterable-picker.ts'
@@ -51,6 +51,7 @@ import { CapabilityPanel } from '../view/components/panels.ts'
 import type { JobRow } from '../view/components/panels.ts'
 import { FooterLine, type FooterMode } from '../view/components/footer.ts'
 import { BtwPanel } from '../view/components/btw-panel.ts'
+import { frameSetById } from './pi/frames.ts'
 import { ExpandableNoticeView, NoticeEntryView, convergeNotices } from '../view/components/notice-view.ts'
 import { fileLink } from '../view/components/file-link.ts'
 import { FocusableToolCard } from '../view/components/tool-card.ts'
@@ -165,13 +166,15 @@ class IdleStatus implements Component {
  *  blank lines while idle. */
 class StatusSlot implements Component {
   private readonly idle: Component
-  private readonly busy: Loader
+  private busy: Loader
   private busyActive = false
   private busyStartedAt = 0
+  private readonly tui: TUI
   toastText: string | undefined
   private idleLine = ''
 
   constructor(tui: TUI) {
+    this.tui = tui
     this.idle = new IdleStatus()
     // The busy message ("Deep diving...") renders in the web-brand gradient;
     // the Loader restyles the message on every spinner frame (80ms), so the
@@ -203,6 +206,25 @@ class StatusSlot implements Component {
     } else {
       this.busy.stop()
     }
+  }
+
+  /** A15: 换忙碌 spinner 帧预设（busy 中重建重启，空闲仅替换）。 */
+  setFrames(frames: string[], intervalMs: number): void {
+    const wasBusy = this.busyActive
+    if (wasBusy) this.busy.stop()
+    this.busy = new Loader(
+      this.tui,
+      (text: string) => fg('accent')(text),
+      (text: string) => gradientText(
+        text,
+        BRAND,
+        ICE,
+        piTuiInternals.animFrameMs > 0 ? Date.now() - this.busyStartedAt : 0,
+      ),
+      'Working…',
+      { frames, intervalMs },
+    )
+    if (wasBusy) this.busy.start()
   }
 
   setMessage(message: string): void {
@@ -1553,6 +1575,12 @@ export class PiTuiApp implements TerminalApp {
     }
   }
 
+  /** A15: 应用忙碌帧预设（持久化在 runner 侧 settings 命名空间）。 */
+  setActivityFrames(id: 'star' | 'moon' | 'dots'): void {
+    const set = frameSetById(id)
+    this.statusSlot?.setFrames(set.frames, set.intervalMs)
+  }
+
   /** A12: 打开/重建 /btw 侧问浮层（瞬态，不落文档流）。 */
   openBtw(question: string): void {
     const tui = this.tui
@@ -2108,6 +2136,11 @@ export class PiTuiApp implements TerminalApp {
       // cc 预设的耗时带括号（对齐 CC `✻ Herding… (8m 39s · ↓ N tokens)` 语式段）；
       // 其他预设保持 web 的空格拼接。
       const busyText = clock === '' ? diving : isCC ? `${diving} (${clock})` : `${diving} ${clock}`
+      // C3: `⚠ ctx N%` 压力前缀（usage 求和近似；≥80 amber / ≥95 red）。
+      const ctxPct = contextPercent(doc, this.meta.contextWindow)
+      const ctxPrefix = ctxPct !== undefined && ctxPct >= 80
+        ? ` · ${fg(ctxPct >= 95 ? 'error' : 'warning')(`⚠ ctx ${ctxPct}%`)}`
+        : ''
       // C1: live decode gauge (streaming entry's recent sample window).
       let gauge = liveGaugeText(doc)
       // V5: cc 预设 busy 行追加 `↓ N tokens`（CC 语式尾部；流式中无逐
@@ -2121,7 +2154,7 @@ export class PiTuiApp implements TerminalApp {
       }
       // 排队不只给数量：队首消息预览让用户知道自己排了什么（/queue dock 看全量）。
       const queued = this.queueCount > 0 ? ` · ${strings().queueFirst(this.queueCount, queuePreview(this.queueMessages))}` : ''
-      slot.setMessage(`${busyText}${gauge ?? ''}${queued}${endHint}`)
+      slot.setMessage(`${busyText}${ctxPrefix}${gauge ?? ''}${queued}${endHint}`)
     } else {
       slot.setMessage(strings().diving)
     }

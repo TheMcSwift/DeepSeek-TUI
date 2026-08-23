@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { billedInputTokens, cacheHitPercent, formatTokens, sessionStats } from './projection/stats.ts'
 import { homedir } from 'node:os'
@@ -33,7 +33,8 @@ import type {} from '@deepseek-ai/dsh-jobs'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { PiTuiApp, piTuiInternals } from './app/pi-tui-app.ts'
-import { applyPalette } from './app/pi/color.ts'
+import { applyPalette, resolveHex } from './app/pi/color.ts'
+import { applyCustomThemeColors } from './app/pi/palette.ts'
 import { detectThemeLive, resolveThemeVariant } from './app/pi/theme-detect.ts'
 import { installApprovals } from './control/approvals.ts'
 import { DEFAULT_SESSION_MODES, nextSessionMode } from './control/session-modes.ts'
@@ -45,6 +46,8 @@ import type { FeedbackRecord } from './session/feedback.ts'
 import { approvalContext, contextReport, findToolCall, relTime, trajectorySummary } from './control/summaries.ts'
 import { isKeymapId, KEYMAPS, keymapById } from './app/pi/keymaps.ts'
 import type { KeymapId } from './app/pi/keymaps.ts'
+import { FRAME_SETS, isFrameId } from './app/pi/frames.ts'
+import type { FrameId } from './app/pi/frames.ts'
 import { permissionDisplayName } from './app/pi/command-match.ts'
 import { isThemePresetId, THEME_PRESETS } from './app/pi/theme-presets.ts'
 import type { ThemePresetId } from './app/pi/theme-presets.ts'
@@ -167,13 +170,53 @@ function touchMru(id: string): void {
   }
 }
 
-function loadPersistedThemePreset(): ThemePresetId | undefined {
+function loadPersistedThemePreset(): string | undefined {
   try {
     const value = readFileSync(themePresetFile(), 'utf8').trim()
-    return isThemePresetId(value) ? value : undefined
+    return value === '' ? undefined : value
   } catch {
     return undefined
   }
+}
+
+/** F1: 自定义主题目录 `$DSH_HOME/tui-themes/<名>.json`（文件名即主题名，路径穿越防护）。 */
+function customThemesDir(): string {
+  return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'tui-themes')
+}
+
+export interface CustomTheme {
+  name: string
+  colors: Record<string, string>
+}
+
+/** 自定义主题加载：损坏/未知角色/非法 hex 跳过——只留已知语义色的合法覆盖。 */
+function loadCustomThemes(): CustomTheme[] {
+  const dir = customThemesDir()
+  let files: string[]
+  try {
+    files = readdirSync(dir).filter(file => file.endsWith('.json'))
+  } catch {
+    return []
+  }
+  const themes: CustomTheme[] = []
+  for (const file of files) {
+    if (file.includes('/') || file.includes('\\') || file.startsWith('.')) continue
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'))
+      const raw = (parsed as { colors?: unknown } | undefined)?.colors
+      if (typeof raw !== 'object' || raw === null) continue
+      const colors: Record<string, string> = {}
+      for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+        if (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(value)) continue
+        if (resolveHex(key) !== undefined) colors[key] = value
+      }
+      if (Object.keys(colors).length === 0) continue
+      themes.push({ name: file.slice(0, -'.json'.length), colors })
+    } catch {
+      // 损坏 JSON：跳过该主题。
+    }
+  }
+  return themes
 }
 
 function persistThemePreset(id: ThemePresetId): void {
@@ -415,13 +458,14 @@ function fail(exit: (code: number) => void, error: unknown): void {
 /** tui 命名空间的组合默认（settings.yaml `tui:` 段的 base 层）。
  *  enterBehavior 默认 'auto' = 按预设解析（cc=steer、其他=queue，BACKLOG-CC-PARITY B1）；
  *  用户显式设置 steer/queue 后写对应值并覆盖预设默认。 */
-const TUI_SETTINGS_DEFAULTS = { enterBehavior: 'auto', anim: 'on', footerMode: 'full' } as const
+const TUI_SETTINGS_DEFAULTS = { enterBehavior: 'auto', anim: 'on', footerMode: 'full', activityFrames: 'star' } as const
 
 /** tui 命名空间 schema：写入即校验；手改非法值在注册/写入点失败（平台惯例）。 */
 const TuiSettingsSchema = z.object({
   enterBehavior: z.union([z.const('auto'), z.const('queue'), z.const('steer')]),
   anim: z.union([z.const('on'), z.const('off')]),
   footerMode: z.union([z.const('full'), z.const('compact'), z.const('minimal')]),
+  activityFrames: z.union([z.const('star'), z.const('moon'), z.const('dots')]),
 })
 
 /**
@@ -466,9 +510,12 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     return
   }
   const themeVariant = resolveThemeVariant(process.env.DSH_TUI_THEME, detectThemeLive)
-  let activeThemePreset: ThemePresetId = isThemePresetId(process.env.DSH_TUI_THEME_PRESET ?? '')
+  const persistedTheme = isThemePresetId(process.env.DSH_TUI_THEME_PRESET ?? '')
     ? process.env.DSH_TUI_THEME_PRESET as ThemePresetId
-    : loadPersistedThemePreset() ?? 'web'
+    : loadPersistedThemePreset()
+  let activeThemePreset: ThemePresetId = isThemePresetId(persistedTheme ?? '')
+    ? persistedTheme as ThemePresetId
+    : 'web'
   const bootKeymap: KeymapId = isKeymapId(process.env.DSH_TUI_KEYMAP ?? '') ? process.env.DSH_TUI_KEYMAP as KeymapId : loadPersistedKeymap() ?? 'cc'
   let activeKeymap: KeymapId = bootKeymap
   const app = internals.createApp(activeThemePreset, themeVariant, config.regular)
@@ -479,6 +526,15 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     applyPalette(preset, themeVariant)
     app.refreshTheme()
     app.toast(strings().themeSwitched(preset), 'success')
+  }
+
+  /** F1: 应用自定义主题（语义色覆盖层 + 持久化 + 视图重建）。 */
+  const applyCustomTheme = (theme: CustomTheme): void => {
+    applyCustomThemeColors(theme.colors)
+    persistThemePreset(theme.name as ThemePresetId)
+    applyPalette(activeThemePreset, themeVariant)
+    app.refreshTheme()
+    app.toast(strings().themeCustomSwitched(theme.name), 'success')
   }
   let doc = emptyDocument()
   let cmdSeq = 0
@@ -839,6 +895,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     push('__tips', '/tips · 使用提示', '快捷键/命令/工作流/个性化/避坑 五组提示')
     push('__thinking', '/thinking · 思考折叠', 'Enabled/Disabled 选择（不持久化）')
     push('__btw', '/btw · 侧问', '无工具单轮回答（不进会话日志）')
+    push('__activity', '/activity · 动画', '忙碌 spinner 帧预设（star/moon/dots）')
     push('__mcp', '/mcp · MCP 状态', 'MCP 连接说明与配置提示')
     push('__permissions', '/permissions · 权限说明', '当前 DSH profile 的权限策略说明')
     push('__login', '/login · 凭证状态', 'API 凭证配置状态说明')
@@ -985,10 +1042,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   // 写入真正落盘），启动时若 env 未显式设置则从 settings.yaml 回填。
 
   /** tui 命名空间的持久化段（结构化只读）。 */
-  const tuiSettingsSection = (): { enterBehavior?: string; anim?: string; footerMode?: string } | undefined => {
+  const tuiSettingsSection = (): { enterBehavior?: string; anim?: string; footerMode?: string; activityFrames?: string } | undefined => {
     const section = settingsSeam()?.get?.('tui')
     return typeof section === 'object' && section !== null
-      ? section as { enterBehavior?: string; anim?: string; footerMode?: string }
+      ? section as { enterBehavior?: string; anim?: string; footerMode?: string; activityFrames?: string }
       : undefined
   }
 
@@ -1015,6 +1072,15 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   }
   // F3/V8: 启动时应用持久化的 footer 档位。
   app.setFooterMode(footerMode())
+  // A15: 启动时应用持久化的忙碌帧预设。
+  const savedFrames = tuiSettingsSection()?.activityFrames
+  if (isFrameId(savedFrames ?? '')) app.setActivityFrames(savedFrames as FrameId)
+  // F1: 启动时应用持久化的自定义主题（覆盖层 + 重建视图）。
+  const bootCustomTheme = loadCustomThemes().find(theme => theme.name === persistedTheme)
+  if (bootCustomTheme !== undefined) {
+    applyCustomThemeColors(bootCustomTheme.colors)
+    app.refreshTheme()
+  }
 
   const llmDirectory = (): ConfigurableProviderEntry[] =>
     (ctx.get('llm') as LlmDirectorySeam | undefined)?.listConfigurableProviders?.() ?? []
@@ -1073,14 +1139,27 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
 
   /** 主题四选：应用 + 持久化 + toast；当前项带 ● 标记；取消返回 false。 */
   const pickTheme = async (): Promise<boolean> => {
+    const customs = loadCustomThemes()
     const picked = await new Promise<string | null>((resolve) => {
-      app.showQueuePicker(THEME_PRESETS.map(preset => ({
-        value: preset.id,
-        label: preset.label,
-        current: preset.id === activeThemePreset,
-      })), resolve, strings().themePreset)
+      app.showQueuePicker([
+        ...customs.map(theme => ({
+          value: `custom:${theme.name}`,
+          label: strings().themeCustomLabel(theme.name),
+        })),
+        ...THEME_PRESETS.map(preset => ({
+          value: preset.id,
+          label: preset.label,
+          current: preset.id === activeThemePreset,
+        })),
+      ], resolve, strings().themePreset)
     })
-    if (picked === null || !isThemePresetId(picked)) return false
+    if (picked === null) return false
+    if (picked.startsWith('custom:')) {
+      const theme = customs.find(candidate => `custom:${candidate.name}` === picked)
+      if (theme !== undefined) applyCustomTheme(theme)
+      return theme !== undefined
+    }
+    if (!isThemePresetId(picked)) return false
     applyThemePreset(picked)
     return true
   }
@@ -1922,6 +2001,42 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         })()
         return
       }
+      if (name === '__activity') {
+        // A15: /activity 弹帧预设选择；`frames <id>` 直切；持久化到 tui 命名空间。
+        const arg = (rawInput ?? '').trim()
+        const current = ((): FrameId => {
+          const saved = tuiSettingsSection()?.activityFrames ?? ''
+          return isFrameId(saved) ? saved : 'star'
+        })()
+        const applyActivity = (id: FrameId): void => {
+          void settingsSeam()?.update?.('tui', { activityFrames: id }).catch(() => {})
+          app.setActivityFrames(id)
+          app.toast(strings().activityFrameSwitched(strings().activityFrameName(id)), 'success')
+        }
+        const framesMatch = /^frames\s+(\S+)$/.exec(arg)
+        if (framesMatch !== null) {
+          const id = framesMatch[1]
+          if (isFrameId(id)) applyActivity(id)
+          else app.toast(strings().activityFrameInvalid(id), 'error')
+          return
+        }
+        if (arg !== '') {
+          app.toast(strings().activityUsage, 'error')
+          return
+        }
+        void (async () => {
+          const picked = await new Promise<string | null>((resolve) => {
+            app.showQueuePicker(FRAME_SETS.map(set => ({
+              value: set.id,
+              label: strings().activityFrameName(set.id),
+              current: current === set.id,
+            })), resolve, strings().activityTitle)
+          })
+          if (picked === null) return
+          if (isFrameId(picked)) applyActivity(picked)
+        })()
+        return
+      }
       if (name === '__btw') {
         // A12: 无工具单轮侧问——当前模型直调 llm.stream，流式进浮层；
         // 不写日志/不进文档流；busy 亦可触发不打断；再次触发中止上一个。
@@ -2075,6 +2190,11 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       if (name === '__theme') {
         const arg = rawInput?.trim() ?? ''
         if (arg !== '') {
+          const custom = loadCustomThemes().find(theme => theme.name === arg)
+          if (custom !== undefined) {
+            applyCustomTheme(custom)
+            return
+          }
           if (isThemePresetId(arg)) applyThemePreset(arg)
           else app.toast(strings().themeUnknown(arg, 'web, cc, pi, opencode'), 'error')
           return

@@ -7,7 +7,7 @@
  */
 
 import chalk from 'chalk'
-import { PALETTE_COLORS, PALETTE_VARS, applyPaletteSet } from './palette.ts'
+import { customColor, PALETTE_COLORS, PALETTE_VARS, applyPaletteSet } from './palette.ts'
 import { themePresetById } from './theme-presets.ts'
 import type { ThemePresetId } from './theme-presets.ts'
 
@@ -37,6 +37,9 @@ export function applyPalette(preset: ThemePresetId, variant: 'dark' | 'light'): 
 
 /** Resolve a semantic color name to a hex string. */
 export function resolveHex(name: string): string | undefined {
+  // F1: 自定义主题覆盖层优先（applyCustomThemeColors 的已知角色校验在前）。
+  const custom = customColor(name)
+  if (custom !== undefined) return custom
   const value = PALETTE_COLORS[name]
   if (value === undefined) return undefined
   if (value.startsWith('#')) return value

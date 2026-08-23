@@ -151,3 +151,16 @@ export function applyPaletteSet(set: PaletteSet): void {
   PALETTE_VARS = set.vars
   PALETTE_COLORS = set.colors
 }
+
+/** F1: 自定义主题的语义色覆盖层（空对象 = 无自定义）。 */
+let customColors: Record<string, string> = {}
+
+/** F1: 应用自定义主题颜色覆盖（仅已知角色 + 合法 hex，loadCustomThemes 已校验）。 */
+export function applyCustomThemeColors(colors: Record<string, string>): void {
+  customColors = colors
+}
+
+/** F1: 读取某语义角色的自定义覆盖（未覆盖返回 undefined）。 */
+export function customColor(name: string): string | undefined {
+  return customColors[name]
+}

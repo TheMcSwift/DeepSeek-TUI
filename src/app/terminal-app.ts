@@ -231,6 +231,8 @@ export interface TerminalApp {
   openBtw(question: string): void
   appendBtw(delta: string): void
   closeBtw(): void
+  /** A15: 忙碌 spinner 帧预设（star/moon/dots）。 */
+  setActivityFrames(id: 'star' | 'moon' | 'dots'): void
   /** Ask the human one question through an overlay dialog. */
   askDialog(question: ApprovalQuestion): Promise<ApprovalAnswer>
   /** Show the pending message queue length + 队首预览 while a turn runs (T1⑤). */
