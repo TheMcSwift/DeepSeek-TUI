@@ -57,7 +57,7 @@
 | 22 | A13 `/trace` 核心子集（查询语言 tool:/kind:/turn:/err:/run:/>10s/tok>1k，AND + 命中高亮；`[`/`]` 跳失败点、`{`/`}` 跳轮次） | P1 / M | 内部 | 无 | ✅ 已落地（2026-08-22）：`matchTraceQuery` 纯函数（`tool:`/`kind:`/`turn:`/`err:` 前缀 + 关键词 AND）；面板 `[`/`]`（错误行）与 `{`/`}`（轮次边界）跳转；**省略**：`>10s`/`tok>1k`（行为行无结构化时长/token 字段——探针记录）、命中高亮（回退文本匹配，打磨项） |
 | 23 | A16 `/thinking` 命令（Enabled/Disabled 选择，不持久化） | P2 / S | 内部 | 复用 Ctrl+T 逻辑 | ✅ 已落地（2026-08-22）：`/thinking` 弹层（Enabled/Disabled）+ `setHideThinking` 接口（与 Ctrl+T 共用 applyThinking） |
 | 24 | A12 `/btw` 侧问（无工具单轮 LLM + 浮层；不写日志、不计 token、busy 可触发不打断） | P1 / M | 内部 | ⚠️ 确认 llm 服务可 stream 且不污染 agent 循环 | ✅ 已落地（2026-08-22）：探针确认 llm.stream 可直调（`@deepseek-ai/dsh-llm` 在依赖树）；`/btw [问题]`（裸命令弹问句）→ 当前模型流式进 `BtwPanel` 浮层（`c` 复制/`Esc` 关）；再次触发中止上一个（AbortController）；不写日志（浮层瞬态，不进 fold） |
-| 25 | D4 子 agent 会话折叠（默认折叠 + 计数 + 展开缩进） | P2 / M | 内部 | listSessions 元数据 | 🕐 未开工 |
+| 25 | D4 子 agent 会话折叠（默认折叠 + 计数 + 展开缩进） | P2 / M | 内部 | listSessions 元数据 | 🕐 暂缓（2026-08-22 判定）：现状已缩进显示（`↳` + D1 子会话计数元数据），折叠分组为交互打磨——记录暂缓 |
 | 26 | D3 会话删除/清理 | P2 / M | 内部 | ⚠️ 验证 sessionQuery/persistence 删除缝隙；无→记录不做 | ✅ 记录不做（2026-08-22 探针）：session-query/session-persistence 均**无公开删除 API**（coordinator 仅内部 livemap 清理）——与 BACKLOG 预判一致 |
 
 ## 阶段 4 · 渲染观察与主题
@@ -97,6 +97,15 @@
 
 A17 `/clear` 独立清屏、A20 `/update`、G1 全量 13 接缝插件宿主、G2/G3/G8（VS Code 扩展/发布）、
 G44 之外的所有「平台生态」项 —— 记录于 BOUNDARY-DESIGN.md §3.4 与 BACKLOG 各 ⛔ 行。
+
+---
+
+## 执行总结（2026-08-22 完成所有可实现项）
+
+- **阶段 1（8/8）**、**阶段 2（11/11，F4 随 E1 暂缓）**、**阶段 3（A13/A16/A12 落地 + A9/D3 判定 + A10 降级 + D4 暂缓）**、**阶段 4（C3+A15/F1 落地 + C4/C5/C6 等价/限制判定 + E1/F2/B11 暂缓）** 全部收敛；
+- **阶段 5（B4 附件专项设计、A21 技能包形态）**：需产品/存放形态决策，按用户指令跳过——BOUNDARY-DESIGN §3.2/§5 结论保持，待决策后激活；
+- **外部依赖挂起项**：转录区搜索（pi 发布）、B15（pi 升级）、G44 反馈下沉（dsh 开放 storage 域）——自动激活；
+- 每批验收：typecheck + 单测（416+）+ 至少一轮完整 PTY E2E 全绿；文档状态同步于 BACKLOG/ROADMAP/BOUNDARY。
 
 ---
 
