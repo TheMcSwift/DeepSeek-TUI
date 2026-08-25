@@ -6,12 +6,12 @@
  * @module dsh-tui-app/view/pi-vendor/dsh-tools
  */
 
-import { Text } from '@earendil-works/pi-tui'
+import { Text, VStack } from '@earendil-works/pi-tui'
 import type { Component } from '@earendil-works/pi-tui'
 import type { ToolDefinition } from './extensions-types.ts'
 import type { Theme } from '../theme/theme.ts'
 import { theme } from '../theme/theme.ts'
-import { renderDiff } from './diff.ts'
+import { SplitDiffText } from './split-diff.ts'
 import { getTextOutput } from './render-utils.ts'
 import { highlight, supportsLanguage } from '../../app/pi/highlight.ts'
 import type { HighlightTheme } from '../../app/pi/highlight.ts'
@@ -93,21 +93,28 @@ function diffResult(
   theme: Theme,
 ): Component {
   const diffs = result.details?.meta?.diffs ?? []
-  const lines: string[] = []
+  const header: string[] = []
+  const diffTexts: string[] = []
   for (const diff of diffs) {
-    lines.push(theme.fg('toolTitle', fileLink(diff.path)))
+    header.push(theme.fg('toolTitle', fileLink(diff.path)))
     // CC-11: hunk 头（行号范围），Claude Code 式 diff 的定位锚点。
     const oldLines = (diff.oldText ?? '').split('\n').length
     const newLines = diff.newText.split('\n').length
-    lines.push(theme.fg('dim', `@@ -1,${oldLines} +1,${newLines} @@`))
+    header.push(theme.fg('dim', `@@ -1,${oldLines} +1,${newLines} @@`))
     // pi's renderDiff consumes a numbered unified diff; rebuild one per hunk.
     const numbered: string[] = []
     for (const [i, line] of (diff.oldText ?? '').split('\n').entries()) numbered.push(`-${i + 1} ${line}`)
     for (const [i, line] of diff.newText.split('\n').entries()) numbered.push(`+${i + 1} ${line}`)
-    lines.push(...renderDiff(numbered.join('\n')).split('\n'))
+    diffTexts.push(numbered.join('\n'))
   }
-  const output = lines.join('\n')
-  return new Text(output === '' ? theme.fg('toolOutput', '(no changes)') : output, 0, 0)
+  if (header.length === 0) {
+    return new Text(theme.fg('toolOutput', '(no changes)'), 0, 0)
+  }
+  // E1/F4: diff 正文交给 SplitDiffText（auto 宽屏/split → 双栏；否则单栏）。
+  const container = new VStack()
+  container.addChild(new Text(header.join('\n'), 0, 0))
+  for (const text of diffTexts) container.addChild(new SplitDiffText(text))
+  return container
 }
 
 /** The joined plain-text body of a tool result. */

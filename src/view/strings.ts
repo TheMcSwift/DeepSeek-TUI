@@ -82,6 +82,9 @@ export interface Strings {
   /** D1 /resume 行元数据：agent preset 与子会话计数。 */
   sessionPreset: (preset: string) => string
   sessionChildren: (count: number) => string
+  /** D4 子会话折叠 toggle 行。 */
+  sessionChildrenExpand: (count: number) => string
+  sessionChildrenFold: string
   /** A16 /thinking 弹层标题与选项（Enabled/Disabled，不持久化）。 */
   thinkingTitle: string
   thinkingEnabled: string
@@ -101,6 +104,15 @@ export interface Strings {
   /** F1 自定义主题（选择器标签/切换提示）。 */
   themeCustomLabel: (name: string) => string
   themeCustomSwitched: (name: string) => string
+  /** E1/F4 diff 布局（/settings 行与三档标签）。 */
+  settingsDiffLayout: string
+  diffAuto: string
+  diffFull: string
+  diffUnified: string
+  /** B11 OSC tab 标题。 */
+  tabTitleBase: (session: string) => string
+  tabTitleIdle: string
+  tabTitleNew: string
   queueFirst: (count: number, preview: string) => string
   interrupted: string
   stopped: string
@@ -419,6 +431,8 @@ const zh: Strings = {
   searchHitPosition: (index: number, total: number): string => `搜索结果 ${index}/${total}`,
   sessionPreset: (preset: string): string => `preset ${preset}`,
   sessionChildren: (count: number): string => `${count} 个子会话`,
+  sessionChildrenExpand: (count: number): string => `展开 ${count} 个子会话`,
+  sessionChildrenFold: '收起子会话',
   thinkingTitle: '思考折叠',
   thinkingEnabled: 'Enabled',
   thinkingDisabled: 'Disabled',
@@ -434,6 +448,13 @@ const zh: Strings = {
   activityUsage: '用法：/activity（选择器）或 /activity frames <star|moon|dots>',
   themeCustomLabel: (name: string): string => `${name}（自定义）`,
   themeCustomSwitched: (name: string): string => `自定义主题：${name}`,
+  settingsDiffLayout: 'Diff 布局',
+  diffAuto: '自动（宽屏分栏）',
+  diffFull: '强制分栏',
+  diffUnified: '单栏（unified）',
+  tabTitleBase: (session: string): string => `dsh tui · ${session}`,
+  tabTitleIdle: '✦ idle — dsh tui',
+  tabTitleNew: 'new session',
   tipGroups: [
     {
       title: '快捷键',
@@ -913,6 +934,8 @@ const en: Strings = {
   searchHitPosition: (index: number, total: number): string => `Search hit ${index}/${total}`,
   sessionPreset: (preset: string): string => `preset ${preset}`,
   sessionChildren: (count: number): string => `${count} child sessions`,
+  sessionChildrenExpand: (count: number): string => `Expand ${count} child sessions`,
+  sessionChildrenFold: 'Fold child sessions',
   thinkingTitle: 'Thinking fold',
   thinkingEnabled: 'Enabled',
   thinkingDisabled: 'Disabled',
@@ -928,6 +951,13 @@ const en: Strings = {
   activityUsage: 'Usage: /activity (picker) or /activity frames <star|moon|dots>',
   themeCustomLabel: (name: string): string => `${name} (custom)`,
   themeCustomSwitched: (name: string): string => `Custom theme: ${name}`,
+  settingsDiffLayout: 'Diff layout',
+  diffAuto: 'Auto (split wide)',
+  diffFull: 'Force split',
+  diffUnified: 'Unified',
+  tabTitleBase: (session: string): string => `dsh tui · ${session}`,
+  tabTitleIdle: '✦ idle — dsh tui',
+  tabTitleNew: 'new session',
   tipGroups: [
     {
       title: 'Shortcuts',

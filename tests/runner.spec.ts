@@ -349,14 +349,18 @@ describe('tui runner', () => {
       await test.started
       test.app.handlers?.onSessionPickerRequest?.()
       await settle()
-      expect(test.app.sessions?.map(item => item.value)).toEqual(['session-old', 'session-new'])
-      expect(test.app.sessions?.[0].label).toBe('session-old')
+      expect(test.app.sessions?.map(item => item.value)).toEqual(['__children-toggle', 'session-old'])
+      expect(test.app.sessions?.[0].label).toContain('展开 1 个子会话')
+      expect(test.app.sessions?.[1].label).toBe('session-old')
       // Relative time replaces the raw ISO timestamp (T3⑤); D1 行元数据：
-      // 子会话计数（session-old 有 1 个 child；session-new 无 parent 计数）。
-      expect(test.app.sessions?.[0].description).toBe('persisted · 1970-01-01 · 1 个子会话')
-      expect(test.app.sessions?.[1].description).toBe('persisted · 1970-01-01')
-      // Subagent child sessions indent under their parent (T1⑥).
-      expect(test.app.sessions?.[1].label).toBe('↳ session-new')
+      // 子会话计数（session-old 有 1 个 child；折叠态子行不显示）。
+      expect(test.app.sessions?.[1].description).toBe('persisted · 1970-01-01 · 1 个子会话')
+      // D4: toggle 展开后子会话以 `↳` 缩进列出。
+      test.app.handlers?.onSessionPicked?.('__children-toggle')
+      await settle()
+      const expanded = test.app.sessions?.map(item => item.value)
+      expect(expanded).toEqual(['__children-toggle', 'session-old', 'session-new'])
+      expect(test.app.sessions?.[2].label).toBe('↳ session-new')
       await test.ctx.fiber.dispose()
     } finally {
       if (previousHome === undefined) delete process.env.DSH_HOME
@@ -933,7 +937,7 @@ describe('tui runner', () => {
       await settle(150)
       // cc 键位默认 → 可循环行携带 cycle 数据。
       const rows = test.app.settingsShown[0]
-      expect(rows.find(row => row.key === '主题')?.cycle?.options).toEqual(['web', 'cc', 'pi', 'opencode'])
+      expect(rows.find(row => row.key === '主题')?.cycle?.options).toEqual(['web', 'cc', 'pi', 'opencode', 'ansi'])
       expect(rows.find(row => row.key === '配置文件')?.cycle).toBeUndefined()
       // 主题行 →：web → cc。
       test.app.handlers?.onSettingsRowCycle?.(1, 1)

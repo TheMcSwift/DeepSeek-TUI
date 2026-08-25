@@ -164,3 +164,45 @@ export function applyCustomThemeColors(colors: Record<string, string>): void {
 export function customColor(name: string): string | undefined {
   return customColors[name]
 }
+
+/* ================= F2: 16 色 ANSI 回退 ================= */
+
+/** 标准 16 色序列 0–15 的典型 hex（SGR 名色参考实现常用值）。 */
+const ANSI_HEX: string[] = [
+  '#000000', '#800000', '#008000', '#808000', '#000080', '#800080', '#008080', '#c0c0c0',
+  '#808080', '#ff0000', '#00ff00', '#ffff00', '#0000ff', '#ff00ff', '#00ffff', '#ffffff',
+]
+
+function hexToRgb(hex: string): [number, number, number] {
+  const raw = hex.startsWith('#') ? hex.slice(1) : hex
+  const value = Number.parseInt(raw, 16)
+  return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff]
+}
+
+/** RGB 欧氏距离选最近 ANSI 色（亮度感知加权，避免暗色被漂白）。 */
+function nearestAnsi(hex: string): string {
+  const [r, g, b] = hexToRgb(hex)
+  let best = ANSI_HEX[7]
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (const candidate of ANSI_HEX) {
+    const [cr, cg, cb] = hexToRgb(candidate)
+    // 0.30/0.59/0.11 亮度权（主观感知）——16 色回退的近似映射即可。
+    const dr = (r - cr) * 0.3
+    const dg = (g - cg) * 0.59
+    const db = (b - cb) * 0.11
+    const distance = dr * dr + dg * dg + db * db
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = candidate
+    }
+  }
+  return best
+}
+
+/** F2: 由 web 色板派生的 16 色 ANSI 变体（vars 逐色近似，roles 结构不变）。 */
+export function ansiPaletteSet(variant: 'dark' | 'light'): PaletteSet {
+  const base = variant === 'dark' ? WEB_PALETTE.dark : WEB_PALETTE.light
+  const vars: Record<string, string> = {}
+  for (const [key, value] of Object.entries(base.vars)) vars[key] = nearestAnsi(value)
+  return { vars, colors: base.colors }
+}

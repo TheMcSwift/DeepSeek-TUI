@@ -260,6 +260,8 @@ export const piTuiInternals: {
   createTui: (terminal: Terminal, mouse?: boolean, regular?: boolean) => TUI
   /** Shimmer frame cadence in ms; 0 disables the brand + status animations. */
   animFrameMs: number
+  /** B11: OSC 0 tab-title writer（测试经 NODE_ENV=test 跳过启动）。 */
+  tabTitleWriter: (title: string) => void
 } = {
   createTerminal: () => new ProcessTerminal(),
   // The hardware cursor follows the composer/input caret, so IME candidate
@@ -280,6 +282,15 @@ export const piTuiInternals: {
   // The DeepSeek brand/status shimmer repaints ~57 frames over 3.4s; opt
   // out for constrained terminals/tests with DSH_TUI_ANIM=0.
   animFrameMs: process.env.DSH_TUI_ANIM === '0' ? 0 : 60,
+  // B11: OSC 0 写终端 tab 标题（测试经 NODE_ENV 跳过启动）。
+  tabTitleWriter: (title: string): void => {
+    if (process.env.NODE_ENV === 'test') return
+    try {
+      process.stdout.write(`\x1b]0;${title}\x07`)
+    } catch {
+      // 非 TTY/管道：OSC 写入失败静默。
+    }
+  },
 }
 
 /** Paste-size gate: more lines than this asks for confirmation. */
@@ -508,6 +519,9 @@ export class PiTuiApp implements TerminalApp {
   /** B6: 最近一次搜索结果与跳转游标（Ctrl+N/Alt+N 循环跳转）。 */
   private searchHits: Array<{ entryId: string; preview: string }> = []
   private searchCursor = 0
+  /** B11: OSC tab 标题的旋转 ticker 与帧位。 */
+  private tabTitleTimer: ReturnType<typeof setInterval> | undefined
+  private tabTitleSpin = false
   /** An overlay (picker/dialog) owns the keyboard while open. */
   private overlayOpen = false
   /** Ctrl+T toggles whether reasoning blocks render at all. */
@@ -730,6 +744,18 @@ export class PiTuiApp implements TerminalApp {
     tui.setFocus(editor)
     this.applyState(this.current)
     tui.requestRender()
+    // B11: OSC 0 终端 tab 标题（忙时两帧旋转 ⠂/⠐，空闲 ✦；2s ticker）。
+    this.startTabTitle()
+  }
+
+  /** B11: tab 标题 ticker（停止时清理；测试环境 writer 为 noop）。 */
+  private startTabTitle(): void {
+    this.tabTitleTimer = setInterval(() => {
+      this.tabTitleSpin = !this.tabTitleSpin
+      const glyph = this.current.busy ? (this.tabTitleSpin ? '⠐' : '⠂') : '✦'
+      piTuiInternals.tabTitleWriter(`${glyph} ${strings().tabTitleBase(this.meta.session === '' ? strings().tabTitleNew : this.meta.session)}`)
+    }, 2000)
+    piTuiInternals.tabTitleWriter(`${strings().tabTitleIdle} (${strings().tabTitleBase(this.meta.session === '' ? strings().tabTitleNew : this.meta.session)})`)
   }
 
   /** The app's global key handling (raw input no focused view consumed). */
@@ -1217,6 +1243,12 @@ export class PiTuiApp implements TerminalApp {
     this.pendingLeader = false
     this.disarmExit()
     this.disarmRewind()
+    // B11: 停 tab 标题 ticker 并清空标题。
+    if (this.tabTitleTimer !== undefined) {
+      clearInterval(this.tabTitleTimer)
+      this.tabTitleTimer = undefined
+    }
+    piTuiInternals.tabTitleWriter('')
     if (this.toastTimer !== undefined) {
       clearTimeout(this.toastTimer)
       this.toastTimer = undefined

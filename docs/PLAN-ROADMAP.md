@@ -57,7 +57,7 @@
 | 22 | A13 `/trace` 核心子集（查询语言 tool:/kind:/turn:/err:/run:/>10s/tok>1k，AND + 命中高亮；`[`/`]` 跳失败点、`{`/`}` 跳轮次） | P1 / M | 内部 | 无 | ✅ 已落地（2026-08-22）：`matchTraceQuery` 纯函数（`tool:`/`kind:`/`turn:`/`err:` 前缀 + 关键词 AND）；面板 `[`/`]`（错误行）与 `{`/`}`（轮次边界）跳转；**省略**：`>10s`/`tok>1k`（行为行无结构化时长/token 字段——探针记录）、命中高亮（回退文本匹配，打磨项） |
 | 23 | A16 `/thinking` 命令（Enabled/Disabled 选择，不持久化） | P2 / S | 内部 | 复用 Ctrl+T 逻辑 | ✅ 已落地（2026-08-22）：`/thinking` 弹层（Enabled/Disabled）+ `setHideThinking` 接口（与 Ctrl+T 共用 applyThinking） |
 | 24 | A12 `/btw` 侧问（无工具单轮 LLM + 浮层；不写日志、不计 token、busy 可触发不打断） | P1 / M | 内部 | ⚠️ 确认 llm 服务可 stream 且不污染 agent 循环 | ✅ 已落地（2026-08-22）：探针确认 llm.stream 可直调（`@deepseek-ai/dsh-llm` 在依赖树）；`/btw [问题]`（裸命令弹问句）→ 当前模型流式进 `BtwPanel` 浮层（`c` 复制/`Esc` 关）；再次触发中止上一个（AbortController）；不写日志（浮层瞬态，不进 fold） |
-| 25 | D4 子 agent 会话折叠（默认折叠 + 计数 + 展开缩进） | P2 / M | 内部 | listSessions 元数据 | 🕐 暂缓（2026-08-22 判定）：现状已缩进显示（`↳` + D1 子会话计数元数据），折叠分组为交互打磨——记录暂缓 |
+| 25 | D4 子 agent 会话折叠（默认折叠 + 计数 + 展开缩进） | P2 / M | 内部 | listSessions 元数据 | ✅ 已落地（2026-08-22，用户决策「全做」）：默认折叠（父行 + 顶行 toggle「展开 N 个子会话/收起」），展开后子行 `↳` 缩进；fillTitlesLazily 只回填可见行（itemOffset=toggle 行） |
 | 26 | D3 会话删除/清理 | P2 / M | 内部 | ⚠️ 验证 sessionQuery/persistence 删除缝隙；无→记录不做 | ✅ 记录不做（2026-08-22 探针）：session-query/session-persistence 均**无公开删除 API**（coordinator 仅内部 livemap 清理）——与 BACKLOG 预判一致 |
 
 ## 阶段 4 · 渲染观察与主题
@@ -67,18 +67,18 @@
 | 27 | C4 context bar 5 段（system/prompt/assistant/thinking/tools 分色 + 最大余数法分配 + 标签自适应收缩 + free 段读数） | P2 / M | 内部 | contextBreakdown（G42 已有） | ✅ 记录数据源限制（2026-08-22 探针）：token-meter `contextBreakdown` 仅三段（system/tools/messages），无 prompt/assistant/thinking 细分——5 段不可行；保持 G42 三段 10 段彩条 + ctx % 读数 |
 | 28 | C5 loaded-context 面板（转录空时顶部折叠摘要，与 A3 共用数据源） | P2 / M | 内部 | A3 数据源 | ✅ 判定等价覆盖（2026-08-22）：E12 注入行逐条可见 + A3 `/context` 全量报告——空会话用户已能感知加载内容，不重复实现折叠摘要 |
 | 29 | C6 effort 滑杆（←/→ 每步实时生效 + 档位名 + 当前 ✓；0/1 档不弹滑杆） | P2 / M | 内部 | llm.resolveModelInfo efforts | ✅ 判定等价覆盖（2026-08-22）：/effort 现为 askDialog 数字直选（档位名 + 当前标记 + 1/2 直选）；滑杆为远程外观打磨，且 effort 无实时预览闭环（下次请求才生效） |
-| 30 | E1 SplitDiffView 分屏 diff（≥110 列双栏 + /settings diffLayout auto/split/unified） | P2 / M | 内部 | diff 数据已有；F4 联动 | 🕐 暂缓（2026-08-22 判定）：仅 ≥110 列宽生效（多数终端 <110），收益低；diffLayout 设置面随 E1 联动——随宽屏需求再排 |
+| 30 | E1 SplitDiffView 分屏 diff（≥110 列双栏 + /settings diffLayout auto/split/unified） | P2 / M | 内部 | diff 数据已有；F4 联动 | ✅ 已落地（2026-08-22，用户决策「做，对齐远程」）：`SplitDiffText`（块配对左旧右新 + `│` 分隔；auto=≥110 列 / split=强制 / unified=单栏）+ F4 /settings「Diff 布局」行（tui 命名空间持久化 + 启动回填 + 视图重建） |
 | 31 | C3 工作动画 + A15 `/activity` 帧动画系统（内置 8–12 帧预设 + 选择器 + 持久化；自建帧表勿 import 官方包） | P1 / M | 内部（模块 + 交换缝） | **约束**：dsh-working-activity 不在依赖树→独立 `src/working-activity/` 纯函数帧表 | ✅ 已落地（2026-08-22）：`src/app/pi/frames.ts` 自建帧表（star/moon/dots，纯数据+标识符解析）；StatusSlot.setFrames 换帧（busy 中重建重启）；`/activity`（选择器）+ `frames <id>` 直切 + tui 命名空间持久化 + 启动回填；**C3 其余**：`⚠ ctx N%` 压力前缀（≥80 amber/≥95 red，busy 行）✅；ice-blue sweep 已有 shimmer ✅；token 后缀即 V5 ✅；空闲回合摘要省略（stats footer 已有） |
 | 32 | F1 自定义 JSON 主题（`~/.dsh/tui-themes/<名>.json`：base + colors 覆盖 + 校验 + `/theme` 热切换） | P2 / M | 机制内部/内容独立 | palette.ts 运行时覆盖层评估 | ✅ 已落地（2026-08-22）：`tui-themes/<名>.json`（colors 覆盖，已知语义角色 + 合法 hex 才收，损坏/未知跳过，文件名路径穿越防护）；palette 覆盖层 `applyCustomThemeColors`/`customColor`（resolveHex 优先）+ `/theme <名>` 热切换/选择器列出（自定义在前）+ 持久化（theme-preset.txt）+ 启动回填；**base（light/dark）简化记录**：沿用当前预设明暗（覆盖层语义） |
-| 33 | F2 dark-ansi 16 色兼容回退 | P3 / S | 内部 | palette 扩展 | 🕐 暂缓（P3 远期，现代终端 truecolor 普及，收益极小——记录） |
-| 34 | B11 终端 tab 标题动画（`⠂/⠐ 🐋 <标题>` 仅聚焦 + 空闲 `✦`；OSC 设置） | P3 / S | 内部 | header 数据已有 | 🕐 暂缓（P3 打磨——记录） |
+| 33 | F2 dark-ansi 16 色兼容回退 | P3 / S | 内部 | palette 扩展 | ✅ 已落地（2026-08-22，用户决策「全做」）：`ansiPaletteSet`（web 色板 vars 逐色最近 ANSI 近邻映射，RGB 亮度加权）+ `/theme` 新增 `ansi` 预设（五预设枚举） |
+| 34 | B11 终端 tab 标题动画（`⠂/⠐ 🐋 <标题>` 仅聚焦 + 空闲 `✦`；OSC 设置） | P3 / S | 内部 | header 数据已有 | ✅ 已落地（2026-08-22，用户决策「全做」）：OSC 0 写 tab 标题（忙时 ⠂/⠐ 两帧 2s 旋转，空闲 ✦；`tabTitleWriter` 注入经 NODE_ENV=test 跳过；stop 清理并清空）；焦点检测简化记录（xterm 焦点协议 seam 收益小，未实现——常显动画） |
 
 ## 阶段 5 · 独立包与大工程
 
 | # | 项 | 优先级/量 | 边界 | 前置 | 验收要点 |
 |---|---|---|---|---|---|
-| 35 | A21 打包技能（7 个：audit/bug/review/practice/pr_comments/release-notes/vuln-check，按本地风格裁剪） | P2 / L | **独立技能包** | 注册缝隙已验证（用户级 `~/.dsh/skills/<名>/` 或 `customSkillDirs`，BOUNDARY §3.2） | 7 个 SKILL.md（front matter 规范）+ 安装脚本/文档（同名覆盖语义）；**不含 tui 手册（例外，阶段 1）**；技能内容本地化评审 |
-| 36 | B4 图片附件（剪贴板位图/图片文件；附件库 + `[Image #N]` + 图片文件转 `@` 引用；降级临时文件引用） | P2 / L | 内部（数据走 dsh 服务） | `dsh-attachment-local` 已挂载 ✅；剪贴板协议（OSC 52/53）评估 | **需专项设计文档**（先于实现）：附件库交互、`[Image #N]` 装饰、粘贴路径、渲染；E2E（mock LLM + 图片引用） |
+| 35 | A21 打包技能（7 个：audit/bug/review/practice/pr_comments/release-notes/vuln-check，按本地风格裁剪） | P2 / L | **独立技能包** | — | ⛔ 关闭（2026-08-22 **用户决策**：先不做——偏离任务目标；BOUNDARY §3.2 判定保留，激活需重新决策） |
+| 36 | B4 图片附件（剪贴板位图/图片文件；附件库 + `[Image #N]` + 图片文件转 `@` 引用） | P2 / L | 内部（数据走 dsh 服务） | `dsh-attachment-local` 已挂载 ✅ | 📐 专项设计已产出（2026-08-22，用户决策「先出设计文档」）：[DESIGN-ATTACHMENTS.md](DESIGN-ATTACHMENTS.md)——交互/存储/渲染（Kitty→iTerm2→占位）/降级/三期计划；**实现押后**，验收标准见文档 §7 |
 
 ## 阶段 6 · 记录项与外部依赖（缓做/暂缓）
 

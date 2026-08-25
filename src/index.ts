@@ -48,6 +48,8 @@ import { isKeymapId, KEYMAPS, keymapById } from './app/pi/keymaps.ts'
 import type { KeymapId } from './app/pi/keymaps.ts'
 import { FRAME_SETS, isFrameId } from './app/pi/frames.ts'
 import type { FrameId } from './app/pi/frames.ts'
+import { setDiffLayout } from './view/pi-vendor/split-diff.ts'
+import type { DiffLayout } from './view/pi-vendor/split-diff.ts'
 import { permissionDisplayName } from './app/pi/command-match.ts'
 import { isThemePresetId, THEME_PRESETS } from './app/pi/theme-presets.ts'
 import type { ThemePresetId } from './app/pi/theme-presets.ts'
@@ -458,7 +460,7 @@ function fail(exit: (code: number) => void, error: unknown): void {
 /** tui 命名空间的组合默认（settings.yaml `tui:` 段的 base 层）。
  *  enterBehavior 默认 'auto' = 按预设解析（cc=steer、其他=queue，BACKLOG-CC-PARITY B1）；
  *  用户显式设置 steer/queue 后写对应值并覆盖预设默认。 */
-const TUI_SETTINGS_DEFAULTS = { enterBehavior: 'auto', anim: 'on', footerMode: 'full', activityFrames: 'star' } as const
+const TUI_SETTINGS_DEFAULTS = { enterBehavior: 'auto', anim: 'on', footerMode: 'full', activityFrames: 'star', diffLayout: 'auto' } as const
 
 /** tui 命名空间 schema：写入即校验；手改非法值在注册/写入点失败（平台惯例）。 */
 const TuiSettingsSchema = z.object({
@@ -466,6 +468,7 @@ const TuiSettingsSchema = z.object({
   anim: z.union([z.const('on'), z.const('off')]),
   footerMode: z.union([z.const('full'), z.const('compact'), z.const('minimal')]),
   activityFrames: z.union([z.const('star'), z.const('moon'), z.const('dots')]),
+  diffLayout: z.union([z.const('auto'), z.const('split'), z.const('unified')]),
 })
 
 /**
@@ -540,6 +543,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   let cmdSeq = 0
   /** A12: /btw 侧问的当前请求（再次触发时中止上一个）。 */
   let btwController: AbortController | undefined
+  /** D4: 会话 picker 的子会话折叠开关（顶行 toggle 的 value 与状态）。 */
+  const sessionChildrenToggle = { value: '__children-toggle', shown: false }
   let handle: AgentHandle | undefined
   let currentSessionId = ''
   /** Shift+Tab 会话模式循环的当前档（B8；default 起步）。 */
@@ -1042,10 +1047,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
   // 写入真正落盘），启动时若 env 未显式设置则从 settings.yaml 回填。
 
   /** tui 命名空间的持久化段（结构化只读）。 */
-  const tuiSettingsSection = (): { enterBehavior?: string; anim?: string; footerMode?: string; activityFrames?: string } | undefined => {
+  const tuiSettingsSection = (): { enterBehavior?: string; anim?: string; footerMode?: string; activityFrames?: string; diffLayout?: string } | undefined => {
     const section = settingsSeam()?.get?.('tui')
     return typeof section === 'object' && section !== null
-      ? section as { enterBehavior?: string; anim?: string; footerMode?: string; activityFrames?: string }
+      ? section as { enterBehavior?: string; anim?: string; footerMode?: string; activityFrames?: string; diffLayout?: string }
       : undefined
   }
 
@@ -1070,11 +1075,24 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     void settingsSeam()?.update?.('tui', { footerMode: mode }).catch(() => {})
     app.setFooterMode(mode)
   }
+  // E1/F4: diff 布局切换（split-diff 模块态 + 持久化 + 视图重建）。
+  const diffLayoutValue = (): DiffLayout => {
+    const saved = tuiSettingsSection()?.diffLayout
+    return saved === 'split' || saved === 'unified' ? saved : 'auto'
+  }
+  const applyDiffLayout = (mode: DiffLayout): void => {
+    void settingsSeam()?.update?.('tui', { diffLayout: mode }).catch(() => {})
+    setDiffLayout(mode)
+    app.refreshTheme()
+  }
   // F3/V8: 启动时应用持久化的 footer 档位。
   app.setFooterMode(footerMode())
   // A15: 启动时应用持久化的忙碌帧预设。
   const savedFrames = tuiSettingsSection()?.activityFrames
   if (isFrameId(savedFrames ?? '')) app.setActivityFrames(savedFrames as FrameId)
+  // E1/F4: 启动时应用 diff 布局。
+  const savedDiff = tuiSettingsSection()?.diffLayout
+  if (savedDiff === 'split' || savedDiff === 'unified') setDiffLayout(savedDiff)
   // F1: 启动时应用持久化的自定义主题（覆盖层 + 重建视图）。
   const bootCustomTheme = loadCustomThemes().find(theme => theme.name === persistedTheme)
   if (bootCustomTheme !== undefined) {
@@ -1193,6 +1211,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       const mode = footerMode()
       return mode === 'compact' ? strings().footerCompact : mode === 'minimal' ? strings().footerMinimal : strings().footerFull
     }
+    const diffLayoutLabel = (): string => {
+      const mode = diffLayoutValue()
+      return mode === 'split' ? strings().diffFull : mode === 'unified' ? strings().diffUnified : strings().diffAuto
+    }
     return [
       { key: strings().settingsLanguage, current: resolveLanguage(process.env.DSH_TUI_LANG), target: '→ /lang', cycle: cycleOf(['zh', 'en'], resolveLanguage(process.env.DSH_TUI_LANG)) },
       { key: strings().settingsTheme, current: `${themeVariantLabel()} · ${activeThemePreset}`, tone: 'accent', target: '→ /theme', cycle: cycleOf(THEME_PRESETS.map(preset => preset.id), activeThemePreset) },
@@ -1200,6 +1222,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       { key: strings().settingsKeymap, current: activeKeymap, tone: 'accent', target: '→ /keymap', cycle: cycleOf(KEYMAPS.map(keymap => keymap.id), activeKeymap) },
       { key: strings().settingsAnim, current: anim, target: '→ 切换', cycle: cycleOf(['on', 'off'], piTuiInternals.animFrameMs > 0 ? 'on' : 'off') },
       { key: strings().settingsFooter, current: footerModeLabel(), target: '→ 切换', cycle: cycleOf(['full', 'compact', 'minimal'], footerMode()) },
+      { key: strings().settingsDiffLayout, current: diffLayoutLabel(), target: '→ 切换', cycle: cycleOf(['auto', 'split', 'unified'], diffLayoutValue()) },
       { key: strings().settingsConfig, current: config, tone: 'muted', target: '→ /config' },
     ]
   }
@@ -1613,6 +1636,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     records: ReadonlyArray<{ header: { id: SessionId; parentSession?: SessionId } }>,
     items: Array<{ value: string; label: string; description: string }>,
     cache: Record<string, TitleCacheEntry>,
+    itemOffset = 0,
   ): Promise<void> => {
     const pending = records
       .map((record, index) => ({ record, index }))
@@ -1630,8 +1654,8 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       if (quitting || pickerClosed) return
       const resolved = title?.title
       if (resolved !== undefined && resolved !== '') {
-        items[index] = {
-          ...items[index],
+        items[index + itemOffset] = {
+          ...items[index + itemOffset],
           label: `${record.header.parentSession === undefined ? '' : '↳ '}${resolved}`,
         }
         cache[record.header.id] = { title: resolved, at: Date.now() }
@@ -1766,6 +1790,13 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       void quit().catch((error: unknown) => { fail(exit, error) })
     },
     onSessionPicked: (value: string | null): void => {
+      // D4: 顶行 toggle 子会话折叠（翻转状态后重开 picker，按最新 shown 重建行）。
+      if (value === sessionChildrenToggle.value) {
+        sessionChildrenToggle.shown = !sessionChildrenToggle.shown
+        pickerClosed = false
+        handlers.onSessionPickerRequest?.()
+        return
+      }
       pickerClosed = true
       if (value === null || value === currentSessionId) return
       touchMru(value)
@@ -1810,7 +1841,11 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
           const parent = record.header.parentSession as string | undefined
           if (parent !== undefined) childCount.set(parent, (childCount.get(parent) ?? 0) + 1)
         }
-        const items = ordered.map(record => ({
+        // D4: 子会话默认折叠——父行 + 顶行 toggle（展开后子行以 `↳` 缩进列出）；
+        // fillTitlesLazily 只对可见行回填（itemOffset = toggle 行数）。
+        const childRows = ordered.filter(record => record.header.parentSession !== undefined)
+        const parentRows = ordered.filter(record => record.header.parentSession === undefined)
+        const renderItem = (record: (typeof ordered)[number]) => ({
           value: record.header.id,
           label: labelOf(record, record.header.id === currentSessionId ? doc.title : cache[record.header.id]?.title),
           description: [
@@ -1818,9 +1853,17 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             ...(record.header.agentPreset === undefined ? [] : [strings().sessionPreset(String(record.header.agentPreset))]),
             ...(childCount.has(record.header.id) ? [strings().sessionChildren(childCount.get(record.header.id) ?? 0)] : []),
           ].join(' · '),
-        }))
-        if (!quitting) app.showSessionPicker(items)
-        void fillTitlesLazily(query, ordered, items, cache)
+        })
+        const buildSessionItems = (shown: boolean): Array<{ value: string; label: string; description: string }> => [
+          ...(childRows.length > 0
+            ? [{ value: sessionChildrenToggle.value, label: shown ? strings().sessionChildrenFold : strings().sessionChildrenExpand(childRows.length), description: '' }]
+            : []),
+          ...parentRows.map(renderItem),
+          ...(shown ? childRows.map(renderItem) : []),
+        ]
+        if (!quitting) app.showSessionPicker(buildSessionItems(sessionChildrenToggle.shown))
+        const visibleRecords = sessionChildrenToggle.shown ? ordered : parentRows
+        void fillTitlesLazily(query, visibleRecords, buildSessionItems(sessionChildrenToggle.shown), cache, childRows.length > 0 ? 1 : 0)
       }).catch((error: unknown) => {
         process.stderr.write(`dsh tui: session listing failed: ${error instanceof Error ? error.message : String(error)}\n`)
       })
@@ -2641,7 +2684,20 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             await refresh()
             break
           }
-          case 6: // 配置文件
+          case 6: { // E1/F4: diff 布局（auto/split/unified）
+            const picked = await new Promise<string | null>((resolve) => {
+              app.showQueuePicker([
+                { value: 'auto', label: strings().diffAuto, current: diffLayoutValue() === 'auto' },
+                { value: 'split', label: strings().diffFull, current: diffLayoutValue() === 'split' },
+                { value: 'unified', label: strings().diffUnified, current: diffLayoutValue() === 'unified' },
+              ], resolve, strings().settingsDiffLayout)
+            })
+            if (picked === null) return
+            if (picked === 'auto' || picked === 'split' || picked === 'unified') applyDiffLayout(picked)
+            await refresh()
+            break
+          }
+          case 7: // 配置文件
             handlers.onCommandPicked('__config', '')
             break
           default:
@@ -2682,6 +2738,10 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
             break
           case 5: { // F3/V8: footer 档位
             if (next === 'full' || next === 'compact' || next === 'minimal') applyFooterMode(next)
+            break
+          }
+          case 6: { // E1/F4: diff 布局
+            if (next === 'auto' || next === 'split' || next === 'unified') applyDiffLayout(next)
             break
           }
           default:

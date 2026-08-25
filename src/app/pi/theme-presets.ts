@@ -14,9 +14,10 @@
  */
 
 import type { PaletteSet } from './palette.ts'
+import { ansiPaletteSet } from './palette.ts'
 import { WEB_PALETTE } from './palette.ts'
 
-export type ThemePresetId = 'web' | 'cc' | 'pi' | 'opencode'
+export type ThemePresetId = 'web' | 'cc' | 'pi' | 'opencode' | 'ansi'
 
 /* ============ cc（Claude Code 风格诠释） ============ */
 
@@ -395,10 +396,11 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
   { id: 'cc', label: 'cc — Claude Code 风格', dark: { vars: CC_DARK_VARS, colors: CC_DARK_COLORS }, light: { vars: CC_LIGHT_VARS, colors: CC_LIGHT_COLORS } },
   { id: 'pi', label: 'pi — pi coding-agent 官方主题', dark: { vars: PI_DARK_VARS, colors: PI_DARK_COLORS }, light: { vars: PI_LIGHT_VARS, colors: PI_LIGHT_COLORS } },
   { id: 'opencode', label: 'opencode — OpenCode 默认主题', dark: { vars: OC_DARK_VARS, colors: OC_DARK_COLORS }, light: { vars: OC_LIGHT_VARS, colors: OC_LIGHT_COLORS } },
+  { id: 'ansi', label: 'ansi — 16 色 ANSI 回退（旧终端）', dark: ansiPaletteSet('dark'), light: ansiPaletteSet('light') },
 ]
 
 export function isThemePresetId(value: string): value is ThemePresetId {
-  return value === 'web' || value === 'cc' || value === 'pi' || value === 'opencode'
+  return value === 'web' || value === 'cc' || value === 'pi' || value === 'opencode' || value === 'ansi'
 }
 
 export function themePresetById(id: ThemePresetId): ThemePreset {
