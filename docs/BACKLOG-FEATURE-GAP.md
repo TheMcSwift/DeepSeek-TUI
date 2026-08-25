@@ -43,7 +43,7 @@
 | A18 | `/tips` 提示面板 | P2 / S / 缺失 | — | 精简 tips 池（5 组：快捷键/命令/工作流/个性化/避坑）中英双语 + 面板；空态 splash 首屏轮换 | strings.ts 双语 |
 | A19 | `/debug-prompt` | P3 / S / 缺失 | — | llm/stream 边界捕获最后请求上下文快照（≤8 个），命令原子写 `.dsh-prompt-debug.json`（0600）；当前轮未结束拒绝 | **约束**：捕获点需在 llm 服务 seam，结构读取可行性需验证 |
 | A20 | `/update` 自更新 | P3 / L / ⛔ 不做 | — | **决策（2026-08-20）：不做**——记录为定位边界（需 npm 发布流程） | 定位边界 |
-| A21 | 打包技能（7 个） | P2 / L / 缺失 | 无打包技能（DSH 侧技能经 / 菜单可达） | 设计本地技能集（audit/bug/review/practice/pr_comments/release-notes/vuln-check 或按本地风格裁剪），`skills/<name>/SKILL.md` 随包注册（需确认 out-of-tree 下注册缝隙；不可行则文档级技能说明） | **约束 ✅ 已验证（2026-08-22）**：技能注册走用户级 `~/.dsh/skills/<名>/`（或 `<cwd>/.dsh/skills/`），安装单元自带 skills/ 目录可经 `skill-filesystem` 的 `customSkillDirs`（`!!js` + `baseUrl`）注册进宿主 registry（官方 agent.cordis.yml 先例）。**本项只管 7 个 agent 工作流技能**；tui 操作手册技能是自描述能力、唯一例外，改由 TUI 插件注册（见 BOUNDARY-DESIGN.md §6.2），不随本项 |
+| A21 | 打包技能（7 个） | P2 / L / ⛔ 关闭 | 无打包技能（DSH 侧技能经 / 菜单可达） | 设计本地技能集（audit/bug/review/practice/pr_comments/release-notes/vuln-check 或按本地风格裁剪），`skills/<name>/SKILL.md` 随包注册（需确认 out-of-tree 下注册缝隙；不可行则文档级技能说明） | **约束 ✅ 已验证（2026-08-22）**：技能注册走用户级 `~/.dsh/skills/<名>/`（或 `<cwd>/.dsh/skills/`），安装单元自带 skills/ 目录可经 `skill-filesystem` 的 `customSkillDirs`（`!!js` + `baseUrl`）注册进宿主 registry（官方 agent.cordis.yml 先例）。**本项只管 7 个 agent 工作流技能**；tui 操作手册技能是自描述能力、唯一例外，改由 TUI 插件注册（见 BOUNDARY-DESIGN.md §6.2），不随本项 |
 | A22 | `/export` Markdown 导出 | P2 / M / 弱化 | /export 展示 jsonl 路径 + flush（web 语义） | 加 `--md` 或双命令：导出 `dsh-tui-export-<ts>.md`（用户/思考/助手/工具分节 + 模型/会话/目录/时间），写入会话 cwd | 文档流已有全文（transcriptText 机制可复用） |
 | A23 | `/login /logout /permissions /add-dir /hooks` 状态类 | P2 / S 各 / 缺失 | — | 各打印说明行（凭证状态脱敏 / 权限策略 / 文件策略作用域 / hooks 占位说明），不改行为 | 组合服务结构读取，无则提示不可用 |
 
@@ -54,7 +54,7 @@
 | B1 | Ctrl+Enter 打断并发送 | P1 / S / 缺失 | 无此键（中断只有 Esc/Ctrl+C） | keymaps 增动作 `interruptSend`（busy=interrupt 并立即投递输入；idle=直接发送）；opencode/pi 预设不绑或按画像自定 | keymaps.ts 动作表；投递复用 followup 路径 |
 | B2 | Tab（busy）= follow-up | P1 / M / 缺失 | Tab 恒为焦点环 | busy 且输入非空时 Tab = follow-up（排入当前回合之后，提示"将在回合后处理"）；输入为空保持焦点环 | 队列机制已有（Enter queue），加一条 follow-up 路由；**注意**焦点环语义冲突需文档化 |
 | B3 | `@` 文件引用增强 | P1 / M / 弱化 | `@/#` 路径补全（无 basename、无引号、无附加） | ① 任意位置 `@` 打开补全（前缀**或 basename** 匹配、目录可深入、带空格路径自动 `@"path"`）；② 发送时文本文件内容/目录列表自动附加到消息；③ Esc 只关当前 `@` token | 现有 CombinedAutocompleteProvider 扩展；附加逻辑在提交路径（composer 拦截） |
-| B4 | 图片附件（剪贴板位图/图片文件） | P2 / L / 已决策做 | read_image 占位行；粘贴仅文本（image-convert 是空 stub） | **决策（2026-08-20）：做**。① 剪贴板位图保存到附件库 + 输入框 `[Image #N]`（文本不含 base64）；② 图片文件粘贴自动转 `@` 引用；③ 附件服务不可用降级临时文件引用 | **约束 ✅ 已探明（2026-08-20）**：`dsh-attachment-local` 在 dsh-base 组合的 `base/cordis.patch.yml` 已挂载——附件服务可用，可走真附件路径 |
+| B4 | 图片附件（剪贴板位图/图片文件） | P2 / L / 📐 设计完成 · 实现押后 | read_image 占位行；粘贴仅文本（image-convert 是空 stub） | **决策（2026-08-20）：做**。① 剪贴板位图保存到附件库 + 输入框 `[Image #N]`（文本不含 base64）；② 图片文件粘贴自动转 `@` 引用；③ 附件服务不可用降级临时文件引用 | **约束 ✅ 已探明（2026-08-20）**：`dsh-attachment-local` 在 dsh-base 组合的 `base/cordis.patch.yml` 已挂载——附件服务可用，可走真附件路径。**专项设计已产出（2026-08-22，用户决策「先出设计文档」）：[DESIGN-ATTACHMENTS.md](DESIGN-ATTACHMENTS.md)**——交互/存储/渲染（Kitty→iTerm2→占位）/降级/三期计划，实现押后 |
 | B5 | Ctrl+R 输入历史搜索 | P2 / S / 缺失 | ↑/↓ 历史回显（tui-history.json 200 条） | 历史搜索对话框（⌕ 搜索框 + 相对时间 + 重复按/Down 下移 + Enter 回填） | tui-history.json 现有数据 |
 | B6 | 全文搜索扩展 | P2 / M / 弱化 | Ctrl+F 本地条目搜索（不含工具参数/结果） | 搜索目标扩展：用户/助手/思考/**工具参数与结果**/local 输出；结果间 n/N 跳转 | 文档条目数据源 |
 | B7 | Shift+Up 消息选择模式 | P1 / M / 缺失 | 无 | Shift+Up 进入选择模式：↑/↓ 移动（user/assistant/tool/thinking/notice 可选行）、Enter 展开单条、Esc 退出 | 与 Tab 焦点环并存需定义交互优先级 |

@@ -128,7 +128,7 @@ python3 scripts/e2e-pty.py --only-questions   # 单场景
 | [COMMUNITY-COMPARISON.md](docs/COMMUNITY-COMPARISON.md) | 与社区 ccch1mneyyy/dsh-TUI 的完整功能对比报告（2026-08-20） |
 | [BACKLOG-FEATURE-GAP.md](docs/BACKLOG-FEATURE-GAP.md) · [BACKLOG-CC-PARITY.md](docs/BACKLOG-CC-PARITY.md) · [BACKLOG-CC-VISUAL-PARITY.md](docs/BACKLOG-CC-VISUAL-PARITY.md) | 对比报告拆解的实现清单：功能差距（Part A）+ cc 预设交互对齐（Part B）+ cc 预设视觉对齐（Part C） |
 | [BOUNDARY-DESIGN.md](docs/BOUNDARY-DESIGN.md) | 能力边界判定：TUI 本分留内部 / 越权增强独立（含已完成功能回审） |
-| [PLAN-ROADMAP.md](docs/PLAN-ROADMAP.md) · [PLAN-BUNDLED-SKILL.md](docs/PLAN-BUNDLED-SKILL.md) | 未动工 backlog 全量实现规划（6 阶段）· tui 手册技能随插件注册专项 |
+| [PLAN-ROADMAP.md](docs/PLAN-ROADMAP.md) · [PLAN-BUNDLED-SKILL.md](docs/PLAN-BUNDLED-SKILL.md) · [DESIGN-ATTACHMENTS.md](docs/DESIGN-ATTACHMENTS.md) | 未动工 backlog 全量实现规划（6 阶段）· tui 手册技能随插件注册专项 · B4 图片附件专项设计（实现押后） |
 | [INTERACTION-PLAN.md](INTERACTION-PLAN.md) | 交互规划与批次 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南（提交 trailer 约定） |
 | [LICENSE](LICENSE) | MIT |
