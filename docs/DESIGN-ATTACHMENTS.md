@@ -99,3 +99,15 @@ fold/视图层不接触附件二进制（渲染层经服务只读取）。
 - **read_image 占位（G31/FEATURE-CHECKLIST B4）**：已有占位行保留；P1 后 read_image
   结果走同一渲染管道（Kitty/iTerm2/占位）；
 - **/export md**：导出时图片引用输出为 `[Image #N]` 文本（不嵌 base64——记录为导出格式限制）。
+
+## 10. 同类参考（2026-08-26 逐仓核对，实现时对照）
+
+- **[ipromise2021/dsh-omc-tui](https://github.com/ipromise2021/dsh-omc-tui)**（`--profile tui` 插件）：
+  **图片无感直贴已实装**——Cmd/Ctrl+V 粘贴 macOS 剪贴板位图 + iTerm2 OSC 1337/Kitty
+  协议直发，走 Harness **Attachment 管道**自动管理落盘；配套**智能视觉子代理**：
+  主 agent 自主判断何时触发底层 `analyze_image` 视觉工具（无需手动切模型/技能）。
+  本设计的 P1（剪贴板采集+附件保存+占位渲染）与 P2（协议绘制）均可对照其交互与
+  seam 取舍；差异点：我们补「多协议探测回退链 + 尺寸上限预检 + 删除 reconcile」。
+- **[huiliyi37/dsh-tianshu-tui](https://github.com/huiliyi37/dsh-tianshu-tui)**（`--profile tui` 插件）：
+  「图像与视觉桥接」为同名能力（自研引擎 + harness 工程层改造），实现时可交叉验证
+  Attachment 对接细节与协议降级路径。

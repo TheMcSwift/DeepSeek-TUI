@@ -103,32 +103,32 @@ Ctrl+O jobs 折叠/展开 · Ctrl+L 轨迹 · Alt+Enter 插话 · Alt+Up 取回�
 
 **我们的取舍**：本 TUI 只跑在 dsh 安装本机（无远程模式）；pi 版本固定（0.84.1 vendor 快照），上游修复需手动跟进；浏览器能力（图像/拖拽/设置表单）以终端形态降级——图片→占位行、设置页→`/config`；默认 regular 渲染（输出留在终端回滚），应用内搜索跳转/滚动不可用（可用终端原生 Cmd+F），`--fullscreen` 切回视口模式。
 
-### 与 dsh-plugin 生态的 TUI 同行对比（2026-08-26 快照）
+### 与 dsh-plugin 生态的 TUI 同行对比（2026-08-26 快照，逐仓库核对 README）
 
-> 数据源：[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)（自动聚合目录）+ 各仓库 GitHub 元数据。
-> 口径：均为终端第一形态的 dsh 客户端；Web UI 的内嵌终端面板（`dsh-plugin-terminal` 类）不在列。
+> 数据源：[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)（自动聚合目录）+ 各仓库 README 实测核对。
+> 口径：终端第一形态的 dsh 客户端；Web UI 的内嵌终端面板（`dsh-plugin-terminal` 类）不在列。
 
-| 项目 | 技术栈 | 形态 | 星标 | 特色 |
+| 项目 | 引擎/技术栈 | 安装方式 | ⭐ | 核心特性 |
 |---|---|---|---|---|
-| [ccch1mneyyy/dsh-TUI](https://github.com/ccch1mneyyy/dsh-TUI) | TypeScript | 独立/HTTP | ⭐2.5k | Claude Code 风格全屏：像素鲸 header、状态行、流式思考；社区头部项目（本仓库功能差距清单的对标对象） |
-| [huiliyi37/dsh-tianshu-tui](https://github.com/huiliyi37/dsh-tianshu-tui) | TypeScript | 独立 | ⭐234 | 天枢 TUI |
-| [openma-ai/Martty](https://github.com/openma-ai/Martty/tree/main/npm) | **Rust/ratatui** | npm 包 | ⭐60 | DSH-first agent TUI：流式工具调用、子代理、持久会话、Cordis 可扩展客户端 UI |
-| [XMoon/dsh-pi-tui](https://github.com/XMoon/dsh-pi-tui) | TypeScript（pi-tui fork） | `dsh --profile pi-tui` | ⭐12 | 与本仓库同栈最近：主会话循环 + 审批/命令/会话切换/全文搜索/预设/skills/模型菜单 |
-| [lk251066/dsh-tui-pro](https://github.com/lk251066/dsh-tui-pro) | TypeScript | 独立 | ⭐3 | 全屏工作台：耐久 assistant、workspace 分组、transcript-only 滚动、思考/工具/diff/plan/子代理结构化视图 |
-| [ipromise2021/dsh-omc-tui](https://github.com/ipromise2021/dsh-omc-tui) | JavaScript | CLI+TUI | ⭐2 | Claude Code 风格，CLI/TUI 双形态 |
-| [kouyichi/dsh-tui-app](https://github.com/kouyichi/dsh-tui-app) | JavaScript（Ink） | 独立 | ⭐2 | 流式对话/工具卡/jobs/全文搜索/轨迹回放/多会话 tab/**A2A 多代理派发** |
-| [xiaoshihou514/dsh-tui](https://github.com/xiaoshihou514/dsh-tui) | TypeScript | 独立 | ⭐2 | 简约 TUI |
-| [MashedPotato817/dsh-tui](https://github.com/MashedPotato817/dsh-tui) | JavaScript | 独立/HTTP | ⭐1 | Claude Code 风格 + **Vim modal 输入** + 性能 HUD |
-| [Isanti2016/dsh-console](https://github.com/Isanti2016/dsh-console) | JavaScript | 控制台 | ⭐1 | 斜杠命令控制台（`/web` `/tunnel` `/ask`）+ TUI 启动器 |
-| **本仓库（@mcswift/dsh-tui）** | TypeScript（pi-tui vendor） | `dsh --profile tui` | ⭐1 | 见下表「我们 vs 同行」 |
+| [ccch1mneyyy/dsh-TUI](https://github.com/ccch1mneyyy/dsh-TUI) | 自研（TS） | `dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui`（或 npm -g） | 2.5k | 像素鲸顶栏、双流光大字、实时状态行、思考流式展开、双击 Esc 时间回溯、蓝白上下文进度条 + TPS 仪表；**官方公众号收录**；本仓库差距清单的对标对象 |
+| [huiliyi37/dsh-tianshu-tui](https://github.com/huiliyi37/dsh-tianshu-tui) | **自研 ANSI 极简引擎**（非 pi/ink） | `dsh plugin --profile tui add @huiliyi37/dsh-tianshu-tui`（或 `github:`） | 234 | **图像与视觉桥接**、代码智能检索、记忆与跨会话召回、16 内置主题、VS Code 集成、`/update` 自更新；⚠️ 生态边界（勿与 oh-my-tianshu 生态混装） |
+| [openma-ai/Martty](https://github.com/openma-ai/Martty/tree/main/npm) | Rust 核心（npm 包侧 Node/ACP） | `npm i -g martty` / `npx martty`；可选 `dsh plugin --profile martty add martty@latest` | 60 | DSH-first Agent TUI：**Cordis 插件能力**（与 DSH 同款）+ ACP（可连其他兼容 agent）；子代理、持久会话 |
+| [XMoon/dsh-pi-tui](https://github.com/XMoon/dsh-pi-tui) | **Pi TUI fork**（TS） | `dsh plugin --profile pi-tui -- add @xmoon76/dsh-pi-tui`（独立 bundle，含 fork） | 12 | 流式 Markdown、Thinking 折叠、Tool 卡片、Transcript 全文搜索、长会话历史折叠、Context/Token 显示、Approval/ask_user_question、Plan Review、Subagent、Shell、设置 |
+| [lk251066/dsh-tui-pro](https://github.com/lk251066/dsh-tui-pro) | 自研（TS） | **`dsh plugin --profile tui add @lk251066/dsh-tui`**（包拥有插件 + profile 层） | 3 | **多会话终端工作台**：durable Assistant + 活跃项目会话切换、transcript-only 滚动、思考/工具/diff/plan/子代理结构化视图 |
+| [ipromise2021/dsh-omc-tui](https://github.com/ipromise2021/dsh-omc-tui) | 自研（JS/ANSI） | **`dsh plugin --profile tui add github:ipromise2021/dsh-omc-tui`** | 2 | **保留终端 Scrollback**（不进备用屏幕）；**图片无感直贴**（Cmd/Ctrl+V 剪贴板、iTerm2 OSC 1337、Kitty 协议）+ **智能视觉子代理自主决策**（无需手动切模型/技能）；行内审批、Plan/Jobs、上下文状态栏 |
+| [kouyichi/dsh-tui-app](https://github.com/kouyichi/dsh-tui-app) | **Ink**（React for CLI） | 手动组装 profile（bundles + patch + 沙箱 + 搜索索引） | 2 | Claude Code 形态 + 品牌鲸鱼；**一个终端同时指挥 hermes/claude/codex/dsh 四个 Agent**（多代理 hub）；jobs/全文搜索/轨迹回放 |
+| [xiaoshihou514/dsh-tui](https://github.com/xiaoshihou514/dsh-tui) | 自研（TS） | `dsh plugin --profile tui add "github:xiaoshihou514/dsh-tui#main"` | 2 | 真·极简（README：A minimal TUI for DSH） |
+| [MashedPotato817/dsh-tui](https://github.com/MashedPotato817/dsh-tui) | Ink（JS，core 纯 Node 零依赖） | `npm i -g dsh-tui`（**独立客户端，连本机 `dsh web` host 的 SSE**） | 1 | Claude Code 功能 + **Vim 三模态**（normal/insert/command）+ PTC 模式（dsh code agent preset）+ HUD 状态栏；core/ui 分离（core 可复用） |
+| [Isanti2016/dsh-console](https://github.com/Isanti2016/dsh-console) | — | `dsh plugin --profile web add dsh-console`（**web profile**） | 1 | 斜杠命令控制台（`/web` `/tunnel` `/ask`）+ `/console` 控制台 TUI 入口（非终端客户端本体） |
+| **本仓库（@mcswift/dsh-tui）** | pi-tui vendor（TS） | `dsh plugin --profile tui add @mcswift/dsh-tui` | 1 | 见「我们 vs 同行」 |
 
 **我们 vs 同行**：
 
-- **唯一完整的「out-of-tree profile」双插件结构**——`dsh plugin add` 即装、随 dsh 本机进程内直驱（无 HTTP 层），与 web/headless 共享同一份 `dsh-base` 组合（会话/设置/工具/预设）；同行中仅 [XMoon/dsh-pi-tui](https://github.com/XMoon/dsh-pi-tui) 采用同类挂载，其余多为独立可执行或 HTTP contract；
-- **契约驱动的前端**：`SessionEvent → fold() → ViewDocument → render` 单向数据流、fold 纯函数、文档即真相源——所有渲染都可无终端单测（417 项），每批 `typecheck + 单测 + 完整 PTY E2E（10 场景）` 全绿后才合入；
-- **三预设交互宽度**（cc/pi/opencode 分别对齐 Claude Code / pi / OpenCode 的键位与语式）在 TUI 同行中独有；视觉主题五预设（web/cc/pi/opencode/ansi 16 色）可 `/theme` 热切换、支持自定义 JSON 主题覆盖；
-- **自描述随包**：安装即自带 `/tui` 操作手册技能（bundle 注册进 dsh 技能 registry，任意 cwd 可用）——同行暂无；
-- **已知边界**：单机进程内（无远程模式）；pi-tui 0.84.1 固定；命令面按「高价值对齐」裁剪（非全量复刻 ccch1mneyyy；差距清单与计划见 [docs/COMMUNITY-COMPARISON.md](docs/COMMUNITY-COMPARISON.md) + [docs/PLAN-ROADMAP.md](docs/PLAN-ROADMAP.md)）。
+- **三预设交互宽度**（cc/pi/opencode 分别对齐 Claude Code / pi / OpenCode 的键位与语式）+ **五视觉主题预设**（web/cc/pi/opencode/ansi）+ 自定义 JSON 主题覆盖——TUI 同行中独有；
+- **契约驱动前端纪律**：`SessionEvent → fold() → ViewDocument → render` 单向数据流、fold 纯函数、文档即真相源——417 项无终端单测，每批 `typecheck + 单测 + 完整 PTY E2E（10 场景）`全绿才合入；配套 [`docs/COMMUNITY-COMPARISON.md`](docs/COMMUNITY-COMPARISON.md)（功能差距审计）与 [`docs/PLAN-ROADMAP.md`](docs/PLAN-ROADMAP.md)（路线图）双文档基线；
+- **自描述随包**：安装即带 `/tui` 操作手册技能（bundle 注册进 dsh 技能 registry，任意 cwd 可用）——同行暂无；
+- **命令面对齐口径**：cc 对齐落在「广义交互层」（键位/投递语义/菜单语式），未做像素级复刻（差距清单见 COMMUNITY-COMPARISON）；
+- **已知边界**：单机进程内（无远程模式，`dsh web` host 复用型与 MashedPotato817 形态相异）；pi-tui 0.84.1 固定（XMoon 亦 fork，上游修复需手动跟进）。
 
 ## 给开发者
 
