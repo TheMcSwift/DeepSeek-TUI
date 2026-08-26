@@ -128,7 +128,7 @@ Ctrl+O jobs 折叠/展开 · Ctrl+L 轨迹 · Alt+Enter 插话 · Alt+Up 取回�
 - **契约驱动前端纪律**：`SessionEvent → fold() → ViewDocument → render` 单向数据流、fold 纯函数、文档即真相源——417 项无终端单测，每批 `typecheck + 单测 + 完整 PTY E2E（10 场景）`全绿才合入；配套 [`docs/COMMUNITY-COMPARISON.md`](docs/COMMUNITY-COMPARISON.md)（功能差距审计）与 [`docs/PLAN-ROADMAP.md`](docs/PLAN-ROADMAP.md)（路线图）双文档基线；
 - **自描述随包**：安装即带 `/tui` 操作手册技能（bundle 注册进 dsh 技能 registry，任意 cwd 可用）——同行暂无；
 - **命令面对齐口径**：cc 对齐落在「广义交互层」（键位/投递语义/菜单语式），未做像素级复刻（差距清单见 COMMUNITY-COMPARISON）；
-- **已知边界**：单机进程内（无远程模式，`dsh web` host 复用型与 MashedPotato817 形态相异）；pi-tui 0.84.1 固定（XMoon 亦 fork，上游修复需手动跟进）。
+- **已知边界**：单机进程内（无远程模式，`dsh web` host 复用型与 MashedPotato817 形态相异）；pi-tui 0.84.1 固定（XMoon 亦 fork，上游修复需手动跟进）；default regular 模式下内容超屏后**输入框经 split-footer 恒贴底**（chrome 独立于内容流，滚动只携带内容、零重复行）——`--fullscreen` 为 alt-screen 贴底模式（滚动隔离更彻底，可用 `[` 导出转录到 scrollback）。
 
 ## 给开发者
 

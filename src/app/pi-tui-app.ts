@@ -12,6 +12,7 @@ import {
   CombinedAutocompleteProvider,
   TuiMainScreen,
   Container,
+  CURSOR_MARKER,
   Editor,
   Loader,
   ProcessTerminal,
@@ -254,6 +255,53 @@ class StatusSlot implements Component {
   }
 }
 
+/**
+ * D1 split-footer regular 渲染：pi 的 TuiMainScreen 把所有行线性输出
+ * （含输入框），内容超屏后输入框随内容流滚出视口。此类在 super.doRender()
+ * 之后把固定 chrome（状态槽/footer/编辑器——由 PiTuiApp.paintChrome 注入）
+ * CUP 重绘到视口底部：chrome 不进内容流（滚动只携带内容、输入框恒贴底、
+ * 零 scrollback 重复行——CC classic 全屏重绘的缺陷被规避）。
+ */
+export interface ChromePaint {
+  lines: string[]
+  /** 编辑器光标（chrome 内行列；文本后置位硬件光标，IME 锚定）。 */
+  editorCursor?: { row: number; col: number }
+}
+
+export class TuiMainScreenPinned extends TuiMainScreen {
+  private paintChrome: ((width: number) => ChromePaint) | undefined
+  private paintFailedLogged = false
+
+  /** PiTuiApp 挂载后注入 chrome 绘制器（close over 组件）。 */
+  setPaintChrome(painter: (width: number) => ChromePaint): void {
+    this.paintChrome = painter
+  }
+
+  override doRender(): void {
+    super.doRender()
+    if (this.paintChrome === undefined) return
+    try {
+      const width = this.terminal.columns
+      const height = this.terminal.rows
+      const paint = this.paintChrome(width)
+      if (paint.lines.length === 0 || height <= paint.lines.length) return
+      const startRow = height - paint.lines.length + 1
+      let buffer = `\x1b[${startRow};1H`
+      buffer += paint.lines.join('\r\n')
+      if (paint.editorCursor !== undefined) {
+        buffer += `\x1b[${startRow + paint.editorCursor.row};${paint.editorCursor.col}H`
+      }
+      this.terminal.write(buffer)
+    } catch (error) {
+      // Chrome 自绘失败不影响内容渲染（内容已由 super 输出）；仅首个异常留痕。
+      if (!this.paintFailedLogged) {
+        this.paintFailedLogged = true
+        process.stderr.write(`dsh tui: chrome paint failed: ${error instanceof Error ? error.message : String(error)}\n`)
+      }
+    }
+  }
+}
+
 /** Terminal/TUI construction seam; tests substitute a headless fake. */
 export const piTuiInternals: {
   createTerminal: () => Terminal
@@ -277,7 +325,7 @@ export const piTuiInternals: {
   // is the only mode this surface can use — see DESIGN.md §10.)
   createTui: (terminal: Terminal, mouse?: boolean, regular?: boolean) =>
     regular === true
-      ? new TuiMainScreen(terminal, true, undefined)
+      ? new TuiMainScreenPinned(terminal, true, undefined)
       : new TuiAltScreen(terminal, true, undefined, { mouse: mouse ?? process.env.DSH_TUI_MOUSE === '1' }),
   // The DeepSeek brand/status shimmer repaints ~57 frames over 3.4s; opt
   // out for constrained terminals/tests with DSH_TUI_ANIM=0.
@@ -722,9 +770,11 @@ export class PiTuiApp implements TerminalApp {
       ])
       tui.setLayoutRoot(layout)
     } else {
-      // regular 模式（TuiMainScreen，--regular / DSH_TUI_REGULAR=1）：主屏渲染，
-      // 无布局引擎——组件按文档流顺序堆叠（TuiBase.render 逐 child 拼行），
-      // 转录不经过 ScrollView（直接是 document），底部由 BottomPad 手动钉底。
+      // regular 模式（TuiMainScreenPinned，--regular / DSH_TUI_REGULAR=1）：主屏渲染，
+      // 无布局引擎——内容树（header/面板/转录 + BottomPad 钉底）按文档流堆叠；
+      // **split-footer（D1）**：chrome（状态槽/footer/编辑器）不进渲染树，
+      // 由 TuiMainScreenPinned 每次渲染后 CUP 重绘到视口底部——输入框恒贴底、
+      // 滚动只携带内容、零 scrollback 重复行（CC classic 全屏重绘的缺陷被规避）。
       // 能力降级：无应用滚动（isFollowingEnd 恒 true → 回底提示/B16 计数不出现）、
       // 无鼠标（归终端原生）、Ctrl+F 跳转不可用（startSearch 守卫）。
       this.scrollView = undefined
@@ -732,10 +782,8 @@ export class PiTuiApp implements TerminalApp {
       tui.addChild(new DynamicBorder((text: string) => fg('borderAccent')(text)))
       tui.addChild(this.capabilityPanel)
       tui.addChild(this.document) // 转录（含 brand splash 与 BottomPad）
-      tui.addChild(statusSlot)
-      tui.addChild(new DynamicBorder((text: string) => fg('borderMuted')(text)))
-      tui.addChild(this.footerLine)
-      tui.addChild(editor)
+      const pinned = tui as unknown as { setPaintChrome?: (painter: (width: number) => ChromePaint) => void }
+      pinned.setPaintChrome?.(width => this.paintChromeLines(width))
     }
 
     this.attachInputListener(tui)
@@ -2228,16 +2276,14 @@ export class PiTuiApp implements TerminalApp {
       const view = this.entryViews.get(key)
       if (view !== undefined) content += view.render(width).length
     }
-    // regular 模式无 ScrollView：钉底 = 终端高度 - chrome 高度 - 转录内容。
-    // chrome = header + 两条 border + 面板 + 状态槽 + footer + 编辑器（动态行数）。
-    const chrome = this.regular
-      ? (this.header?.render(width).length ?? 0)
-        + 2
-        + this.capabilityPanel.render(width).length
-        + (this.statusSlot?.render(width).length ?? 0)
-        + this.footerLine.render(width).length
-        + (this.editor?.render(width).length ?? 0)
+    // regular 模式无 ScrollView：钉底 = 终端高度 - 内容树 chrome - 固定 chrome - 转录内容。
+    // 内容树 chrome = header + 两条 border + 面板；固定 chrome（split-footer）=
+    // 状态槽 + footer + 编辑器（paintChromeLines 同上口径）。
+    const contentChrome = this.regular
+      ? (this.header?.render(width).length ?? 0) + 2 + this.capabilityPanel.render(width).length
       : 0
+    const pinnedChrome = this.regular ? this.paintChromeLines(width).lines.length : 0
+    const chrome = contentChrome + pinnedChrome
     const viewportHeight = scroll?.viewportHeight ?? Math.max(1, (this.terminal?.rows ?? 24) - chrome)
     const pad = Math.max(0, viewportHeight - content)
     if (pad !== this.bottomPad.height) {
@@ -2245,6 +2291,24 @@ export class PiTuiApp implements TerminalApp {
       // regular：BottomPad 行缓存失效（高度已变）。
       if (this.document instanceof CachedTranscript) this.document.invalidateEntry(this.bottomPad)
     }
+  }
+
+  /** D1: 组装 split-footer 固定 chrome 行（状态槽/footer/编辑器），
+   *  剥离编辑器 CURSOR_MARKER 并记录光标（硬件光标定位/IME 锚定）。 */
+  private paintChromeLines(width: number): ChromePaint {
+    const lines: string[] = []
+    lines.push(...(this.statusSlot?.render(width) ?? []))
+    lines.push(...this.footerLine.render(width))
+    let editorCursor: ChromePaint['editorCursor']
+    const editorRows = (this.editor?.render(width) ?? []).map((line, index) => {
+      const markerIndex = line.indexOf(CURSOR_MARKER)
+      if (markerIndex !== -1 && editorCursor === undefined) {
+        editorCursor = { row: index, col: markerIndex + 1 }
+      }
+      return line.split(CURSOR_MARKER).join('')
+    })
+    lines.push(...editorRows)
+    return { lines, editorCursor }
   }
 
   /** Put a retrieved queued message back into the composer (T5②). */

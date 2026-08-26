@@ -6,9 +6,9 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { TuiAltScreen, TuiMainScreen, setCapabilities } from '@earendil-works/pi-tui'
+import { TuiAltScreen, setCapabilities } from '@earendil-works/pi-tui'
 import type { Terminal } from '@earendil-works/pi-tui'
-import { PiTuiApp, piTuiInternals } from '../src/app/pi-tui-app.ts'
+import { PiTuiApp, TuiMainScreenPinned, piTuiInternals } from '../src/app/pi-tui-app.ts'
 import type { PiTuiAppOptions } from '../src/app/pi-tui-app.ts'
 import { fg } from '../src/app/pi/color.ts'
 import { permissionTone } from '../src/app/pi/command-match.ts'
@@ -52,7 +52,7 @@ function mount(meta: SurfaceMeta = { model: 'pi-ai/deepseek-v4', session: 'sessi
   const terminal = new FakeTerminal()
   piTuiInternals.createTerminal = () => terminal
   piTuiInternals.createTui = (t: Terminal, mouse?: boolean, regular?: boolean) =>
-    regular === true ? new TuiMainScreen(t, true, undefined) : new TuiAltScreen(t, true, undefined, { mouse: mouse ?? true })
+    regular === true ? new TuiMainScreenPinned(t, true, undefined) : new TuiAltScreen(t, true, undefined, { mouse: mouse ?? true })
   // Deterministic frames: brand/status shimmer is unit-tested in brand.spec.
   piTuiInternals.animFrameMs = 0
   const calls = { input: [] as string[], interrupt: 0, quit: 0, sessions: 0, models: 0, permissions: 0, newSession: 0, commands: 0, exitPlan: 0, workspace: 0, forks: 0, rates: 0, shell: [] as Array<{ text: string; hidden: boolean }>, steers: [] as string[], retrieves: 0, interruptSend: [] as string[], cycleMode: 0, rewind: 0, commandPicks: [] as Array<{ name: string; raw?: string }>, sessionSearch: [] as string[] }
@@ -829,6 +829,31 @@ describe('pi-tui surface', () => {
     test.terminal.feed('\x06') // Ctrl+F
     await settle(50)
     expect(test.terminal.plain()).toContain('regular 模式无应用内滚动')
+  })
+
+  it('D1 split-footer: 超屏后 chrome 被 CUP 重绘到视口底部且恒贴底', async () => {
+    const test = mount(undefined, { regular: true })
+    await settle()
+    // 60 条消息超屏（FakeTerminal height=30）。
+    const entries = Array.from({ length: 60 }, (_, i) => ({
+      kind: 'assistant' as const, id: `s${i}`, turn: 1, step: i + 1,
+      text: `bulk message ${i}`, thinking: [], state: 'committed' as const,
+    }))
+    test.app.render(doc(entries))
+    await settle(80)
+    const output = test.terminal.output
+    // 编辑器的 CURSOR_MARKER 不泄漏到终端。
+    expect(output).not.toContain('\x1b_pi:c\x07')
+    // chrome 经 CUP 重绘：定位序列存在 + 行内容可见。
+    const cupIndex = output.lastIndexOf('\x1b[')
+    const plain = test.terminal.plain()
+    expect(plain).toContain('pi-ai/deepseek-v4')
+    expect(cupIndex).toBeGreaterThan(-1)
+    // 贴底行号 = 视口高 30 - chrome 行数 + 1（首行 CUP 定位取最小行号）。
+    const paint = (test.app as unknown as { paintChromeLines: (width: number) => { lines: string[]; editorCursor?: { row: number; col: number } } }).paintChromeLines(100)
+    const startRow = 30 - paint.lines.length + 1
+    expect(output).toContain(`\x1b[${startRow};1H`)
+    expect(output).toContain(`\x1b[${startRow + (paint.editorCursor?.row ?? 0)};${paint.editorCursor?.col ?? 1}H`)
   })
 
   it('pins the composer, updates incrementally and renders overlays in regular mode', async () => {
