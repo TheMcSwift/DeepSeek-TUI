@@ -130,8 +130,6 @@ Ctrl+O jobs 折叠/展开 · Ctrl+L 轨迹 · Alt+Enter 插话 · Alt+Up 取回�
 - **自描述随包**：安装即自带 `/tui` 操作手册技能（bundle 注册进 dsh 技能 registry，任意 cwd 可用）——同行暂无；
 - **已知边界**：单机进程内（无远程模式）；pi-tui 0.84.1 固定；命令面按「高价值对齐」裁剪（非全量复刻 ccch1mneyyy；差距清单与计划见 [docs/COMMUNITY-COMPARISON.md](docs/COMMUNITY-COMPARISON.md) + [docs/PLAN-ROADMAP.md](docs/PLAN-ROADMAP.md)）。
 
-> 收录状况：本仓库暂未出现在 awesome-dsh-plugin 聚合列表——抓取按 star 序取单查询前 1000，`topic:dsh-plugin` 已有 1.1 万+ 仓库（大量蹭标签），1⭐ 仓库排不进前 1000，仅周日全量窗二分可能收录；已加 `dsh-plugin` topic，等待下一次全量窗口。
-
 ## 给开发者
 
 **数据流**：`SessionEvent → fold() → ViewDocument → app.render()` 单向流转；`fold()` 是纯函数（无 cordis/pi 依赖），每个新事件类型在 `tests/projection.spec.ts` 补回归。
