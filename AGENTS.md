@@ -18,6 +18,10 @@ python3 scripts/e2e-pty.py              # 8 场景 PTY E2E（依赖本地 harnes
 python3 scripts/e2e-pty.py --only-questions
 ```
 
+**dsh 上游破坏性更新**（带 `!` 的 refactor / alpha 发布）：先 `pnpm typecheck` 暴露漂移，
+再按 [docs/DSH-UPGRADE-NOTES.md](docs/DSH-UPGRADE-NOTES.md) 的标准流程适配（含 0.1.2-alpha.5
+映射表与踩坑记录）。
+
 ## 架构约定 / Architecture rules
 
 - **单向数据流**：`SessionEvent → fold() → ViewDocument → app.render()`。fold 必须是**纯函数**（禁止 cordis/pi/IO 依赖），每个新事件类型都要在 `tests/projection.spec.ts` 补回归。

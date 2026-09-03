@@ -22,8 +22,11 @@ pnpm build
 pnpm typecheck   # 严格类型检查（含 tests）
 pnpm test        # vitest 单测
 pnpm build       # tsc 构建
-python3 scripts/e2e-pty.py   # 至少一轮完整 E2E（6 场景）
+python3 scripts/e2e-pty.py   # 至少一轮完整 E2E（8 场景）
 ```
+
+> **dsh 上游破坏性更新**（带 `!` 的 refactor / alpha 发布）：适配流程与映射表见
+> [docs/DSH-UPGRADE-NOTES.md](docs/DSH-UPGRADE-NOTES.md)；`pnpm typecheck` 报错即"未适配"。
 
 ## AI 协助政策 / AI-assistance policy
 
