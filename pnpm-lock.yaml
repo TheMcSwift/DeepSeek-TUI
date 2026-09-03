@@ -90,6 +90,9 @@ importers:
       '@deepseek-ai/dsh-subagent':
         specifier: link:../deepseek-harness/packages/subagent/subagent
         version: link:../deepseek-harness/packages/subagent/subagent
+      '@deepseek-ai/dsh-tool-todo':
+        specifier: link:../deepseek-harness/packages/todo/tool-todo
+        version: link:../deepseek-harness/packages/todo/tool-todo
       '@deepseek-ai/dsh-user-approval':
         specifier: link:../deepseek-harness/packages/interaction/user-approval
         version: link:../deepseek-harness/packages/interaction/user-approval

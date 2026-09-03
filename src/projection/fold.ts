@@ -16,6 +16,9 @@ import type {} from '@deepseek-ai/dsh-plan-mode'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-command-feedback'
+// 'todo/write' 的 SessionEventMap 声明自 0.1.2-alpha.5 起归属 dsh-tool-todo（本
+// 包仅类型聚合，无运行时依赖——事件本体仍是流水上的普通 JSON 数据）。
+import type {} from '@deepseek-ai/dsh-tool-todo'
 // 纯函数显示变换（kebab → 标题大小写），无 cordis/pi/IO，不破坏 fold 纯性。
 import { permissionDisplayName } from '../app/pi/command-match.ts'
 import { emptyDocument, joinTextBlocks } from '../document/document.ts'

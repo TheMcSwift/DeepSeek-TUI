@@ -11,6 +11,8 @@ import type {} from '@deepseek-ai/dsh-compaction'
 import type {} from '@deepseek-ai/dsh-llm-retry'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-goal'
+// 类型聚合 tool-todo 的 SessionEventMap 增强（'todo/write'）。
+import type {} from '@deepseek-ai/dsh-tool-todo'
 import { emptyDocument } from '../src/document/document.ts'
 import type { AssistantEntry, ViewDocument, ViewEntry } from '../src/document/document.ts'
 import { fold, replay } from '../src/projection/fold.ts'
@@ -369,8 +371,8 @@ describe('projection', () => {
 
   it('replaces the todo entry on every todo/write', () => {
     const doc = replay([
-      event('todo/write', { todos: [{ content: 'a', status: 'pending' }, { content: 'b', status: 'in_progress' }] } as never),
-      event('todo/write', { todos: [{ content: 'a', status: 'completed' }] } as never),
+      event('todo/write', { todos: [{ content: 'a', status: 'pending' }, { content: 'b', status: 'in_progress' }] }),
+      event('todo/write', { todos: [{ content: 'a', status: 'completed' }] }),
     ])
     expect(entriesOf(doc, 'todo')).toEqual([{
       kind: 'todo', id: 'todo', items: [{ content: 'a', status: 'completed' }],

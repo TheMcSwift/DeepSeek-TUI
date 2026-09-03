@@ -157,7 +157,11 @@ async function bench(
   ctx.agents.setFactory({
     async createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle> {
       created.push(options)
+      // 与真实 Harness 一致：seed / inheritedEventCount / meta 全数透传给
+      // SessionStore.create（alpha.5 起 fork 边界是 isSeeded + 独立前缀长度）。
       const session = ctx.sessions.create(options.sessionId, {
+        ...options.seed === undefined ? {} : { seed: options.seed },
+        ...options.inheritedEventCount === undefined ? {} : { inheritedEventCount: options.inheritedEventCount },
         ...options.meta === undefined ? {} : { meta: options.meta },
       })
       const handle = mintAgent(ownerCtx, session, options)
@@ -1157,17 +1161,15 @@ describe('tui runner', () => {
     await test.ctx.fiber.dispose()
   })
 
-  it('exports the session log to a revealed jsonl path', async () => {
-    const test = await bench({}, {}, (ctx) => {
-      ctx.provide('sessionPersistence', {
-        locate: () => ({ kind: 'jsonl', path: '/tmp/sessions/session-abc.jsonl' }),
-      } as never)
-    })
+  it('exports the session log after a flush and reports the storage home', async () => {
+    // alpha.5 起 SessionPersistence 移除 locate：导出提示不再显示具体 jsonl 路径，
+    // 只承诺 flush + 会话 id（存储位置归后端配置，out-of-tree 不感知）。
+    const test = await bench({}, {}, () => {})
     await test.started
     test.app.handlers?.onCommandPicked('__export')
     await settle()
     const last = test.app.last
-    expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('/tmp/sessions/session-abc.jsonl'))).toBe(true)
+    expect(last.entries.some(entry => entry.kind === 'notice' && (entry as { text: string }).text.includes('jsonl'))).toBe(true)
     await test.ctx.fiber.dispose()
   })
 

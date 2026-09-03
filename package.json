@@ -1,6 +1,6 @@
 {
   "name": "@mcswift/dsh-tui",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "A pi-tui terminal surface for DeepSeek Harness: `dsh --profile tui` interactive agent chat.",
   "license": "MIT",
   "type": "module",
@@ -77,6 +77,7 @@
     "@deepseek-ai/dsh-session-query": "link:../deepseek-harness/packages/session-query/session-query",
     "@deepseek-ai/dsh-settings": "link:../deepseek-harness/packages/settings/settings",
     "@deepseek-ai/dsh-subagent": "link:../deepseek-harness/packages/subagent/subagent",
+    "@deepseek-ai/dsh-tool-todo": "link:../deepseek-harness/packages/todo/tool-todo",
     "@deepseek-ai/dsh-user-approval": "link:../deepseek-harness/packages/interaction/user-approval",
     "@deepseek-ai/dsh-user-questions": "link:../deepseek-harness/packages/interaction/user-questions",
     "@deepseek-ai/schemastery": "link:../deepseek-harness/vendor/schemastery",

@@ -19,7 +19,7 @@ import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionStore } from '@deepseek-ai/dsh-session'
 // Empty type imports carry the loader Context merge for the settlement await,
 // the cmdline Context merge, and the session-query Context merge.
@@ -30,7 +30,10 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-jobs'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+// 类型导入生效 settings 服务的 Context 合并（ctx.settings，新注册面）；无运行时依赖。
+import type {} from '@deepseek-ai/dsh-settings'
+// 类型导入聚合 tool-todo 的 SessionEventMap 增强（'todo/write' 现在由该包声明）。
+import type {} from '@deepseek-ai/dsh-tool-todo'
 import z from '@deepseek-ai/schemastery'
 import { PiTuiApp, piTuiInternals } from './app/pi-tui-app.ts'
 import { applyPalette, resolveHex } from './app/pi/color.ts'
@@ -301,10 +304,9 @@ async function exportSessionLog(
       }
     }
   }
-  const location = ctx.get('sessionPersistence')?.locate(session.header)
-  const text = location?.path !== undefined
-    ? `会话日志已导出（jsonl）：${location.path}`
-    : `会话日志已 flush；jsonl 位于 DSH_HOME 会话目录（session ${session.id}）`
+  // SessionPersistence 已改为 handle-based seam：不再暴露 locate(path)，
+  // 存储位置由后端配置决定，TUI 只承诺 flush + 会话 id（out-of-tree 约束）。
+  const text = `会话日志已 flush（session ${session.id}；jsonl 位于 DSH_HOME 会话存储）`
   return {
     ...doc,
     entries: [...doc.entries, { kind: 'notice' as const, id: `notice:export:${session.id}`, text, tone: 'info' as const }],
@@ -483,13 +485,11 @@ export function apply(ctx: Context, config: Config): void {
   if (exit === undefined) {
     throw new Error('tui-runner: the launcher must provide ctx.appExit before the tree mounts')
   }
-  // 注册 tui 设置命名空间：settings.yaml 的 `tui:` 段随 settings 服务挂载而可读写。
-  // 服务缺席的最小组合里注入回调永不触发，TUI 退回组合默认照常可用（可选服务语义）。
-  installSettingsSection(ctx, settingsNamespace('tui'), TuiSettingsSchema, TUI_SETTINGS_DEFAULTS, {
-    // TUI 只在启动时与写入后读取，无需响应式联动；注册本身即持久化能力。
-    setSource: () => {},
-    onChange: () => {},
-  })
+  // 注册 tui 设置命名空间（新注册面 ctx.settings.register → SettingsScope）：
+  // settings.yaml 的 `tui:` 段随 settings 服务挂载而可读写；base 层承载组合
+  // 默认值（用户 section 覆盖在上）。服务缺席的最小组合里 register 永不执行，
+  // TUI 退回组合默认照常可用（可选服务语义；写路径 update 未注册会抛错，调用方已静默）。
+  ctx.get('settings')?.register('tui', TuiSettingsSchema, { base: TUI_SETTINGS_DEFAULTS })
   void run(ctx, config, exit).catch((error: unknown) => { fail(exit, error) })
 }
 
@@ -637,7 +637,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     }).catch(() => {})
     // Drop the previous session's views before replaying the next history.
     app.reset()
-    doc = replay(created.agent.session.events)
+    doc = replay(created.agent.session.snapshotEvents())
     // Persisted reply ratings surface as one summary row (T2②).
     const ratings = feedbackSummary(currentSessionId)
     if (ratings.positive + ratings.negative > 0) {
@@ -790,7 +790,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
    * 消息所属轮次起点之前），跳过 turn/end 锚定。
    */
   const forkSession = async (session: Session, seq: number, fallbackLast: boolean, label: string, cutOverride?: number): Promise<void> => {
-    const events = session.events
+    const events = session.snapshotEvents()
     const boundary = cutOverride === undefined
       ? (events.find(event => event.type === 'turn/end' && event.seq >= seq)
         ?? (fallbackLast ? events.findLast(event => event.type === 'turn/end') : undefined))
@@ -813,10 +813,13 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     const child = await agents.create({
       sessionId: childId,
       seed: events.slice(0, cut),
+      // alpha.5 破坏性重构：header 不再带数值切点——fork 血缘由 isSeeded 标记，
+      // 确切前缀长度走独立的 inheritedEventCount（SessionLogOffset 域）。
+      inheritedEventCount: SessionLogOffset(cut),
       meta: {
         ...session.header.cwd === undefined ? {} : { cwd: session.header.cwd },
         parentSession: session.id,
-        seedLength: cut,
+        isSeeded: true,
       },
       agentOptions: { provider: (modelRef.current ?? selection).provider, model: (modelRef.current ?? selection).model },
       setup,
@@ -827,7 +830,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     meta.session = childId
     meta.parentSession = child.agent.session.header.parentSession
     app.reset()
-    doc = replay(child.agent.session.events)
+    doc = replay(child.agent.session.snapshotEvents())
     doc = { ...doc, entries: [...doc.entries, {
       kind: 'notice' as const, id: `notice:fork:${cmdSeq++}`,
       text: `${label}（种子 ${cut} 个事件）`, tone: 'info' as const,
@@ -842,7 +845,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
    * 不能回退到第一条消息（种子为空）；busy 时 forkSession 的 whenIdle 会等待落定。
    */
   const rewindTo = async (session: Session, seq: number, text: string): Promise<void> => {
-    const events = session.events
+    const events = session.snapshotEvents()
     const turnStart = [...events].reverse().find(event => event.type === 'turn/start' && event.seq < seq)
     if (turnStart === undefined) {
       app.toast(strings().rewindNoTarget, 'error')
@@ -1000,7 +1003,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       app.render(doc)
       return true
     }
-    if (value.includes('full-access') && presets.current(agent.session.events) !== value) {
+    if (value.includes('full-access') && presets.current(agent.session) !== value) {
       const answer = await app.askDialog({
         title: strings().fullAccessConfirmTitle,
         detail: strings().fullAccessConfirmDescription,
@@ -1765,7 +1768,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
         if (quitting || handle === undefined) return
         if (next.sandbox !== undefined) {
           const presets = ctx.get('permissionPresets')
-          const currentPreset = presets?.current(handle.agent.session.events)
+          const currentPreset = presets?.current(handle.agent.session)
           if (currentPreset !== next.sandbox) {
             const applied = await switchPreset(next.sandbox)
             if (!applied) return // 确认取消：停留在当前档
@@ -2016,7 +2019,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       if (name === '__clone') {
         if (handle === undefined) return
         const session = handle.agent.session
-        const lastSeq = session.events.at(-1)?.seq ?? -1
+        const lastSeq = session.seq - 1
         void forkSession(session, lastSeq, true, '已复制当前会话').catch((error: unknown) => { fail(exit, error) })
         return
       }
@@ -2626,7 +2629,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
     // B11/H31: 把当前会话的原始事件日志窗口化成轨迹视图（Inspect）。
     onTrajectoryRequest: (): void => {
       if (handle === undefined) return
-      const rows: TrajectoryRow[] = handle.agent.session.events.map(event => ({
+      const rows: TrajectoryRow[] = handle.agent.session.snapshotEvents().map(event => ({
         seq: event.seq,
         type: event.type,
         at: event.time,
@@ -2794,7 +2797,7 @@ async function run(ctx: Context, config: Config, exit: (code: number) => void): 
       // 回退：无投影注册表时沿用 permission-presets 服务的直连路径。
       const presets = ctx.get('permissionPresets')
       if (presets === undefined || handle === undefined) return
-      const current = presets.current(handle.agent.session.events)
+      const current = presets.current(handle.agent.session)
       const items = presets.names.map((name) => {
         const option = presets.optionOf(name)
         return { value: name, label: permissionDisplayName(option.name), description: option.description, current: name === current }

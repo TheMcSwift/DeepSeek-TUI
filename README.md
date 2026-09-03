@@ -24,7 +24,7 @@
 
 ## 安装
 
-**前置要求**：可用的 dsh 环境（Node ≥ 22.19、pnpm）。
+**前置要求**：可用的 dsh 环境（Node ≥ 22.19、pnpm）。兼容性：本版本对齐 dsh 0.1.2-alpha.5 的破坏性更新（session 事件序列/日志偏移重构、settings 新注册面、user-questions waterfall 等）；更旧或更新的 dsh 未验证，dsh 升级出现加载失败时请同步升级本插件。
 
 ```bash
 # 从 npm 安装（推荐）

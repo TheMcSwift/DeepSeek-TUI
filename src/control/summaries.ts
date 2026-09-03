@@ -6,6 +6,8 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+// 类型聚合 tool-todo 的 SessionEventMap 增强（'todo/write' 在 alpha.5 归属该包）。
+import type {} from '@deepseek-ai/dsh-tool-todo'
 import type { ToolEntry, ViewDocument, ViewEntry } from '../document/document.ts'
 import { strings } from '../view/strings.ts'
 

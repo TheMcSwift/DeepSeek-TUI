@@ -1,6 +1,7 @@
 /**
  * The interactive answerer seams: the approval/request waterfall (chain-tail
- * presentation with passthrough) and the userQuestions provider registration.
+ * presentation with passthrough) and the user-questions/request answerer
+ * (alpha.5 起为 Agent 作用域 cascade 事件，而非 service 上的 provider 注册)。
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -46,6 +47,16 @@ function makePresenter(): ApprovalPresenter & {
 }
 
 const request = (agentId: string) => ({ agent: { id: agentId }, toolName: 'bash', reason: 'runs rm', signal: undefined })
+
+/** 经 user-questions/request 事件向 TUI answerer 提问（fallback 抛错：应被 claim）。 */
+function askQuestions(ctx: Context, questions: unknown[]): Promise<{ answers: Array<{ id: string; selected: string[]; custom?: string }> }> {
+  return (ctx.waterfall as unknown as (
+    carrier: object, event: string, request: unknown, next: () => Promise<unknown>,
+  ) => Promise<{ answers: Array<{ id: string; selected: string[]; custom?: string }> }>)(
+    Object.create(null), 'user-questions/request', { questions },
+    async () => { throw new Error('unexpected fallback: the TUI answerer must claim') },
+  )
+}
 
 describe('approval seams', () => {
   it('lets earlier answerers decide without presenting', async () => {
@@ -100,17 +111,11 @@ describe('approval seams', () => {
     await ctx.fiber.dispose()
   })
 
-  it('registers the userQuestions provider when the service is mounted', async () => {
+  it('claims user-questions requests through the waterfall and answers an option question', async () => {
     const ctx = new Context()
     const presenter = makePresenter()
-    const registrations: unknown[] = []
-    ctx.provide('userQuestions', { registerProvider: (provider: unknown) => { registrations.push(provider); return () => {} } })
     installApprovals(ctx, presenter, () => 'agent-1')
-    expect(registrations).toHaveLength(1)
-    const provider = registrations[0] as {
-      ask(request: { questions: Array<{ id: string; question: string; options?: Array<{ label: string }> }> }): Promise<{ answers: Array<{ id: string; selected: string[] }> }>
-    }
-    const answerPromise = provider.ask({ questions: [{ id: 'q1', question: 'which one?', options: [{ label: 'A' }, { label: 'B' }] }] })
+    const answerPromise = askQuestions(ctx, [{ id: 'q1', question: 'which one?', options: [{ label: 'A' }, { label: 'B' }] }])
     await Promise.resolve()
     expect(presenter.asked[0].options).toEqual(['A', 'B'])
     presenter.answer(0)
@@ -121,15 +126,10 @@ describe('approval seams', () => {
   it('encodes free-text answers through the custom slot', async () => {
     const ctx = new Context()
     const presenter = makePresenter()
-    const registrations: unknown[] = []
-    ctx.provide('userQuestions', { registerProvider: (provider: unknown) => { registrations.push(provider); return () => {} } })
     installApprovals(ctx, presenter, () => 'agent-1')
-    const provider = registrations[0] as {
-      ask(request: { questions: Array<{ id: string; question: string; options?: Array<{ label: string }> }> }): Promise<{ answers: Array<{ id: string; selected: string[]; custom?: string }> }>
-    }
     // Free-text question: presenter is asked with zero options; resolve it
     // with typed text by reaching into the pending present call.
-    const answerPromise = provider.ask({ questions: [{ id: 'q1', question: 'what name?' }] })
+    const answerPromise = askQuestions(ctx, [{ id: 'q1', question: 'what name?' }])
     await Promise.resolve()
     expect(presenter.asked[0].options).toEqual([])
     presenter.answerText('小明')
@@ -140,20 +140,13 @@ describe('approval seams', () => {
   it('encodes plan-review feedback through the custom slot alongside the keep-planning pick (B11)', async () => {
     const ctx = new Context()
     const presenter = makePresenter()
-    const registrations: unknown[] = []
-    ctx.provide('userQuestions', { registerProvider: (provider: unknown) => { registrations.push(provider); return () => {} } })
     installApprovals(ctx, presenter, () => 'agent-1')
-    const provider = registrations[0] as {
-      ask(request: { questions: Array<{ id: string; question: string; detail?: string; intent?: { kind: string; approve: string }; options?: Array<{ label: string }> }> }): Promise<{ answers: Array<{ id: string; selected: string[]; custom?: string }> }>
-    }
     // plan-review：选项 = 批准 + 继续规划；意图标记传给对话框（detailMarkdown）。
-    const answerPromise = provider.ask({
-      questions: [{
-        id: 'plan-review', question: 'Approve the plan?',
-        detail: '# Plan', intent: { kind: 'plan-review', approve: '批准' },
-        options: [{ label: '批准' }, { label: '继续规划' }],
-      }],
-    })
+    const answerPromise = askQuestions(ctx, [{
+      id: 'plan-review', question: 'Approve the plan?',
+      detail: '# Plan', intent: { kind: 'plan-review', approve: '批准' },
+      options: [{ label: '批准' }, { label: '继续规划' }],
+    }])
     await Promise.resolve()
     const asked = presenter.asked[0]
     expect(asked.detailMarkdown).toBe(true)
@@ -167,18 +160,11 @@ describe('approval seams', () => {
   it('carries progress, header, descriptions and multiSelect to the dialog', async () => {
     const ctx = new Context()
     const presenter = makePresenter()
-    const registrations: unknown[] = []
-    ctx.provide('userQuestions', { registerProvider: (provider: unknown) => { registrations.push(provider); return () => {} } })
     installApprovals(ctx, presenter, () => 'agent-1')
-    const provider = registrations[0] as {
-      ask(request: { questions: Array<{ id: string; question: string; header?: string; multiSelect?: boolean; options?: Array<{ label: string; description?: string }> }> }): Promise<{ answers: Array<{ id: string; selected: string[] }> }>
-    }
-    const answerPromise = provider.ask({
-      questions: [{
-        id: 'q1', question: 'pick colors', header: 'palette', multiSelect: true,
-        options: [{ label: 'red', description: 'warm' }, { label: 'blue' }],
-      }],
-    })
+    const answerPromise = askQuestions(ctx, [{
+      id: 'q1', question: 'pick colors', header: 'palette', multiSelect: true,
+      options: [{ label: 'red', description: 'warm' }, { label: 'blue' }],
+    }])
     await Promise.resolve()
     const asked = presenter.asked[0]
     expect(asked.header).toBe('palette')
@@ -197,15 +183,11 @@ describe('approval seams', () => {
   it('answers multi-select questions with the confirmed label set', async () => {
     const ctx = new Context()
     const presenter = makePresenter()
-    const registrations: unknown[] = []
-    ctx.provide('userQuestions', { registerProvider: (provider: unknown) => { registrations.push(provider); return () => {} } })
     installApprovals(ctx, presenter, () => 'agent-1')
-    const provider = registrations[0] as {
-      ask(request: { questions: Array<{ id: string; question: string; multiSelect?: boolean; options?: Array<{ label: string }> }> }): Promise<{ answers: Array<{ id: string; selected: string[] }> }>
-    }
-    const answerPromise = provider.ask({
-      questions: [{ id: 'q1', question: 'pick colors', multiSelect: true, options: [{ label: 'red' }, { label: 'green' }, { label: 'blue' }] }],
-    })
+    const answerPromise = askQuestions(ctx, [{
+      id: 'q1', question: 'pick colors', multiSelect: true,
+      options: [{ label: 'red' }, { label: 'green' }, { label: 'blue' }],
+    }])
     await Promise.resolve()
     presenter.resolve(0, { pickedMultiple: ['red', 'blue'], reason: 'picked' })
     expect(await answerPromise).toEqual({ answers: [{ id: 'q1', selected: ['red', 'blue'] }] })
@@ -215,19 +197,12 @@ describe('approval seams', () => {
   it('skips and goes back across a multi-question request', async () => {
     const ctx = new Context()
     const presenter = makePresenter()
-    const registrations: unknown[] = []
-    ctx.provide('userQuestions', { registerProvider: (provider: unknown) => { registrations.push(provider); return () => {} } })
     installApprovals(ctx, presenter, () => 'agent-1')
-    const provider = registrations[0] as {
-      ask(request: { questions: Array<{ id: string; question: string; options?: Array<{ label: string }> }> }): Promise<{ answers: Array<{ id: string; selected: string[] }> }>
-    }
-    const answerPromise = provider.ask({
-      questions: [
-        { id: 'q1', question: 'one?', options: [{ label: 'A' }] },
-        { id: 'q2', question: 'two?', options: [{ label: 'B' }] },
-        { id: 'q3', question: 'three?', options: [{ label: 'C' }] },
-      ],
-    })
+    const answerPromise = askQuestions(ctx, [
+      { id: 'q1', question: 'one?', options: [{ label: 'A' }] },
+      { id: 'q2', question: 'two?', options: [{ label: 'B' }] },
+      { id: 'q3', question: 'three?', options: [{ label: 'C' }] },
+    ])
     await Promise.resolve()
     // q1: progress 1/3, nothing to go back to, skippable.
     expect(presenter.asked[0].progress).toEqual({ index: 1, total: 3 })
@@ -257,18 +232,11 @@ describe('approval seams', () => {
   it('drops the remaining questions when the user cancels the group', async () => {
     const ctx = new Context()
     const presenter = makePresenter()
-    const registrations: unknown[] = []
-    ctx.provide('userQuestions', { registerProvider: (provider: unknown) => { registrations.push(provider); return () => {} } })
     installApprovals(ctx, presenter, () => 'agent-1')
-    const provider = registrations[0] as {
-      ask(request: { questions: Array<{ id: string; question: string; options?: Array<{ label: string }> }> }): Promise<{ answers: Array<{ id: string; selected: string[] }> }>
-    }
-    const answerPromise = provider.ask({
-      questions: [
-        { id: 'q1', question: 'one?', options: [{ label: 'A' }] },
-        { id: 'q2', question: 'two?', options: [{ label: 'B' }] },
-      ],
-    })
+    const answerPromise = askQuestions(ctx, [
+      { id: 'q1', question: 'one?', options: [{ label: 'A' }] },
+      { id: 'q2', question: 'two?', options: [{ label: 'B' }] },
+    ])
     await Promise.resolve()
     presenter.resolve(0, { reason: 'cancelled' })
     expect(await answerPromise).toEqual({ answers: [] })
@@ -277,10 +245,11 @@ describe('approval seams', () => {
     await ctx.fiber.dispose()
   })
 
-  it('skips the provider seam when the assembly has no userQuestions service', async () => {
+  it('installs on a bare context with no userQuestions service', async () => {
     const ctx = new Context()
     const presenter = makePresenter()
-    // No userQuestions service provided — install must not throw.
+    // No userQuestions service provided — the answerer now rides the cordis
+    // event waterfall, so installation never depends on the service.
     expect(() => installApprovals(ctx, presenter, () => 'agent-1')).not.toThrow()
     await ctx.fiber.dispose()
   })

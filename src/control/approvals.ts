@@ -8,6 +8,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-user-questions'
+import type { AskUserQuestionAnswer, AskUserQuestionRequestEvent } from '@deepseek-ai/dsh-user-questions/types'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { strings } from '../view/strings.ts'
 import type { ApprovalOutcome } from '../document/document.ts'
@@ -16,22 +17,6 @@ import type { ApprovalAnswer, ApprovalQuestion } from '../view/components/approv
 /** The single dialog presenter both seams share. */
 export interface ApprovalPresenter {
   present(question: ApprovalQuestion): Promise<ApprovalAnswer>
-}
-
-/** Minimal question shape the userQuestions provider answers (verified fields). */
-interface UserQuestion {
-  id: string
-  question: string
-  detail?: string
-  options?: Array<{ label: string; description?: string }>
-  header?: string
-  multiSelect?: boolean
-  intent?: { kind?: string }
-}
-
-interface UserQuestionRequest {
-  questions: UserQuestion[]
-  signal?: AbortSignal
 }
 
 /** Request shape the approval waterfall delivers (verified fields). */
@@ -89,11 +74,15 @@ export function installApprovals(
     return answer.reason === 'timeout' ? 'unavailable' : 'cancelled'
   })
 
-  // Agent-asks-human seam: one active provider per tree — the TUI is it.
-  // (Optional at the service level: assemblies without the row skip it.)
-  const disposeProvider = ctx.get('userQuestions')?.registerProvider({
-    async ask(request: UserQuestionRequest): Promise<{ answers: Array<{ id: string; selected: string[]; custom?: string }> }> {
-      const answers: Array<{ id: string; selected: string[]; custom?: string }> = []
+  // Agent-asks-human seam（alpha.5 新形态）：answerer 改挂 `user-questions/request`
+  // waterfall 事件而非 UserQuestionService.registerProvider（该注册面已移除）。
+  // root（未 scoped）监听者按 scope 分发语义全局接收；返回答案即 claim 请求，
+  // 多 answerer 并存时按注册顺序先答先得（TUI profile 下本监听者是唯一 answerer）。
+  const disposeProvider = ctx.on('user-questions/request', async (
+    request: AskUserQuestionRequestEvent,
+    next: () => Promise<AskUserQuestionAnswer>,
+  ): Promise<AskUserQuestionAnswer> => {
+    const answers: AskUserQuestionAnswer['answers'] = []
       // Web parity (ui-user-questions QuestionComposer): the request can
       // carry several questions — present them one at a time with `i / n`
       // progress, and let the user go back to a previous question or skip
@@ -105,7 +94,7 @@ export function installApprovals(
         const question = request.questions[cursor]
         const options = question.options?.map(option => option.label) ?? []
         const optionDescriptions = question.options?.map(option => option.description)
-        const intent = (question as { intent?: { kind?: string; approve?: string } }).intent
+        const intent = question.intent
         const planReview = intent?.kind === 'plan-review'
         const answer = await presenter.present({
           title: question.question,
@@ -154,10 +143,8 @@ export function installApprovals(
         cursor += 1
       }
       return { answers }
-    },
-  } as never) ?? (() => {})
+    })
 
-  void timeoutMs
   return () => {
     disposeWaterfall()
     disposeProvider()

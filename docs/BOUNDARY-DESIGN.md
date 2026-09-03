@@ -118,7 +118,7 @@
 | `tui-feedback.json` | 回复评价（G44） | ⚠️ **唯一妥协**：理想 = dsh storage 域插件，out-of-tree 不可挂 → 已文档标注待下沉（见 3.3） |
 
 - dsh 共享状态（会话/附件/模型配置/权限/标题本体）：**零 sidecar**，全部走 `ctx.get` 服务 ✅；
-- 设置项经 dsh settings 服务 `tui` 命名空间（`installSettingsSection`）✅ —— 正面案例；
+- 设置项经 dsh settings 服务 `tui` 命名空间（`ctx.settings.register('tui', …)`，alpha.5 起的新注册面）✅ —— 正面案例；
 - 小整洁（非越权）：TUI 偏好持久化两套并存（enterBehavior 走 settings.yaml，theme/keymap 走 sidecar
   txt），可择机统一收口到 `tui` 命名空间。
 
